@@ -15,6 +15,12 @@ const signature=items=>items.map(j=>j.id+':'+j.archived).sort().join(',');
 function showShelf(){if(page==='library'){if(!viewerOpen())renderLibrary();else galleryDirty=true;}else if($('#result'))renderResults();}
 function setShelf(items){library=items.filter(j=>j.source!=='missing'||j.local).sort((a,b)=>b.created-a.created||b.id.localeCompare(a.id));showShelf();notice();}
 function updateItem(j){setShelf(library.filter(x=>x.id!==j.id).concat(j));}
+const originalTransfers=new Map();
+function fetchOriginal(id){
+ const key=epoch+':'+id;
+ if(!originalTransfers.has(key))originalTransfers.set(key,local('fetch',{id}).finally(()=>originalTransfers.delete(key)));
+ return originalTransfers.get(key);
+}
 async function syncShelf(force=false){
  if(!connected||syncing||(!force&&Date.now()<nextSync))return;
  const session=epoch;syncing=true;nextSync=Date.now()+300000;
@@ -27,7 +33,7 @@ async function fillShelf(){
  if(filling)return;filling=true;const session=epoch;let firstError='';
  try{for(const j of library.filter(j=>j.recent&&!j.local&&j.source==='available')){
   if(!connected||epoch!==session||document.hidden)break;
-  try{const saved=await local('fetch',{id:j.id});if(epoch!==session)break;updateItem(saved);}
+  try{const saved=await fetchOriginal(j.id);if(epoch!==session)break;updateItem(saved);}
   catch(e){firstError=e.message;if(/storage|space/i.test(firstError))break;}
  }}finally{filling=false;if(firstError&&epoch===session){shelfError='Some phone copies are pending: '+firstError;nextSync=Math.min(nextSync,Date.now()+30000);showShelf();}}
 }
@@ -49,7 +55,7 @@ async function init(){
  };window.openJobAlert();
 }
 function drawer(open){document.querySelector('#drawer').inert=!open;$('#drawer').classList.toggle('open',open);$('#shade').hidden=!open;}
-function navigate(to){if(viewerOpen())closeViewer(true);const forward=page==='bridge'&&['image','video'].includes(to),out=forward?outgoingBridge():null;page=to;archived=false;presetName='';drawer(false);render();$('#workspace').scrollTop=0;if(out)enterGenerator(out);if(connected){poll();if(['image','video'].includes(to))syncSettings();if(to==='notepad')syncNotes();}}
+function navigate(to){if(page==='image'&&to!=='image')leaveLiveImage();if(viewerOpen())closeViewer(true);const forward=page==='bridge'&&['image','video'].includes(to),out=forward?outgoingBridge():null;page=to;archived=false;presetName='';drawer(false);render();$('#workspace').scrollTop=0;if(out)enterGenerator(out);if(connected){poll();if(['image','video'].includes(to))syncSettings();if(to==='notepad')syncNotes();}}
 function connection(value){connected=value;$$('.dot').forEach(d=>d.classList.toggle('connected',value));$('#statusDot').setAttribute('aria-label',value?'Connected':'Disconnected');$('#drawerStatus').textContent=value?'PC connected':'Disconnected';}
 function render(){
  document.body.dataset.page=page;
@@ -61,7 +67,7 @@ const pcIcon='<svg viewBox="0 0 64 64"><rect x="7" y="10" width="50" height="34"
 let editPair=false,pairAddress=null,bridgeError="";
 let wanted=false,epoch=0,probing=false,nextProbe=0,misses=0,catalogLoading=false,serviceNote='',pollNote='';
 function notice(){const el=$('#linkNotice'),n=library.filter(j=>['missing','changed'].includes(j.warning)).length;const review=n?n+' PC file(s) changed or disappeared. Open Library to review your protected phone copies.':'';el.textContent=[wanted&&!connected?'Reconnecting to your PC. '+bridgeError+' Accepted jobs continue on the PC.':connected?[serviceNote,pollNote].filter(Boolean).join(' '):'',page==='library'?'':review].filter(Boolean).join(' ');el.hidden=!el.textContent;}
-function clearSession(){
+function clearSession(){leaveLiveImage();imagePreviewProtocol=false;
  ++epoch;profileReady=false;clearTimeout(profileTimer);wanted=false;misses=0;nextProbe=0;catalogLoading=false;serviceNote=pollNote=bridgeError='';connection(false);notice();
 }
 async function loadCatalog(){
@@ -211,7 +217,7 @@ async function poll(){
  try{
   if(view==='bridge'){const m=await api('metrics');if(current())showMetrics(m);}
   else if(view!=='notepad'){const status=view==='library'?null:await api('status');const latest=await api('library');if(!current())return;
-   if(status){await refreshHistory();if(!current())return;jobs=status.jobs;active=status.active;previewAvailable=status.preview;}
+   if(status){await refreshHistory();if(!current())return;jobs=status.jobs;active=status.active;previewAvailable=status.preview;imagePreviewProtocol=status.protocol>=7;}
    if(signature(latest)!==inventory&&(!shelfError||Date.now()>=nextSync))syncShelf(true);
    if(view!=='library'&&$('#play'))updateProgress();
   }
@@ -225,11 +231,59 @@ function updateProgress(){if(!$('#play'))return;const me=info().device,pendingJo
  $('#play').textContent=pendingJobs.length?'▶ Add to queue':'▶ Generate';$('#play').disabled=submitting;$('#batchButton').disabled=submitting;$('#stopBatch').hidden=!mine;$('#stopBatch').onclick=()=>mine&&stopBatch(mine.batch);
  $('#runSpinner').hidden=!j;$('#progressRow').hidden=!j;
  renderQueue();
- if(j){const pct=Math.min(j.status==='complete'?100:99,Math.round(j.progress*100));$('#progressFill').style.width=pct+'%';$('#progressText').textContent='Queue '+(j.queuePosition??j.ordinal)+'/'+(j.queueTotal??j.total)+' · '+(j.id===active?pct+'%':'Queued');$('#jobMessage').textContent=(j.kind===page?'':j.kind+' · ')+(j.current_node||(j.id===active?'Preparing workflow':'Waiting in PC queue'));const timer=document.createElement('span');timer.id='activeTimer';timer.textContent=elapsed(queueHistory.find(row=>row.id===j.id));$('#jobMessage').append(' ',timer);$('#livePreview').hidden=!previewAvailable||j.id!==active;if(previewAvailable&&j.id===active)$('#livePreview').src='/preview?t='+Date.now();$('#batchLabel').textContent=j.total>1?j.total+' in batch':'Single generation';}
+ if(j){
+  const running=j.id===active;
+  const pct=Math.min(99,Math.round(j.progress*100));
+  $('#progressFill').style.width=pct+'%';
+  $('#progressText').textContent='Queue '+(j.queuePosition??j.ordinal)+'/'+(j.queueTotal??j.total)+' · '+(running?pct+'%':'Queued');
+  $('#jobMessage').textContent=(j.kind===page?'':j.kind+' · ')+(j.current_node||(running?'Preparing workflow':'Waiting in PC queue'));
+  const timer=document.createElement('span');timer.id='activeTimer';
+  timer.textContent=elapsed(queueHistory.find(row=>row.id===j.id));$('#jobMessage').append(' ',timer);
+  const mini=$('#livePreview');
+  if(imagePreviewProtocol&&page==='image'&&j.kind==='image'){
+   mini.dataset.frameJob=j.id;paintFrame(j.id);mini.hidden=!frames.has(j.id);
+  }else{
+   delete mini.dataset.frameJob;mini.hidden=!previewAvailable||!running;
+   if(!mini.hidden)mini.src='/preview?t='+Date.now();
+  }
+  $('#batchLabel').textContent=j.total>1?j.total+' in batch':'Single generation';
+ }
  else{const last=jobs.find(j=>j.kind===page);$('#jobMessage').textContent=last?.status==='complete'?'Generation complete':last?.status==='error'?'Generation failed — details below':'';if(last?.status==='error')$('#genError').innerHTML='<div class="errorbox">'+esc(last.error)+'</div>';}
+ if(page==='image'&&imagePreviewProtocol){
+  if(!liveSelection&&currentImage()&&!library.some(x=>x.kind==='image'&&!x.archived))liveSelection={id:active};
+  if(liveSelection)renderLiveImage($('#result'));
+ }
  renderCarousel();
 }
-function renderCarousel(){if(!$('#carousel'))return;let items=library.filter(x=>x.kind===page&&!x.archived).slice(0,20);let running=jobs.some(j=>j.kind===page&&['running','pending','submitting'].includes(j.status));$('#carousel').innerHTML=(running?'<div class="thumb">'+(previewAvailable?'<img src="/preview?t='+Date.now()+'" alt="Generating">':'')+'<i class="spinner"></i></div>':'')+items.map(x=>`<button class="thumb" data-media="${x.id}"><img src="${media(x.id,true)}" alt="Generated ${x.kind}">${x.kind==='video'?'<span>▶ '+duration(x.duration)+'</span>':''}</button>`).join('');wireMedia($('#carousel'));}
+function renderCarousel(){
+ const carousel=$('#carousel');if(!carousel)return;
+ const items=library.filter(x=>x.kind===page&&!x.archived).slice(0,20);
+ if(!carousel.querySelector('.recentStrip'))carousel.innerHTML='<div class="recentStrip"></div>';
+ const strip=carousel.querySelector('.recentStrip');
+ const key=JSON.stringify(items.map(x=>[x.id,media(x.id,true),x.duration]));
+ if(strip.dataset.key!==key){
+  strip.dataset.key=key;
+  strip.innerHTML=items.map(x=>`<button class="thumb" data-media="${x.id}"><img src="${media(x.id,true)}" alt="Generated ${x.kind}">${x.kind==='video'?'<span>▶ '+duration(x.duration)+'</span>':''}</button>`).join('');
+  wireMedia(carousel);
+ }
+ const live=page==='image'&&imagePreviewProtocol?nextImage():null;
+ const pending=jobs.some(j=>j.kind===page&&liveStatus(j.status));
+ let tile=carousel.querySelector('.inflightThumb');
+ if(!pending){tile?.remove();}
+ else{
+  if(!tile){tile=document.createElement('button');tile.className='thumb inflightThumb';tile.innerHTML='<img hidden alt=""><i class="spinner"></i>';carousel.prepend(tile);}
+  const image=tile.querySelector('img');
+  tile.disabled=!live;tile.setAttribute('aria-label',live?'View live image preview':'Generation in progress');
+  if(live){
+   if(image.dataset.frameJob!==live.id){image.removeAttribute('src');image.hidden=true;image.dataset.frameJob=live.id;}
+   paintFrame(live.id);tile.onclick=()=>selectLiveImage(live.id);
+  }else{
+   delete image.dataset.frameJob;image.hidden=!previewAvailable||!jobs.some(j=>j.id===active&&j.kind===page);
+   if(!image.hidden)image.src='/preview?t='+Date.now();
+  }
+ }
+ if(page==='image'){watchFrames();pruneFrames();}
+}
 function duration(n){return Math.floor(n/60)+':'+String(Math.floor(n%60)).padStart(2,'0');}
 const warningText={changed:'The PC file changed. Your original phone copy is protected.',missing:'The PC file was deleted. Your phone copy is still here.',older:'Outside the newest 100. You can keep this copy, save it to the camera roll, or remove it from the app.'};
 init().catch(e=>{$('#main').innerHTML='<div class="errorbox">Phone storage could not be opened: '+esc(e.message)+'</div>';});

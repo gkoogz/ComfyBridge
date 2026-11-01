@@ -55,6 +55,9 @@ LAST_REQUEST = time.monotonic()
 IN_FLIGHT = 0
 ACTIVE = None
 PREVIEW = None
+PREVIEW_JOB = None
+PREVIEW_REV = 0
+PREVIEW_CHANGE = None
 SESSION = None
 OWNED = None
 CLIENT_FILE = DATA / 'client_id.txt'
@@ -145,24 +148,36 @@ def checked_upload(name):
         raise ValueError('Uploaded image is no longer available. Please choose it again.')
 
 
+def publish_preview(job, data):
+    global PREVIEW, PREVIEW_JOB, PREVIEW_REV, PREVIEW_CHANGE
+    PREVIEW, PREVIEW_JOB = data, job
+    PREVIEW_REV += 1
+    if PREVIEW_CHANGE is not None:
+        PREVIEW_CHANGE.set()
+    PREVIEW_CHANGE = asyncio.Event()
+
+
 async def websocket():
-    global PREVIEW
     while True:
         try:
             async with SESSION.ws_connect(COMFY.replace('http', 'ws', 1)+'/ws?clientId='+CLIENT,
                                           max_msg_size=16*1024*1024) as ws:
+                await ws.send_json({'type':'feature_flags','data':{'supports_preview_metadata':True}})
+                executing = None
                 async for msg in ws:
                     if msg.type == aiohttp.WSMsgType.BINARY and ACTIVE:
                         raw = msg.data
-                        if len(raw) > 8 and int.from_bytes(raw[:4], 'big') == 1:
-                            PREVIEW = raw[8:]
+                        if len(raw) > 8 and int.from_bytes(raw[:4], 'big') == 1 and executing == ACTIVE:
+                            publish_preview(ACTIVE, raw[8:])
                         elif len(raw) > 8 and int.from_bytes(raw[:4], 'big') == 4:
                             length = int.from_bytes(raw[4:8], 'big')
                             metadata = json.loads(raw[8:8+length])
-                            if metadata.get('prompt_id', ACTIVE) == ACTIVE:
-                                PREVIEW = raw[8+length:]
+                            if metadata.get('prompt_id') == ACTIVE:
+                                publish_preview(ACTIVE, raw[8+length:])
                     elif msg.type == aiohttp.WSMsgType.TEXT:
                         event = json.loads(msg.data); d = event.get('data', {})
+                        if event['type'] in ('execution_start','executing','progress'):
+                            executing=d.get('prompt_id')
                         if not ACTIVE or d.get('prompt_id') != ACTIVE:
                             continue
                         if TRACKER: TRACKER.event(event['type'],d)
@@ -204,7 +219,9 @@ async def run_jobs():
             ACTIVE = None
             await asyncio.sleep(1)
             continue
-        j = jobs[0]; PREVIEW = None
+        j = jobs[0]
+        if PREVIEW_JOB != j['id']:
+            publish_preview(j['id'], None)
         try:
             settings = json.loads(j['settings'])
             locked=settings['loras'][0]['strength'] if j['kind']=='video' and settings.get('loras') else None
@@ -225,27 +242,34 @@ async def run_jobs():
                     await cancel_submitted(j['batch'])
             missing = 0
             while True:
+                current=DB.execute('SELECT status FROM jobs WHERE id=?',(j['id'],)).fetchone()[0]
+                if current=='cancelled':
+                    break
+                stopping = current=='cancelling' or j['batch'] in STOPPING
                 history = await comfy('/history/'+j['id'])
                 if j['id'] in history:
+                    stopping = stopping or DB.execute("SELECT status IN ('cancelling','cancelled') FROM jobs WHERE id=?", (j['id'],)).fetchone()[0]
                     entry = history[j['id']]
                     status = entry.get('status', {})
-                    if j['batch'] in STOPPING and not entry.get('outputs'):
+                    if stopping and not entry.get('outputs'):
                         update(j['id'], status='cancelled')
                     elif status.get('status_str') == 'error':
-                        update(j['id'], status='cancelled' if j['batch'] in STOPPING else 'error', error=json.dumps(status.get('messages', []))[-3000:])
+                        update(j['id'], status='cancelled' if stopping else 'error', error=json.dumps(status.get('messages', []))[-3000:])
                     else:
                         collect(j, entry)
                         DB.executemany('INSERT INTO stage_cost VALUES(?,?,?) ON CONFLICT(kind,node) DO UPDATE SET factor=0.65*stage_cost.factor+0.35*excluded.factor',
                                        ((j['kind'],node,factor) for node,factor in TRACKER.observed.items()))
                         update(j['id'], status='complete', progress=1, current_node='Saved to library')
                     break
+                if current=='cancelling':
+                    await cancel_ids({j['id']})
                 q = await comfy('/queue')
                 progress,stage=TRACKER.sample()
                 update(j['id'],progress=progress,current_node=stage)
                 known = any(x[1] == j['id'] for x in q['queue_running']+q['queue_pending'])
                 missing = 0 if known else missing+1
                 if missing >= 3:
-                    update(j['id'], status='cancelled' if j['batch'] in STOPPING else 'error',
+                    update(j['id'], status='cancelled' if stopping else 'error',
                            error='Job is absent from ComfyUI queue/history. It was not resubmitted to avoid duplicates.')
                     break
                 await asyncio.sleep(2)
@@ -257,6 +281,7 @@ async def run_jobs():
             else:
                 update(j['id'], status='error', error=str(e)[:5000])
         ACTIVE = None
+        publish_preview(None, None)
 
 
 async def idle_watch():
@@ -298,6 +323,10 @@ async def guard(request, handler):
 
 async def cancel_submitted(batch):
     ids={r['id'] for r in rows("SELECT id FROM jobs WHERE batch=? AND status IN ('running','submitting','cancelling')",(batch,))}
+    await cancel_ids(ids)
+
+
+async def cancel_ids(ids):
     if not ids:return
     q=await comfy('/queue')
     queued=[j[1] for j in q['queue_pending'] if j[1] in ids]
@@ -310,8 +339,10 @@ async def cancel_submitted(batch):
                 update(id,status='cancelled')
     for j in q['queue_running']:
         if j[1] in ids:
-            update(j[1],status='cancelling')
-            await comfy('/interrupt',{'prompt_id':j[1]})
+            with DB:
+                changed=DB.execute("UPDATE jobs SET status='cancelling' WHERE id=? AND status IN ('running','submitting','cancelling')",(j[1],)).rowcount
+            if changed:
+                await comfy('/interrupt',{'prompt_id':j[1]})
 
 
 async def api(request):
@@ -369,7 +400,22 @@ async def api(request):
                 j['queuePosition'], j['queueTotal'] = counts[j['id']]
             if j['id']==ACTIVE and TRACKER and j['status'] not in ('complete','cancelled','error'):
                 j['progress'],j['current_node']=TRACKER.sample()
-        return web.json_response(dict(protocol=6,jobs=jobs, active=ACTIVE, preview=bool(PREVIEW), ownedComfy=bool(OWNED)))
+        return web.json_response(dict(protocol=7,jobs=jobs, active=ACTIVE, preview=bool(PREVIEW), previewRevision=PREVIEW_REV,ownedComfy=bool(OWNED)))
+    if path.startswith('preview/'):
+        job=str(uuid.UUID(path[8:]))
+        after=int(request.query.get('after','-1'))
+        if ACTIVE==job and PREVIEW_JOB==job and PREVIEW_CHANGE is not None and (not PREVIEW or after==PREVIEW_REV):
+            try:
+                await asyncio.wait_for(PREVIEW_CHANGE.wait(),5)
+            except asyncio.TimeoutError:
+                pass
+        if ACTIVE!=job or PREVIEW_JOB!=job:
+            raise web.HTTPGone()
+        headers={'Cache-Control':'no-store','X-Preview-Revision':str(PREVIEW_REV)}
+        if not PREVIEW or after==PREVIEW_REV:
+            return web.Response(status=204,headers=headers)
+        mime='image/png' if PREVIEW.startswith(b'\x89PNG') else 'image/jpeg'
+        return web.Response(body=PREVIEW,content_type=mime,headers=headers)
     if path == 'preview':
         return web.Response(body=PREVIEW or b'', content_type='image/jpeg')
     if path == 'library':
@@ -441,6 +487,18 @@ async def api(request):
             DB.executemany('INSERT INTO jobs(id,batch,kind,settings,status,created,ordinal,total,owner) '
                            'VALUES(?,?,?,?,?,?,?,?,?)', prepared)
         return web.json_response(dict(batch=batch, ids=ids))
+    if path=='skip' and request.method=='POST':
+        job=str(uuid.UUID((await request.json())['id']))
+        target=DB.execute('SELECT kind,owner,status FROM jobs WHERE id=?',(job,)).fetchone()
+        if not target or target['owner']!=device or device=='legacy':
+            raise web.HTTPForbidden()
+        if target['status']=='cancelled':
+            return web.json_response({'ok':True})
+        if job!=ACTIVE or target['kind']!='image' or target['status'] not in ('running','cancelling'):
+            return web.json_response({'error':'That image is no longer running.'},status=409)
+        update(job,status='cancelling')
+        await cancel_ids({job})
+        return web.json_response({'ok':True})
     if path == 'stop' and request.method == 'POST':
         d = await request.json(); batch = str(uuid.UUID(d['batch']))
         owner=rows('SELECT owner FROM jobs WHERE batch=? LIMIT 1',(batch,))

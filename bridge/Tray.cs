@@ -21,8 +21,8 @@ using Microsoft.Win32;
 [assembly: System.Reflection.AssemblyTitle("Comfy Bridge")]
 [assembly: System.Reflection.AssemblyDescription("Phone to ComfyUI bridge")]
 [assembly: System.Reflection.AssemblyVersion("0.1.0.0")]
-[assembly: System.Reflection.AssemblyFileVersion("0.1.0.14")]
-[assembly: System.Reflection.AssemblyInformationalVersion("0.1.0-beta.10")]
+[assembly: System.Reflection.AssemblyFileVersion("0.1.0.15")]
+[assembly: System.Reflection.AssemblyInformationalVersion("0.1.0-beta.11")]
 
 partial class Bridge : ApplicationContext {
     static readonly string Home = AppDomain.CurrentDomain.BaseDirectory;
@@ -132,7 +132,7 @@ partial class Bridge : ApplicationContext {
     static async Task Headers(Stream stream,int code,string type,long length,WebHeaderCollection extra) {
         var h=new StringBuilder("HTTP/1.1 "+code+" "+((HttpStatusCode)code).ToString()+"\r\nConnection: close\r\nCache-Control: no-store\r\nContent-Type: "+type+"\r\n");
         if(length>=0)h.Append("Content-Length: "+length+"\r\n");
-        if(extra!=null)foreach(string name in new[]{"Content-Range","Accept-Ranges"})if(extra[name]!=null)h.Append(name+": "+extra[name]+"\r\n");
+        if(extra!=null)foreach(string name in new[]{"Content-Range","Accept-Ranges","X-Preview-Revision"})if(extra[name]!=null)h.Append(name+": "+extra[name]+"\r\n");
         h.Append("\r\n");byte[] bytes=Encoding.ASCII.GetBytes(h.ToString());await stream.WriteAsync(bytes,0,bytes.Length);
     }
     static async Task Wake() {
@@ -145,6 +145,9 @@ partial class Bridge : ApplicationContext {
                     var monitor=new JavaScriptSerializer().Deserialize<Dictionary<string,object>>(await probe.DownloadStringTaskAsync("http://127.0.0.1:18766/api/monitor"));
                     if(!monitor.ContainsKey("protocol")||Convert.ToInt32(monitor["protocol"])<5)
                         throw new IOException("Finishing the previous bridge version. Jobs continue on the PC; new requests resume automatically after the old worker goes idle.");
+                    var remaining=monitor["jobs"] as System.Collections.ICollection;
+                    if(Convert.ToInt32(monitor["protocol"])<7&&remaining!=null&&remaining.Count==0)
+                        throw new IOException("Starting the updated bridge after the previous worker goes idle. Try again in about 90 seconds.");
                 }}
                 return;
             }catch(System.Net.Sockets.SocketException){}

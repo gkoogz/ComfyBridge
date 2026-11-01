@@ -64,17 +64,18 @@ public class MainActivity extends Activity {
       if(parts[2].equals("video"))return new WebResourceResponse("video/mp4",null,200,"OK",Collections.singletonMap("Content-Length",Long.toString(f.length())),new FileInputStream(f));
       return new WebResourceResponse(thumb?"image/jpeg":"image/png",null,new FileInputStream(f));
      }
-     if(path.startsWith("/thumb/")||path.equals("/preview")){
-      HttpURLConnection c=connection("api"+path,"GET");String range=r.getRequestHeaders().get("Range");if(range!=null)c.setRequestProperty("Range",range);
+     if(path.startsWith("/thumb/")||path.equals("/preview")||path.startsWith("/preview/")){
+      String query=uri.getEncodedQuery();
+      HttpURLConnection c=connection("api"+path+(query==null?"":"?"+query),"GET");String range=r.getRequestHeaders().get("Range");if(range!=null)c.setRequestProperty("Range",range);
       int code=c.getResponseCode();Map<String,String> headers=new HashMap<>();
-      for(String h:new String[]{"Content-Length","Content-Range","Accept-Ranges","Cache-Control"})if(c.getHeaderField(h)!=null)headers.put(h,c.getHeaderField(h));
+      for(String h:new String[]{"Content-Length","Content-Range","Accept-Ranges","Cache-Control","X-Preview-Revision"})if(c.getHeaderField(h)!=null)headers.put(h,c.getHeaderField(h));
       String mime=c.getContentType();if(mime==null)mime="application/octet-stream";mime=mime.split(";")[0];
       InputStream stream=code>=400?c.getErrorStream():c.getInputStream();if(stream==null)stream=new ByteArrayInputStream(new byte[0]);
       final InputStream input=stream;
       return new WebResourceResponse(mime,null,code,c.getResponseMessage()==null?"Response":c.getResponseMessage(),headers,new FilterInputStream(input){@Override public void close()throws IOException{super.close();c.disconnect();}});
      }
      if(path.equals("/"))path="/index.html";
-     if(!Arrays.asList("/index.html","/style.css","/app.js","/profile.js","/gallery.js","/gallery.css","/studio.css","/studio.js","/notepad.js").contains(path))return response(404,"Not Found","text/plain",new byte[0]);
+     if(!Arrays.asList("/index.html","/style.css","/app.js","/profile.js","/gallery.js","/gallery.css","/studio.css","/studio.js","/notepad.js","/live-image.js").contains(path))return response(404,"Not Found","text/plain",new byte[0]);
      String mime=path.endsWith("css")?"text/css":path.endsWith("js")?"application/javascript":"text/html";
      return new WebResourceResponse(mime,"UTF-8",getAssets().open(path.substring(1)));
     }catch(Exception e){return response(503,"Unavailable","text/plain",new byte[0]);}

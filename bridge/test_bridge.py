@@ -235,6 +235,53 @@ class BridgeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(deleted,[[d['ids'][0]]])
         self.assertEqual(len(w.rows("SELECT * FROM jobs WHERE status='cancelled'")),4)
 
+    async def test_skip_only_previewed_image_and_continue_batch(self):
+        owner={'Authorization':'Bearer integration-test-key','X-Bridge-Device':str(uuid.uuid4())}
+        other={**owner,'X-Bridge-Device':str(uuid.uuid4())}
+        _,batch=await self.request('generate',dict(requestId=str(uuid.uuid4()),kind='image',count=2,settings=self.settings),owner)
+        first,second=batch['ids']
+        self.complete=False
+        simulate=w.comfy
+        async def running(path,data=None):
+            if path=='/queue' and data is None:
+                return dict(queue_running=[[0,first,{},{}]],queue_pending=[])
+            if path=='/interrupt':
+                self.assertEqual(data,{'prompt_id':first})
+                self.history[first]={'status':{'status_str':'error'},'outputs':{}}
+                self.complete=True
+            return await simulate(path,data)
+        w.comfy=running
+        self.runner=asyncio.create_task(w.run_jobs())
+        for _ in range(100):
+            if first in self.accepted:break
+            await asyncio.sleep(.02)
+        denied=await self.client.post('/api/skip',json={'id':first},headers=other)
+        self.assertEqual(denied.status,403);await denied.read()
+        stale,_=await self.request('skip',{'id':second},owner)
+        self.assertEqual(stale.status,409)
+        ok,_=await self.request('skip',{'id':first},owner)
+        self.assertEqual(ok.status,200)
+        for _ in range(300):
+            if second in self.history:break
+            await asyncio.sleep(.02)
+        self.assertEqual([r['status'] for r in w.rows('SELECT status FROM jobs ORDER BY rowid')],['cancelled','complete'])
+        await self.request('skip',{'id':first},owner)
+        self.assertEqual([d for path,d in self.calls if path=='/interrupt'],[{'prompt_id':first}])
+
+    async def test_frames_are_versioned_and_scoped(self):
+        first,second=str(uuid.uuid4()),str(uuid.uuid4())
+        w.ACTIVE=first;w.publish_preview(first,b'one')
+        headers={'Authorization':'Bearer integration-test-key'}
+        r=await self.client.get('/api/preview/'+first,headers=headers)
+        revision=r.headers['X-Preview-Revision'];self.assertEqual(await r.read(),b'one')
+        pending=asyncio.create_task(self.client.get('/api/preview/'+first+'?after='+revision,headers=headers))
+        await asyncio.sleep(.02)
+        w.publish_preview(first,b'two')
+        r=await pending;self.assertEqual(await r.read(),b'two')
+        w.ACTIVE=second;w.publish_preview(second,b'next job')
+        r=await self.client.get('/api/preview/'+first,headers=headers)
+        self.assertEqual(r.status,410);await r.read()
+
     async def test_archive_unarchive_and_range_download(self):
         await self.submit();self.runner=asyncio.create_task(w.run_jobs());await self.wait_done(1)
         r,items=await self.request('library');id=items[0]['id']

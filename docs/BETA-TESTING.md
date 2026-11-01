@@ -2,6 +2,10 @@
 
 Validation performed on November 1, 2026, on Windows with the existing ComfyUI-ZLUDA installation and a connected Moto g stylus 2025.
 
+## Beta 11 live image carousel
+
+The paired Moto submitted an isolated two-image batch to the installed ComfyUI workflow. Tapping the spinning tile showed successive sampler frames at the full screen width. Tapping Skip aborted only the first image. The second image finished, kept its last decoded preview visible through a deliberately delayed phone download completion, and replaced it with the verified 512-pixel original. The verification output was archived. Isolated worker tests also rejected a skip from another phone and a skip for the wrong job, and checked that an old frame URL could not return the next job’s image.
+
 ## Beta 9 queue history and shared workspace
 
 The paired Moto loaded 19 queue records and the ten-row scrolling area. Eight older jobs had a uniquely matched ComfyUI log duration, displayed as an estimate. A thumbnail opened its corresponding Library item. Recalling a completed video restored its actual seed, positive prompt, upload and source dimensions. The mandatory MiniMax strength controls were disabled. On the physical phone, a temporary note verified the initial 80 lines, the 30-line trailing area, selection across rows, Enter inside a sticky, and removal from the line below without changing any text.

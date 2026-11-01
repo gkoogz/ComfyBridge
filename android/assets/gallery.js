@@ -45,7 +45,7 @@ function renderLibrary(){
 }
 function wireMedia(root){$$('[data-media]',root).forEach(b=>b.onclick=()=>{
  const item=library.find(x=>x.id===b.dataset.media);if(!item)return;
- if(root.id==='carousel'){mountResult(item);return;}
+ if(root.id==='carousel'){liveSelection=null;delete $('#result').dataset.live;mountResult(item);pruneFrames();return;}
  if($('#modal').open)closeModal();originTile=b;openMedia(item);
 });}
 
@@ -59,11 +59,21 @@ function mountAsset(host,item,isViewer){
    if(!item.local){
     if(!download){host.innerHTML='<button class="fetchPoster">'+(media(id,true)?'<img src="'+media(id,true)+'" alt="">':'')+'<span>'+(item.kind==='video'?'▶ Play video':'Download image')+'</span></button>';host.firstChild.onclick=()=>load(true,item.kind==='video');return;}
     if(!connected)throw Error('This item is on the PC. Connect to download it.');
-    msg('Downloading the complete '+item.kind+' ('+((item.size||0)/1048576).toFixed(1)+' MB)…');
-    item=await local('fetch',{id});host.dataset.hash=item.local;updateItem(item);
+    const transfer='Downloading the complete '+item.kind+' ('+((item.size||0)/1048576).toFixed(1)+' MB)…';
+    const cover=media(id,true);
+    if(item.kind==='image'&&!isViewer&&cover){
+     host.innerHTML='<img class="watchPixels" alt="Result preview"><small class="watchCaption"></small>';
+     host.firstChild.src=cover;host.lastChild.textContent=transfer;
+    }else msg(transfer);
+    item=await fetchOriginal(id);host.dataset.hash=item.local;updateItem(item);
    }
    if(!host.isConnected)return;
-   if(item.kind==='image'){host.innerHTML='<img class="original" alt="Generated image" src="'+media(id)+'">';host.firstChild.onclick=toggleChrome;return;}
+   if(item.kind==='image'){
+    const original=new Image();original.className='original';original.alt='Generated image';original.src=media(id);
+    await original.decode();
+    if(host.isConnected){host.replaceChildren(original);original.onclick=toggleChrome;}
+    return;
+   }
    host.innerHTML='<video playsinline preload="metadata" poster="'+media(id,true)+'" aria-label="Generated video"></video><button class="bigPlay" aria-label="Play video">▶</button><div class="transport"><button class="transportPlay" aria-label="Play">▶</button><input type="range" min="0" max="1" step="any" value="0" aria-label="Video position"><small></small></div>';
    const video=$('video',host),middle=$('.bigPlay',host),btn=$('.transportPlay',host),seek=$('input',host);
    const chrome=on=>(isViewer?$('#viewer'):host).classList.toggle('quiet',!on);
@@ -105,6 +115,11 @@ function mountResult(j){
 function renderResults(){
  const box=$('#result');if(!box)return;
  const items=library.filter(x=>x.kind===page&&!x.archived),first=items[0];
+ if(page==='image'&&imagePreviewProtocol&&!liveSelection){
+  if(!first&&currentImage())liveSelection={id:active};
+  else if(first&&!first.local&&frames.has(first.job))liveSelection={id:first.job};
+ }
+ if(renderLiveImage(box)){renderCarousel();return;}
  if(first){
   const current=items.find(j=>j.id===$('.asset',box)?.dataset.id);
   const playing=$('video',box);
