@@ -71,7 +71,7 @@ public class MainActivity extends Activity {
  private WebResourceResponse response(int code,String reason,String mime,byte[] body){return new WebResourceResponse(mime,"UTF-8",code,reason,Collections.emptyMap(),new ByteArrayInputStream(body));}
  private HttpURLConnection connection(String path,String method)throws Exception{
   String host=prefs.getString("host","");if(host.isEmpty())throw new IOException("Enter your PC address first.");
-  HttpURLConnection c=(HttpURLConnection)new URL(host+"/"+path).openConnection();c.setConnectTimeout(12000);c.setReadTimeout(240000);c.setInstanceFollowRedirects(false);c.setRequestMethod(method);c.setRequestProperty("Authorization","Bearer "+prefs.getString("key",""));
+  HttpURLConnection c=(HttpURLConnection)new URL(host+"/"+path).openConnection();c.setConnectTimeout(12000);c.setReadTimeout(Arrays.asList("api/ping","api/status","api/metrics","api/disconnect").contains(path)?12000:240000);c.setInstanceFollowRedirects(false);c.setRequestMethod(method);c.setRequestProperty("Authorization","Bearer "+prefs.getString("key",""));
   final String pin=prefs.getString("fingerprint","");
   if(c instanceof HttpsURLConnection && !pin.isEmpty()){
    SSLContext context=SSLContext.getInstance("TLS");
@@ -93,14 +93,23 @@ public class MainActivity extends Activity {
   return c;
  }
  public class NativeApi {
-  @JavascriptInterface public String configuration(){JSONObject d=new JSONObject();try{d.put("host",prefs.getString("host","https://192.168.1.4:18764"));d.put("key",prefs.getString("key",""));d.put("fingerprint",prefs.getString("fingerprint",""));}catch(Exception ignored){}return d.toString();}
-  @JavascriptInterface public void configure(String host,String key,String fingerprint){
-   try{URL url=new URL(host);if(!Arrays.asList("http","https").contains(url.getProtocol())||url.getHost().isEmpty()||url.getUserInfo()!=null||(!url.getPath().isEmpty()&&!url.getPath().equals("/"))||url.getQuery()!=null||url.getRef()!=null)throw new Exception();
-    String pin=fingerprint==null?"":fingerprint.replace(":","").replace(" ","").toUpperCase(Locale.ROOT);
-    if(!pin.isEmpty()&&!pin.matches("[A-F0-9]{64}"))throw new Exception();
-    prefs.edit().putString("host",host.replaceAll("/+$","")).putString("key",key).putString("fingerprint",pin).commit();
-   }catch(Exception e){throw new IllegalArgumentException("Use a valid bridge URL and, for direct connections, the 64-character certificate fingerprint from your PC.");}
+  @JavascriptInterface public String configuration(){
+   JSONObject d=new JSONObject();try{String h=prefs.getString("host","");d.put("host",h);d.put("paired",h.startsWith("https://")&&!prefs.getString("key","").isEmpty());}catch(Exception ignored){}return d.toString();
   }
+  @JavascriptInterface public void pair(int id,String address,String code){io.execute(()->{
+   try{String host=Pairing.address(address);String[] secrets=new Pairing().run(host,code);
+    if(!prefs.edit().putString("host",host).putString("key",secrets[0]).putString("fingerprint",secrets[1]).commit())throw new IOException("Could not save the pairing on this phone.");
+    callback(id,true,"{}");
+   }catch(Exception e){callback(id,false,friendly(e));}
+  });}
+  private String friendly(Exception e){
+   if(e instanceof UnknownHostException)return "Address not found. Copy the PC address from the Windows panel, including its port.";
+   if(e instanceof SocketTimeoutException)return "The PC did not respond. Check Server on, the address and port, and your PC’s VPN connection.";
+   if(e instanceof SSLException)return "Could not verify the PC’s identity. Check the address. If this is your PC, choose Pair again and use a new code.";
+   if(e instanceof ConnectException||e instanceof NoRouteToHostException)return "Cannot reach the PC. Check Server on, the address and port, and the PC’s VPN or firewall.";
+   return e.getMessage()==null?"Connection failed. Check the PC panel and try again.":e.getMessage();
+  }
+  private void callback(int id,boolean ok,String value){String js="window.bridgeResult("+id+","+ok+","+(ok?value:JSONObject.quote(value))+")";runOnUiThread(()->web.evaluateJavascript(js,null));}
   @JavascriptInterface public void request(int id,String path,String method,String body){io.execute(()->{
    boolean ok=false;String result;
    try{
@@ -110,7 +119,7 @@ public class MainActivity extends Activity {
      int code=c.getResponseCode();InputStream input=code>=400?c.getErrorStream():c.getInputStream();String text=read(input);if(code>=400){try{throw new IOException("HTTP "+code+": "+new JSONObject(text).optString("error",text));}catch(org.json.JSONException e){throw new IOException("HTTP "+code);}}
      result=text;ok=true;
     }finally{c.disconnect();}
-   }catch(Exception e){result=e.getMessage()==null?"Connection failed":e.getMessage();}
+   }catch(Exception e){result=friendly(e);}
    final String js="window.bridgeResult("+id+","+ok+","+(ok?result:JSONObject.quote(result))+")";
    runOnUiThread(()->web.evaluateJavascript(js,null));
   });}

@@ -1,8 +1,14 @@
-# Beta verification — 0.1.0-beta.1
+# Beta verification
 
 Validation performed on November 1, 2026, on Windows with the existing ComfyUI-ZLUDA installation and a connected Moto g stylus 2025.
 
-## Observed
+## Beta 2 pairing and panel
+
+- On the physical Android phone over the configured Windscribe static forward: missing address and missing code produced separate inline errors; an incorrect code was rejected; the correct six-digit code paired and loaded the real catalog. A consumed code was rejected, and the saved pairing reconnected without re-entry.
+- Windows panel checks exercised the actual form and listeners in an isolated process: code display, remote-address priority, expiry and attempt limit, power off/on, connection refusal while off, close-to-tray, connected status, and a synthetic 1/4 batch at 47%. The panel screenshot uses an example address and an isolated code, not live credentials.
+- Ten worker integration tests passed, including a check of the new monitoring route. Monitor reads do not count as phone activity or keep the idle worker alive.
+
+## Beta 1 observations
 
 - Nine isolated backend integration tests passed: authorization/library isolation, continued batches without a phone, seed increments, idempotent submission, targeted cancellation, archive/unarchive and range downloads, mask conversion/routing, recovery and fixed seeds, input/path validation, and ComfyUI controls returning an empty HTTP 200 body.
 - Live ComfyUI validated t2i, i2i, inpainting, and video graphs. Deliberately invalid seeds prevented GPU execution; only the intentional seed errors were reported.
@@ -21,7 +27,7 @@ Also exercise cold PC startup, an owned ComfyUI startup/shutdown cycle, overnigh
 
 - Workflow adapters depend on the saved node IDs and model types. Other workflows or significant edits require adapter updates.
 - HWiNFO sensor indices and VRAM total are specific to the target PC.
-- The Windows monitor is a functional text status window; phone UI is the primary generation interface.
+- Windows pairing and monitoring use a native panel. Phone presence times out after about 20 seconds without requests.
 - There is no automatic public IP discovery, port renewal, Wake-on-LAN, multi-user isolation, or remote update service.
 - Presets stay on the phone; media stays on the PC unless explicitly saved locally.
 - Both ephemeral forwarding and the owner's permanent Windscribe static-IP rule were tested from the phone with pinned TLS and a live catalog fetch. Static access requires the PC to remain connected to the purchased static-IP location.

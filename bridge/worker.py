@@ -249,7 +249,8 @@ async def guard(request, handler):
     global LAST_REQUEST
     if not secrets.compare_digest(request.headers.get('Authorization', ''), 'Bearer '+TOKEN):
         return web.json_response({'error': 'Pairing key required.'}, status=401)
-    LAST_REQUEST = time.monotonic()
+    if request.path != "/api/monitor":
+        LAST_REQUEST = time.monotonic()
     try:
         return await handler(request)
     except (ValueError, KeyError, TypeError, json.JSONDecodeError) as e:
@@ -262,6 +263,9 @@ async def api(request):
     path = request.match_info.get('path', '')
     if path == 'catalog':
         return web.json_response(await catalogue())
+    if path == 'monitor':
+        jobs = rows("SELECT id,kind,status,progress,current_node,ordinal,total,created FROM jobs WHERE status IN ('pending','submitting','running','cancelling') ORDER BY created,ordinal")
+        return web.json_response(dict(jobs=jobs, active=ACTIVE))
     if path == 'status':
         jobs = rows('SELECT id,batch,kind,status,progress,current_node,error,ordinal,total,created FROM jobs ORDER BY created DESC,ordinal DESC LIMIT 100')
         return web.json_response(dict(jobs=jobs, active=ACTIVE, preview=bool(PREVIEW), ownedComfy=bool(OWNED)))

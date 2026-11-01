@@ -21,12 +21,12 @@ using Microsoft.Win32;
 [assembly: System.Reflection.AssemblyTitle("Comfy Bridge")]
 [assembly: System.Reflection.AssemblyDescription("Phone to ComfyUI bridge")]
 [assembly: System.Reflection.AssemblyVersion("0.1.0.0")]
-[assembly: System.Reflection.AssemblyFileVersion("0.1.0.4")]
-[assembly: System.Reflection.AssemblyInformationalVersion("0.1.0-beta.1")]
+[assembly: System.Reflection.AssemblyFileVersion("0.1.0.5")]
+[assembly: System.Reflection.AssemblyInformationalVersion("0.1.0-beta.2")]
 
-class Bridge : ApplicationContext {
+partial class Bridge : ApplicationContext {
     static readonly string Home = AppDomain.CurrentDomain.BaseDirectory;
-    static readonly string Data = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ComfyBridge");
+    static string Data = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ComfyBridge");
     static readonly JavaScriptSerializer Json = new JavaScriptSerializer { MaxJsonLength = 80000000 };
     static string token, python;
     static System.Net.Sockets.TcpListener server;
@@ -41,10 +41,10 @@ class Bridge : ApplicationContext {
     static DateTime sampled = DateTime.MinValue;
     static string metrics = "{}";
     static SemaphoreSlim connections = new SemaphoreSlim(24,24);
+    EventWaitHandle panelSignal;
     bool trimmed;
     NotifyIcon tray;
     Form monitor;
-    TextBox status;
     System.Windows.Forms.Timer timer;
 
     [StructLayout(LayoutKind.Sequential)] class MemoryStatus {
@@ -54,10 +54,10 @@ class Bridge : ApplicationContext {
     [DllImport("kernel32.dll")] static extern bool GlobalMemoryStatusEx([In,Out] MemoryStatus m);
     [DllImport("psapi.dll")] static extern bool EmptyWorkingSet(IntPtr h);
 
-    [STAThread] static void Main() {
+    [STAThread] static void Main(string[] args) {
         bool fresh;
         using(var mutex = new Mutex(true,"Local\\ComfyBridgeTray",out fresh)) {
-            if(!fresh) return;
+            if(!fresh){try{using(var signal=EventWaitHandle.OpenExisting("Local\\ComfyBridgeOpenPanel"))signal.Set();}catch(WaitHandleCannotBeOpenedException){}return;}
             Application.EnableVisualStyles();
             Directory.CreateDirectory(Data);
             var key = Path.Combine(Data,"token.txt");
@@ -77,59 +77,35 @@ class Bridge : ApplicationContext {
             File.WriteAllText(Path.Combine(Data,"fingerprint.txt"),fingerprint);
             var cfg=Json.Deserialize<Dictionary<string,object>>(File.ReadAllText(Path.Combine(Home,"config.json")));
             python=Path.Combine((string)cfg["comfyRoot"],"venv\\Scripts\\python.exe");
-            Application.Run(new Bridge());
+            var app=new Bridge();if(Array.IndexOf(args,"--panel")>=0)app.ShowMonitor();Application.Run(app);
         }
     }
     Bridge() {
         tray=new NotifyIcon { Icon=Icon.ExtractAssociatedIcon(Application.ExecutablePath), Visible=true, Text="Comfy Bridge · waiting for phone" };
         var menu=new ContextMenuStrip();
-        menu.Items.Add("Monitor & pairing", null, (s,e)=>ShowMonitor());
-        menu.Items.Add("Copy pairing key", null, (s,e)=>Clipboard.SetText(token));
-        menu.Items.Add("Copy certificate fingerprint", null, (s,e)=>Clipboard.SetText(fingerprint));
-        menu.Items.Add("Open logs", null, (s,e)=>Process.Start("explorer.exe",Data));
-        menu.Items.Add("Close bridge (queued jobs finish)", null, (s,e)=>{server.Stop();tlsServer.Stop();tray.Visible=false;Application.Exit();});
-        tray.ContextMenuStrip=menu;tray.DoubleClick+=(s,e)=>ShowMonitor();
-        server=new System.Net.Sockets.TcpListener(IPAddress.Loopback,18765);
-        tlsServer=new System.Net.Sockets.TcpListener(IPAddress.Any,18764);
-        try {server.Start();tlsServer.Start();} catch(Exception ex) {MessageBox.Show("Bridge listeners could not start. Ports 18764 and 18765 must be available.\n"+ex.Message);tray.Dispose();Environment.Exit(1);}
-        Task.Run(()=>Listen(server,false));Task.Run(()=>Listen(tlsServer,true));
+        menu.Items.Add("Open ComfyBridge",null,(s,e)=>ShowMonitor());
+        menu.Items.Add("Open logs",null,(s,e)=>Process.Start("explorer.exe",Data));
+        menu.Items.Add("Quit bridge (queued jobs finish)",null,(s,e)=>{Server(false,false);tray.Visible=false;Application.ExitThread();});
+        tray.ContextMenuStrip=menu;tray.MouseClick+=(s,e)=>{if(e.Button==MouseButtons.Left)ShowMonitor();};
+        try{Server(!File.Exists(offFile),false);}catch(Exception ex){MessageBox.Show("Could not start the bridge: "+ex.Message);}
         timer=new System.Windows.Forms.Timer {Interval=5000};
-        timer.Tick+=async (s,e)=>{
-            bool connected=(DateTime.UtcNow-seen).TotalSeconds<20;
-            tray.Text=connected?"Comfy Bridge · phone connected":"Comfy Bridge · waiting for phone";
-            if(monitor!=null && !monitor.IsDisposed && monitor.Visible) {
-                string jobs="Worker asleep · no bridge generation";
-                if(worker!=null && !worker.HasExited) {
-                    try {using(var c=new WebClient()){c.Headers["Authorization"]="Bearer "+token;jobs=await c.DownloadStringTaskAsync("http://127.0.0.1:18766/api/status");}}catch(Exception ex){jobs=ex.Message;}
-                }
-                status.Text="PHONE: "+(connected?"Connected":"Disconnected")+"\r\n\r\nADDRESSES\r\n"+Addresses()+"\r\n\r\nPAIRING KEY (Copy key in tray menu)\r\n"+token+"\r\n\r\nCERTIFICATE FINGERPRINT\r\n"+fingerprint+"\r\n\r\nJOBS\r\n"+jobs;
-            }
-            if(!connected && (worker==null || worker.HasExited)) {
+        timer.Tick+=(s,e)=>{
+            bool connected=online&&(DateTime.UtcNow-seen).TotalSeconds<20;
+            RefreshState();RefreshJobs();
+            if(!connected && (worker==null || worker.HasExited)) { lock(Json){
                 if(cpu!=null){cpu.Dispose();cpu=null;}
                 if(vram!=null){foreach(var c in vram)c.Dispose();vram=null;}
                 if(!trimmed) {GC.Collect();EmptyWorkingSet(Process.GetCurrentProcess().Handle);trimmed=true;}
-            }
+            }}
             else trimmed=false;
         };timer.Start();
-    }
-    void ShowMonitor() {
-        if(monitor!=null && !monitor.IsDisposed){monitor.Show();monitor.Activate();return;}
-        monitor=new Form {Text="Comfy Bridge · Monitor & pairing",Icon=tray.Icon,Width=720,Height=570,BackColor=Color.FromArgb(17,22,29)};
-        status=new TextBox {Dock=DockStyle.Fill,Multiline=true,ReadOnly=true,ScrollBars=ScrollBars.Both,BackColor=Color.FromArgb(17,22,29),ForeColor=Color.FromArgb(220,233,227),Font=new Font("Consolas",10),Text="ADDRESSES\r\n"+Addresses()+"\r\n\r\nPAIRING KEY\r\n"+token+"\r\n\r\nCERTIFICATE FINGERPRINT\r\n"+fingerprint};
-        monitor.Controls.Add(status);monitor.Show();
-    }
-    static string Addresses() {
-        var lines=new List<string>();
-        foreach(var nic in NetworkInterface.GetAllNetworkInterfaces())
-            if(nic.OperationalStatus==OperationalStatus.Up)
-                foreach(var ip in nic.GetIPProperties().UnicastAddresses)
-                    if(ip.Address.AddressFamily==System.Net.Sockets.AddressFamily.InterNetwork)
-                        lines.Add(nic.Name+": https://"+ip.Address+":18764");
-        return string.Join("\r\n",lines);
+        var dispatch=new Control();var handle=dispatch.Handle;
+        panelSignal=new EventWaitHandle(false,EventResetMode.AutoReset,"Local\\ComfyBridgeOpenPanel");
+        ThreadPool.RegisterWaitForSingleObject(panelSignal,(s,t)=>{if(!dispatch.IsDisposed)dispatch.BeginInvoke((Action)ShowMonitor);},null,Timeout.Infinite,false);
     }
     static async Task Listen(System.Net.Sockets.TcpListener listener,bool encrypted) {
         while(true) {
-            try {var client=await listener.AcceptTcpClientAsync();if(!connections.Wait(0)){client.Close();continue;}var ignored=Task.Run(async ()=>{try{await Handle(client,encrypted);}finally{connections.Release();}});}
+            try {var client=await listener.AcceptTcpClientAsync();if(!connections.Wait(0)){client.Close();continue;}lock(sockets){if(!online || (listener!=server && listener!=tlsServer)){client.Close();connections.Release();continue;}sockets.Add(client);}var ignored=Task.Run(async ()=>{try{await Handle(client,encrypted);}finally{lock(sockets)sockets.Remove(client);connections.Release();}});}
             catch(System.Net.Sockets.SocketException){break;}catch(ObjectDisposedException){break;}
         }
     }
@@ -180,10 +156,23 @@ class Bridge : ApplicationContext {
             if(first.Length!=3 || (first[0]!="GET" && first[0]!="POST" && first[0]!="HEAD")){await Reply(stream,400,"{}");return;}
             var headers=new Dictionary<string,string>(StringComparer.OrdinalIgnoreCase);
             for(int i=1;i<lines.Length;i++){int colon=lines[i].IndexOf(':');if(colon>0)headers[lines[i].Substring(0,colon)]=lines[i].Substring(colon+1).Trim();}
+            if(!online)return;
+            string pathOnly=first[1];
+            if(pathOnly=="/api/pair/begin" || pathOnly=="/api/pair/finish"){
+                int count;string size;
+                if(!encrypted||first[0]!="POST"||headers.ContainsKey("Transfer-Encoding")||!headers.TryGetValue("Content-Length",out size)||!int.TryParse(size,out count)||count<1||count>2048){await Reply(stream,400,"{}");return;}
+                var data=new byte[count];for(int pos=0;pos<count;){int read=stream.Read(data,pos,count-pos);if(read<=0)return;pos+=read;}
+                var ser=new JavaScriptSerializer();object result;int http=200;
+                try{var d=ser.Deserialize<Dictionary<string,string>>(Encoding.UTF8.GetString(data));result=Pairing.Exchange(pathOnly.Substring(10),d,fingerprint,token);}
+                catch(InvalidOperationException ex){result=new {error=ex.Message};http=409;}
+                catch(ArgumentException ex){result=new {error=ex.Message};http=403;}
+                await Reply(stream,http,ser.Serialize(result));return;
+            }
             string auth;headers.TryGetValue("Authorization",out auth);
-            if(!Equal(auth,"Bearer "+token)){await Reply(stream,401,"{\"error\":\"Pairing key required\"}");return;}
+            if(!Equal(auth,"Bearer "+token)){await Reply(stream,401,"{\"error\":\"This phone is not paired. Open the PC panel and pair again.\"}");return;}
             string raw=first[1],path=raw.Split('?')[0];
             if(!path.StartsWith("/api/",StringComparison.Ordinal) || raw.Contains("..") || raw.Contains("\\")){await Reply(stream,404,"{}");return;}
+            if(path=="/api/disconnect"){seen=DateTime.MinValue;await Reply(stream,200,"{}");return;}
             seen=DateTime.UtcNow;
             if(path=="/api/ping"){await Reply(stream,200,"{\"ok\":true,\"name\":\"Comfy Bridge\"}");return;}
             if(path=="/api/metrics"){await Reply(stream,200,Metrics());return;}

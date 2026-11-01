@@ -10,5 +10,10 @@ $admin=([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity
 if($admin){ & (Join-Path $PSScriptRoot 'AllowNetwork.ps1') }
 else { Write-Warning 'Run AllowNetwork.ps1 as administrator once to allow phone connections through Windows Firewall.' }
 New-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -Name 'ComfyBridge' -Value ('"'+(Join-Path $target 'ComfyBridge.exe')+'"') -PropertyType String -Force |Out-Null
+$shortcut=(New-Object -ComObject WScript.Shell).CreateShortcut((Join-Path ([Environment]::GetFolderPath("Programs")) "ComfyBridge.lnk"))
+$shortcut.TargetPath=$exe
+$shortcut.Arguments="--panel"
+$shortcut.IconLocation="$exe,0"
+$shortcut.Save()
 Start-Process -FilePath (Join-Path $target 'ComfyBridge.exe') -WindowStyle Hidden
-Write-Output 'Comfy Bridge installed. Right-click its tray icon for addresses and pairing key.'
+Write-Output 'Click the cube by the clock, or open ComfyBridge from Start, to see the address and pairing code.'

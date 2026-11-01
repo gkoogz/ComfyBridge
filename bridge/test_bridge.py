@@ -84,6 +84,16 @@ class BridgeTests(unittest.IsolatedAsyncioTestCase):
         r,d=await self.request('library',headers={});self.assertEqual(r.status,401)
         r,d=await self.request('library');self.assertEqual(d,[])
 
+    async def test_panel_monitor_does_not_keep_worker_awake(self):
+        await self.submit(4)
+        last_phone_request = w.LAST_REQUEST
+        r,d = await self.request('monitor')
+        self.assertEqual(r.status, 200)
+        self.assertEqual([j['ordinal'] for j in d['jobs']], [1,2,3,4])
+        self.assertEqual(w.LAST_REQUEST, last_phone_request)
+        r,_ = await self.request('monitor', headers={})
+        self.assertEqual(r.status, 401)
+
     async def test_batch_survives_disconnect_and_increments_seeds(self):
         r,d=await self.submit(4);self.assertEqual(r.status,200)
         w.LAST_REQUEST=0 # no further phone requests while worker completes all four
