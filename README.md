@@ -1,12 +1,12 @@
 # ComfyBridge
 
-**[Open the beta 11 release page](https://github.com/gkoogz/ComfyBridge/releases/tag/v0.1.0-beta.11)** · [Download the Android APK](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.11/ComfyBridge-0.1.0-beta.11.apk) · [All releases](https://github.com/gkoogz/ComfyBridge/releases)
+**[Open the beta 12 release page](https://github.com/gkoogz/ComfyBridge/releases/tag/v0.1.0-beta.12)** · [Download the Android APK](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.12/ComfyBridge-0.1.0-beta.12.apk) · [All releases](https://github.com/gkoogz/ComfyBridge/releases)
 
 <img src="artwork/comfybridge.png" width="128" alt="ComfyBridge white cube and play icon on black">
 
 An Android remote for an existing Windows ComfyUI installation. The phone edits generation settings, uploads images and masks, and views results; the PC does the GPU work. A small Windows tray application wakes its Python worker on demand.
 
-**0.1.0-beta.11 is a personal-workflow beta**, adapted specifically to `Image gen.json` and `Video gen.json` in `E:\ComfyUI-Zluda\user\default\workflows`. It is not a general ComfyUI workflow importer. Models, LoRAs, workflow files, prompts, generated media, pairing credentials, and signing keys are not included in this repository or release.
+**0.1.0-beta.12 is a personal-workflow beta**, adapted specifically to `Image gen.json` and `Video gen.json` in `E:\ComfyUI-Zluda\user\default\workflows`. It is not a general ComfyUI workflow importer. Models, LoRAs, workflow files, prompts, generated media, pairing credentials, and signing keys are not included in this repository or release.
 
 The phone shows **PC connected** as soon as the bridge answers. Loading models and unavailable telemetry have their own messages. If the server or VPN drops, leave the phone app open: it retries automatically using the saved pairing. **Disconnect** or **Cancel reconnect** stops those retries.
 
@@ -21,6 +21,10 @@ The phone shows **PC connected** as soon as the bridge answers. Loading models a
 - Matching Android launcher, Windows executable/taskbar, and notification-area icons.
 
 Android and the Windows tray check this public GitHub repository in the background on launch. If a newer release includes a matching APK or Windows ZIP, choose **Download** to open the package in your browser or **Later** to keep working. On Android, open the downloaded APK to install it. On Windows, extract the ZIP and run **Install.ps1**.
+
+Tap a panel heading on Image or Video to fold it. The phone remembers each screen’s layout. PC Queue and LoRAs start folded. On Image, the chain between Width and Height locks their current ratio. On Video, the scale track gives most of its travel to rounded resolutions within the 768 × 1152 pixel budget. **Original · 0%** returns to source scale on the model’s 32-pixel grid.
+
+LoRA sliders snap to tenths. Type a value such as **0.12** in the number field for finer control. Generator sliders request a light tick when the phone’s touch feedback is enabled. Both editors use **1–20 steps**, including when opening an older draft or preset.
 
 ## Queue, progress, and two phones
 

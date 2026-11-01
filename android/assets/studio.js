@@ -108,6 +108,7 @@ function renderQueue(){
    (active&&j.owner===info().device?'<button data-cancel="'+j.batch+'">Cancel batch</button>':'<small class="outcome '+esc(j.status)+'">'+esc(label)+'</small>')+
    '<button class="jobRecall" data-replay="'+j.id+'" aria-label="Load this generation in the editor">↗</button></div>';
  }).join('')+(items.length?'':'<small>No generations in the last 24 hours.</small>')+'</div></section>';
+ installFold($('.historyCard',box));
  $('.queueRows',box).scrollTop=scroll;
  $$('[data-cancel]',box).forEach(b=>b.onclick=()=>stopBatch(b.dataset.cancel));
  $$('[data-output]',box).forEach(b=>b.onclick=async()=>{

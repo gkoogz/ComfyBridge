@@ -2,6 +2,10 @@
 
 Validation performed on November 1, 2026, on Windows with the existing ComfyUI-ZLUDA installation and a connected Moto g stylus 2025.
 
+## Beta 12 generator controls
+
+On the paired Moto, the image and video editors had eight and seven folding panels respectively. The aspect lock updated the opposite dimension in both directions and kept its original ratio across rounded edits. A typed LoRA strength of 0.12 stayed exact; the next slider tick selected 0.2. Android recorded low-strength touch ticks. Old 100-step drafts opened at 20, and typing 85 was capped at 20. The video controls showed the rounded output resolution, ratio, and a duration of 4.67 seconds for 56 actual frames at 12 FPS. The device checks use temporary local settings and submit no jobs.
+
 ## Beta 11 live image carousel
 
 The paired Moto submitted an isolated two-image batch to the installed ComfyUI workflow. Tapping the spinning tile showed successive sampler frames at the full screen width. Tapping Skip aborted only the first image. The second image finished, kept its last decoded preview visible through a deliberately delayed phone download completion, and replaced it with the verified 512-pixel original. The verification output was archived. Isolated worker tests also rejected a skip from another phone and a skip for the wrong job, and checked that an old frame URL could not return the next job’s image.

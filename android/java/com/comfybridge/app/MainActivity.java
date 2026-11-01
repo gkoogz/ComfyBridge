@@ -75,7 +75,7 @@ public class MainActivity extends Activity {
       return new WebResourceResponse(mime,null,code,c.getResponseMessage()==null?"Response":c.getResponseMessage(),headers,new FilterInputStream(input){@Override public void close()throws IOException{super.close();c.disconnect();}});
      }
      if(path.equals("/"))path="/index.html";
-     if(!Arrays.asList("/index.html","/style.css","/app.js","/profile.js","/gallery.js","/gallery.css","/studio.css","/studio.js","/notepad.js","/live-image.js").contains(path))return response(404,"Not Found","text/plain",new byte[0]);
+     if(!Arrays.asList("/index.html","/style.css","/app.js","/profile.js","/gallery.js","/gallery.css","/studio.css","/studio.js","/notepad.js","/live-image.js","/generator-controls.js","/generator.css").contains(path))return response(404,"Not Found","text/plain",new byte[0]);
      String mime=path.endsWith("css")?"text/css":path.endsWith("js")?"application/javascript":"text/html";
      return new WebResourceResponse(mime,"UTF-8",getAssets().open(path.substring(1)));
     }catch(Exception e){return response(503,"Unavailable","text/plain",new byte[0]);}
@@ -123,6 +123,10 @@ public class MainActivity extends Activity {
   @JavascriptInterface public String notificationRoute(){return noticeRoute.getAndSet("");}
   @JavascriptInterface public String configuration(){
    JSONObject d=new JSONObject();try{String h=prefs.getString("host","");d.put("host",h);d.put("paired",h.startsWith("https://")&&!prefs.getString("key","").isEmpty());d.put("fingerprint",prefs.getString("fingerprint",""));d.put("device",device(prefs));d.put("name",android.os.Build.MODEL);}catch(Exception ignored){}return d.toString();
+  }
+  @JavascriptInterface public void sliderTick(){
+   runOnUiThread(()->web.performHapticFeedback(android.os.Build.VERSION.SDK_INT>=34
+       ? android.view.HapticFeedbackConstants.SEGMENT_FREQUENT_TICK : android.view.HapticFeedbackConstants.CLOCK_TICK));
   }
   @JavascriptInterface public void enableAlerts(){runOnUiThread(()->alerts(true));}
   @JavascriptInterface public void watchBatch(String batch){try{UUID.fromString(batch);JobWatch.track(MainActivity.this,batch);runOnUiThread(()->alerts(false));}catch(Exception ignored){}}
