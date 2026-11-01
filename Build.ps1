@@ -9,7 +9,7 @@ $jdk=Split-Path (Get-Command java.exe).Source
 New-Item -ItemType Directory -Force "$build\classes","$build\dex" |Out-Null
 & 'C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe' /nologo /target:winexe /optimize+ "/win32icon:$src\artwork\comfybridge.ico" "/out:$build\ComfyBridge.exe" /reference:System.Numerics.dll /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /reference:System.Web.Extensions.dll "$src\bridge\Tray.cs" "$src\bridge\Panel.cs" "$src\bridge\Pairing.cs"
 if($LASTEXITCODE){throw 'Windows bridge compilation failed'}
-& "$jdk\javac.exe" -encoding UTF-8 -source 8 -target 8 -Xlint:-options -classpath $android -d "$build\classes" "$src\android\java\com\comfybridge\app\MainActivity.java" "$src\android\java\com\comfybridge\app\MediaShelf.java" "$src\android\java\com\comfybridge\app\Pairing.java"
+& "$jdk\javac.exe" -encoding UTF-8 -source 8 -target 8 -Xlint:-options -classpath $android -d "$build\classes" "$src\android\java\com\comfybridge\app\MainActivity.java" "$src\android\java\com\comfybridge\app\MediaShelf.java" "$src\android\java\com\comfybridge\app\JobWatch.java" "$src\android\java\com\comfybridge\app\Pairing.java"
 if($LASTEXITCODE){throw 'Android Java compilation failed'}
 & "$jdk\jar.exe" cf "$build\classes.jar" -C "$build\classes" .
 & "$tools\d8.bat" --lib $android --min-api 26 --output "$build\dex" "$build\classes.jar"

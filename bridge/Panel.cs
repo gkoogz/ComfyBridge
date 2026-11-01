@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Drawing;
+using System.Drawing.Drawing2D;
 using System.IO;
 using System.Linq;
 using System.Net;
@@ -26,7 +27,7 @@ partial class Bridge {
     static void Add(TableLayoutPanel t,Control c,int height){int i=t.RowCount++;t.RowStyles.Add(new RowStyle(SizeType.Absolute,height));t.Controls.Add(c,0,i);}
     void Server(bool on,bool remember){
         powerError=null;
-        if(!on){online=false;Pairing.Close("Server is off.");seen=DateTime.MinValue;
+        if(!on){online=false;Pairing.Close("Server is off.");lock(phones){phones.Clear();watchers.Clear();}
             if(server!=null)server.Stop();if(tlsServer!=null)tlsServer.Stop();
             lock(sockets){foreach(var c in sockets)c.Close();}
         }else if(!online){
@@ -46,11 +47,12 @@ partial class Bridge {
         if(remember){if(on)File.Delete(offFile);else File.WriteAllText(offFile,"off");}
         RefreshState();
     }
-    void RefreshState(){bool live=online&&(DateTime.UtcNow-seen).TotalSeconds<20;
-        tray.Text=!online?"ComfyBridge · server off":live?"ComfyBridge · phone connected":"ComfyBridge · waiting for phone";
+    void RefreshState(){int count=PhoneCount();bool live=online&&count>0;
+        tray.Text=!online?"ComfyBridge · server off":live?"ComfyBridge · "+count+(count==1?" phone connected":" phones connected"):"ComfyBridge · waiting for phone";
         if(badge==null)return;
         badge.Text=online?"●  Server on":"●  Server off";badge.ForeColor=online?Mint:Red;
-        phone.Text=live?"●  Phone connected":"●  Phone disconnected";phone.ForeColor=live?Mint:Red;
+        int bg;lock(phones)bg=watchers.Keys.Count(id=>!phones.ContainsKey(id));
+        phone.Text=live?"●  "+count+(count==1?" phone":" phones")+(bg>0?" · "+bg+" in bg":" connected"):"●  No phones";phone.ForeColor=live?Mint:Red;
         power.Text=online?"Turn server off":"Turn server on";
         string hint;codeLabel.Text=Pairing.Display(out hint);codeLabel.AccessibleName="Pairing code "+codeLabel.Text;codeHint.Text=online?hint:powerError??"Turn the server on to pair.";codeHint.ForeColor=powerError!=null?Red:Muted;newCode.Enabled=online;
     }
@@ -75,34 +77,47 @@ partial class Bridge {
     }}
     void ShowMonitor(){
         if(monitor==null){
-            monitor=new Form{Text="ComfyBridge",Icon=tray.Icon,ClientSize=new Size(574,522),BackColor=Ink,ForeColor=Color.White,StartPosition=FormStartPosition.CenterScreen,FormBorderStyle=FormBorderStyle.FixedSingle,MaximizeBox=false,AutoScaleMode=AutoScaleMode.Dpi};
-            monitor.FormClosing+=(s,e)=>{if(e.CloseReason==CloseReason.UserClosing){e.Cancel=true;monitor.Hide();Pairing.Close("Click New code to pair.");timer.Interval=5000;}};
-            var grid=new TableLayoutPanel{Padding=new Padding(20,12,20,12),Dock=DockStyle.Fill,ColumnCount=1,RowCount=0,AutoScroll=true};
-            grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));monitor.Controls.Add(grid);
-            Add(grid,L("ComfyBridge",23,Color.White,true),48);
-            badge=L("",11,Mint,true);badge.Dock=DockStyle.None;badge.Size=new Size(124,36);phone=L("",11,Red);phone.Dock=DockStyle.None;phone.Size=new Size(185,36);
-            power=B("",(s,e)=>{try{Server(!online,true);}catch(Exception ex){MessageBox.Show(monitor,"Could not change server power: "+ex.Message);}});power.Image=PowerIcon();power.TextImageRelation=TextImageRelation.ImageBeforeText;Add(grid,Row(badge,phone,power),47);
-            Add(grid,L("Pair your phone",15,Color.White,true),34);
-            Add(grid,L("Open Bridge on your phone. Enter these two fields, then tap Pair & connect.",10,Muted),32);
-            Add(grid,L("1   PC address",11,Mint,true),30);
-            addressBox=new ComboBox{DropDownStyle=ComboBoxStyle.DropDownList,Font=new Font("Segoe UI",15),Width=400,AccessibleName="PC address"};
-            Add(grid,Row(addressBox,B("Copy",(s,e)=>{if(addressBox.SelectedItem!=null)Clipboard.SetText(addressBox.SelectedItem.ToString());})),42);
-            var remote=B("Set remote address…",(s,e)=>SetRemote());Add(grid,Row(remote),38);
-            Add(grid,L("2   Pairing code",11,Mint,true),28);
-            codeLabel=L("",24,Color.White,true);codeLabel.Dock=DockStyle.None;codeLabel.Size=new Size(188,48);codeLabel.AccessibleName="Pairing code";newCode=B("New code",(s,e)=>{if(online){Pairing.Issue();RefreshState();}});
-            Add(grid,Row(codeLabel,newCode),54);codeHint=L("",10,Muted);Add(grid,codeHint,27);
-            Add(grid,L("Generation",13,Color.White,true),36);jobText=L("No active generation",11,Muted);Add(grid,jobText,28);
-            bar=new ProgressBar{Dock=DockStyle.Fill,Minimum=0,Maximum=100,Margin=new Padding(3,4,3,3)};Add(grid,bar,22);
+            monitor=new Form{Text="ComfyBridge",Icon=tray.Icon,ClientSize=new Size(438,340),BackColor=Ink,ForeColor=Color.White,ShowInTaskbar=false,TopMost=true,StartPosition=FormStartPosition.Manual,FormBorderStyle=FormBorderStyle.None,AutoScaleMode=AutoScaleMode.Dpi};
+            monitor.SizeChanged+=(s,e)=>RoundPanel();RoundPanel();
+            monitor.FormClosing+=(s,e)=>{Server(false,false);tray.Visible=false;Application.ExitThread();};
+            var grid=new TableLayoutPanel{Padding=new Padding(14,8,14,8),Dock=DockStyle.Fill,ColumnCount=1,AutoScroll=true};grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));monitor.Controls.Add(grid);
+            var head=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=3};head.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));head.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,43));head.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,43));
+            head.Controls.Add(L("ComfyBridge",15,Color.White,true),0,0);
+            var hide=B("–",(s,e)=>HidePanel());hide.MinimumSize=Size.Empty;hide.AccessibleName="Hide to tray";head.Controls.Add(hide,1,0);
+            var quit=B("×",(s,e)=>monitor.Close());quit.MinimumSize=Size.Empty;quit.AccessibleName="Quit ComfyBridge";head.Controls.Add(quit,2,0);Add(grid,head,36);
+            badge=L("",10,Mint,true);badge.Dock=DockStyle.None;badge.Size=new Size(88,30);phone=L("",10,Red);phone.Dock=DockStyle.None;phone.Size=new Size(155,30);
+            power=B("",(s,e)=>{try{Server(!online,true);}catch(Exception ex){MessageBox.Show(monitor,ex.Message);}});power.Image=PowerIcon();power.TextImageRelation=TextImageRelation.ImageBeforeText;Add(grid,Row(badge,phone,power),38);
+            Add(grid,L("1   PC address",10,Mint,true),23);
+            addressBox=new ComboBox{DropDownStyle=ComboBoxStyle.DropDownList,Font=new Font("Segoe UI",12),Width=270,AccessibleName="PC address"};
+            var copy=B("Copy",(s,e)=>{if(addressBox.SelectedItem!=null)Clipboard.SetText(addressBox.SelectedItem.ToString());});copy.MinimumSize=Size.Empty;copy.AutoSize=false;copy.Size=new Size(55,29);
+            var edit=B("Edit…",(s,e)=>SetRemote());edit.MinimumSize=Size.Empty;edit.AutoSize=false;edit.Size=new Size(55,29);Add(grid,Row(addressBox,copy,edit),36);
+            Add(grid,L("2   Pairing code",10,Mint,true),23);
+            codeLabel=L("",20,Color.White,true);codeLabel.Dock=DockStyle.None;codeLabel.Size=new Size(158,35);
+            newCode=B("New code",(s,e)=>{if(online){Pairing.Issue();RefreshState();}});Add(grid,Row(codeLabel,newCode),39);
+            codeHint=L("",9,Muted);Add(grid,codeHint,24);
+            Add(grid,L("Generation",11,Color.White,true),23);jobText=L("No active generation",10,Muted);Add(grid,jobText,42);
+            bar=new ProgressBar{Dock=DockStyle.Fill,Minimum=0,Maximum=100};Add(grid,bar,16);
         }
         if(!monitor.Visible){AddressesList();if(online)Pairing.Issue();monitor.Show();}
+        DockPanel();
         monitor.WindowState=FormWindowState.Normal;monitor.Activate();timer.Interval=1400;RefreshState();RefreshJobs();
     }
+    void HidePanel(){monitor.Hide();Pairing.Close("Click New code to pair.");timer.Interval=5000;}
+    void RoundPanel(){int w=monitor.Width,h=monitor.Height,r=18;using(var p=new GraphicsPath()){
+        p.AddArc(0,0,r,r,180,90);p.AddArc(w-r,0,r,r,270,90);p.AddArc(w-r,h-r,r,r,0,90);p.AddArc(0,h-r,r,r,90,90);p.CloseFigure();
+        var old=monitor.Region;monitor.Region=new Region(p);if(old!=null)old.Dispose();
+    }}
+    void DockPanel(){var s=Screen.FromPoint(Cursor.Position);var a=s.WorkingArea;var bounds=s.Bounds;
+        monitor.Location=new Point(a.Left>bounds.Left?a.Left+6:Math.Max(a.Left,a.Right-monitor.Width-6),
+            a.Top>bounds.Top?a.Top+6:Math.Max(a.Top,a.Bottom-monitor.Height-6));}
     internal static string JobSummary(Dictionary<string,object> status,out int percent){
         percent=0;var jobs=((IEnumerable)status["jobs"]).Cast<Dictionary<string,object>>().ToList();
         var j=jobs.FirstOrDefault(z=>Convert.ToString(z["id"])==Convert.ToString(status["active"]))??jobs.FirstOrDefault(z=>Convert.ToString(z["status"])=="running")??jobs.Where(z=>new[]{"pending","submitting","cancelling"}.Contains(Convert.ToString(z["status"]))).OrderBy(z=>Convert.ToDouble(z["created"])).ThenBy(z=>Convert.ToInt32(z["ordinal"])).FirstOrDefault();
         if(j==null)return "No active generation";
-        percent=Math.Max(0,Math.Min(100,(int)Math.Round(Convert.ToDouble(j["progress"])*100)));
-        return String.Format("{0}  ·  {1}/{2}  ·  {3}  ·  {4}%   {5}",j["kind"],j["ordinal"],j["total"],j["status"],percent,j["current_node"]);
+        percent=Math.Max(0,Math.Min(99,(int)Math.Round(Convert.ToDouble(j["progress"])*100)));
+        string stage=Convert.ToString(j["current_node"]);
+        return String.Format("{0}  ·  {1}/{2}  ·  {3}%   {4}\n{5}{6}",j["kind"],j["ordinal"],j["total"],percent,j["status"],
+            stage==""?"Preparing workflow":stage,jobs.Count>1?"  ·  "+(jobs.Count-1)+" waiting":"");
     }
     async void RefreshJobs(){
         var target=monitor;if(reading||target==null||target.IsDisposed||!target.Visible)return;reading=true;

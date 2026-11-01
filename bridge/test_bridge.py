@@ -95,6 +95,56 @@ class BridgeTests(unittest.IsolatedAsyncioTestCase):
         r,_ = await self.request('monitor', headers={})
         self.assertEqual(r.status, 401)
 
+    async def test_two_phone_queue_and_private_stops(self):
+        one,two=str(uuid.uuid4()),str(uuid.uuid4())
+        def headers(owner):return {'Authorization':'Bearer integration-test-key','X-Bridge-Device':owner}
+        self.complete=False
+        async def submit(owner):
+            return await self.request('generate',dict(kind='image',count=1,settings=self.settings,requestId=str(uuid.uuid4())),headers(owner))
+        _,a=await submit(one);self.runner=asyncio.create_task(w.run_jobs())
+        for _ in range(100):
+            if self.accepted:break
+            await asyncio.sleep(.02)
+        _,b=await submit(two);_,c=await submit(one)
+        _,jobs=await self.request('status');self.assertEqual(len(jobs['jobs']),3)
+        denied=await self.client.post('/api/stop',json={'batch':a['batch']},headers=headers(two))
+        self.assertEqual(denied.status,403);await denied.read()
+        await self.request('stop',{'batch':b['batch']},headers(two))
+        _,batch=await self.request('batch/'+a['batch'],headers=headers(one))
+        self.assertEqual(batch['jobs'][0]['status'],'running')
+        self.assertEqual(w.rows('SELECT status FROM jobs WHERE batch=?',(c['batch'],))[0]['status'],'pending')
+
+    async def test_profiles_remain_separate_and_restorable(self):
+        owners=[str(uuid.uuid4()) for _ in range(3)]
+        def headers(i):return {'Authorization':'Bearer integration-test-key','X-Bridge-Device':owners[i]}
+        original='data:image/png;base64,aGVsbG8=';digest=hashlib.sha256(original.encode()).hexdigest()
+        await self.request('profile-blob/'+digest,{'value':original},headers(0))
+        for i in range(2):
+            profile=dict(settings={'image':{'steps':i+1}},inputs={'image':{'data':{'bridgeInput':digest}}},presets={},prompts=[])
+            await self.request('profile',{'state':profile,'name':'Moto'},headers(i))
+        for i in range(2):
+            _,saved=await self.request('profile/'+owners[i],headers=headers(2))
+            self.assertEqual(saved['settings']['image']['steps'],i+1)
+            _,blob=await self.request('profile-blob/'+saved['inputs']['image']['data']['bridgeInput'],headers=headers(2))
+            self.assertEqual(blob['value'],original)
+
+    def test_estimated_progress_for_both_graphs(self):
+        for kind in ('image','video'):
+            s=w.WF.defaults()[kind];s['upload']='ComfyBridge/mock.png' if kind=='video' else None
+            graph=w.WF.build(kind,s,'test');clock=[0.]
+            p=w.Progress(kind,graph,s,lambda:clock[0]);sampler='13' if kind=='video' else '3'
+            cold=w.Progress(kind,{sampler:graph[sampler]},s,lambda:clock[0])
+            cold.enter(sampler);clock[0]+=3600
+            self.assertLess(cold.sample()[0],1/s['steps'])
+            self.assertIn('preparing',cold.sample()[1])
+            p.event('execution_cached',{'nodes':['4','5']})
+            p.event('executing',{'node':sampler});p.step(sampler,{'value':1,'max':4});start=p.sample()[0]
+            clock[0]+=10;half=p.sample()[0];self.assertGreater(half,start)
+            p.step(sampler,{'value':4,'max':4});after=p.sample()[0]
+            p.event('executing',{'node':'14' if kind=='video' else '8'});decode,label=p.sample()
+            self.assertGreaterEqual(decode,after);self.assertLess(decode,.99);self.assertIn('Decode',label)
+            p.event('execution_success',{});self.assertEqual(p.sample(),(.99,'Indexing output'))
+
     async def test_media_manifest_tracks_replacement_deletion_and_archive(self):
         await self.submit();self.runner=asyncio.create_task(w.run_jobs());await self.wait_done(1)
         r,data=await self.request('media-index');self.assertEqual(r.status,200)
@@ -133,7 +183,7 @@ class BridgeTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(any(path=='/interrupt' for path,data in self.calls))
         deleted=[data['delete'] for path,data in self.calls if path=='/queue' and data]
         self.assertEqual(deleted,[[d['ids'][0]]])
-        self.assertEqual(len(w.rows("SELECT * FROM jobs WHERE status='cancelled'")),3)
+        self.assertEqual(len(w.rows("SELECT * FROM jobs WHERE status='cancelled'")),4)
 
     async def test_archive_unarchive_and_range_download(self):
         await self.submit();self.runner=asyncio.create_task(w.run_jobs());await self.wait_done(1)

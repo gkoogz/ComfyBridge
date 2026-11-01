@@ -2,6 +2,13 @@
 
 Validation performed on November 1, 2026, on Windows with the existing ComfyUI-ZLUDA installation and a connected Moto g stylus 2025.
 
+## Beta 5 queue, backups and alerts
+
+- The attached Moto submitted two distinct text-to-image jobs while the first was active. Both completed and Android posted separate finished notifications. A short MiniMax image-to-video job also completed: the monitor reported conditioning, sampler steps and frame decoding. The signed APK resumed its in-flight progress notification after updating, then posted the video's finished notification while the app was in the background. All three verification outputs were archived.
+- Exercised the fresh-phone restore path with a blank in-memory editing state on the attached phone. Restored settings, inputs, prompt library and presets matched the PC snapshot without uninstalling the app. Isolated tests additionally covered backing up and restoring an image-data reference.
+- Fourteen worker tests passed. Two independent client IDs queued jobs. Cross-device cancellation was refused and did not affect the other client's work. Two authenticated clients also exercised actual listener heartbeats and independent disconnect. Only one physical Android device was attached.
+- The Windows panel harness verified borderless rounded placement inside the monitor's working area, hide-to-tray, X-to-quit, stage text and batch position. Workflow tests verify interpolation for both saved workflows and that elapsed time alone cannot complete a job.
+
 ## Beta 4 local media
 
 - Transferred a real generated H.264 MP4 from the existing PC library over the paired Windscribe address. The Android private file matched the PC SHA-256. After disconnecting the bridge, tapping the video in Library started native Android playback; the media service reported decoded frames.
@@ -31,7 +38,7 @@ Validation performed on November 1, 2026, on Windows with the existing ComfyUI-Z
 
 ## Still needs real generation acceptance
 
-No full diffusion image or MiniMax video was rendered through the phone during staging because an existing desktop generation was running. Before considering this stable, complete a neutral prompt render through each of t2i, i2i, masked i2i, and i2v. Observe live sampler previews and progress, disconnect/reconnect during a render, and verify the completed output in the phone library. Play a completed video, seek, save both media types through Android's document picker, and archive/unarchive them.
+Text-to-image and MiniMax image-to-video ran on the physical phone/PC setup in beta 5. Full i2i and masked i2i renders, end-to-end preview quality, a second physical phone, and repeated seek/export checks across different media sizes remain useful acceptance tests.
 
 Also exercise cold PC startup, an owned ComfyUI startup/shutdown cycle, overnight idle behavior, and Windscribe reconnection to the configured static IP. No fixed GPU or RAM usage cap is enforced. A preexisting ComfyUI process retains its own memory policy.
 

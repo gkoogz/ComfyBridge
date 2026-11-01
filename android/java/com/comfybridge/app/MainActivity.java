@@ -26,6 +26,7 @@ import java.util.concurrent.*;
 
 public class MainActivity extends Activity {
  private WebView web;
+ private final java.util.concurrent.atomic.AtomicReference<String> noticeRoute=new java.util.concurrent.atomic.AtomicReference<>("");
  private SharedPreferences prefs;
  private final ExecutorService io=Executors.newFixedThreadPool(4);
  private final ExecutorService heartbeat=Executors.newSingleThreadExecutor();
@@ -41,7 +42,7 @@ public class MainActivity extends Activity {
  }
  private static final String ORIGIN="https://appassets.androidplatform.net";
  @Override public void onCreate(Bundle b){
-  super.onCreate(b);prefs=getSharedPreferences("connection",MODE_PRIVATE);
+  super.onCreate(b);prefs=getSharedPreferences("connection",MODE_PRIVATE);readRoute(getIntent());
   getWindow().setStatusBarColor(Color.rgb(11,16,20));getWindow().setNavigationBarColor(Color.rgb(11,16,20));
   web=new WebView(this);web.setBackgroundColor(Color.rgb(11,16,20));FrameLayout root=new FrameLayout(this);root.addView(web,new FrameLayout.LayoutParams(-1,-1));setContentView(root);
   // Respect system bars, including Android 15 edge-to-edge enforcement.
@@ -71,7 +72,7 @@ public class MainActivity extends Activity {
       return new WebResourceResponse(mime,null,code,c.getResponseMessage()==null?"Response":c.getResponseMessage(),headers,new FilterInputStream(input){@Override public void close()throws IOException{super.close();c.disconnect();}});
      }
      if(path.equals("/"))path="/index.html";
-     if(!Arrays.asList("/index.html","/style.css","/app.js").contains(path))return response(404,"Not Found","text/plain",new byte[0]);
+     if(!Arrays.asList("/index.html","/style.css","/app.js","/profile.js").contains(path))return response(404,"Not Found","text/plain",new byte[0]);
      String mime=path.endsWith("css")?"text/css":path.endsWith("js")?"application/javascript":"text/html";
      return new WebResourceResponse(mime,"UTF-8",getAssets().open(path.substring(1)));
     }catch(Exception e){return response(503,"Unavailable","text/plain",new byte[0]);}
@@ -88,9 +89,14 @@ public class MainActivity extends Activity {
  }
  private WebResourceResponse response(int code,String reason,String mime,byte[] body){return new WebResourceResponse(mime,"UTF-8",code,reason,Collections.emptyMap(),new ByteArrayInputStream(body));}
  private HttpURLConnection connection(String path,String method)throws Exception{
+  return connection(prefs,path,method);
+ }
+ static synchronized String device(SharedPreferences p){String id=p.getString("device","");if(id.isEmpty()){id=UUID.randomUUID().toString();p.edit().putString("device",id).commit();}return id;}
+ static HttpURLConnection connection(SharedPreferences prefs,String path,String method)throws Exception{
   String host=prefs.getString("host","");if(host.isEmpty())throw new IOException("Enter your PC address first.");
   HttpURLConnection c=(HttpURLConnection)new URL(host+"/"+path).openConnection();c.setConnectTimeout(12000);c.setReadTimeout(Arrays.asList("api/ping","api/status","api/metrics","api/disconnect").contains(path)?12000:240000);c.setInstanceFollowRedirects(false);c.setRequestMethod(method);c.setRequestProperty("Authorization","Bearer "+prefs.getString("key",""));
   final String pin=prefs.getString("fingerprint","");
+  c.setRequestProperty("X-Bridge-Device",device(prefs));
   if(c instanceof HttpsURLConnection && !pin.isEmpty()){
    SSLContext context=SSLContext.getInstance("TLS");
    context.init(null,new TrustManager[]{new X509TrustManager(){
@@ -111,9 +117,12 @@ public class MainActivity extends Activity {
   return c;
  }
  public class NativeApi {
+  @JavascriptInterface public String notificationRoute(){return noticeRoute.getAndSet("");}
   @JavascriptInterface public String configuration(){
-   JSONObject d=new JSONObject();try{String h=prefs.getString("host","");d.put("host",h);d.put("paired",h.startsWith("https://")&&!prefs.getString("key","").isEmpty());}catch(Exception ignored){}return d.toString();
+   JSONObject d=new JSONObject();try{String h=prefs.getString("host","");d.put("host",h);d.put("paired",h.startsWith("https://")&&!prefs.getString("key","").isEmpty());d.put("device",device(prefs));d.put("name",android.os.Build.MODEL);}catch(Exception ignored){}return d.toString();
   }
+  @JavascriptInterface public void enableAlerts(){runOnUiThread(()->alerts(true));}
+  @JavascriptInterface public void watchBatch(String batch){try{UUID.fromString(batch);JobWatch.track(MainActivity.this,batch);runOnUiThread(()->alerts(false));}catch(Exception ignored){}}
   @JavascriptInterface public void pair(int id,String address,String code){io.execute(()->{
    try{String host=Pairing.address(address);String[] secrets=new Pairing().run(host,code);
     if(!prefs.edit().putString("host",host).putString("key",secrets[0]).putString("fingerprint",secrets[1]).commit())throw new IOException("Could not save the pairing on this phone.");
@@ -164,6 +173,8 @@ public class MainActivity extends Activity {
    }catch(Exception e){callback(request,false,friendly(e));}});
   }
  }
+ private void readRoute(Intent i){String v=i.getStringExtra("view");if("queue".equals(v)||"library".equals(v))noticeRoute.set(v);i.removeExtra("view");}
+ @Override protected void onNewIntent(Intent i){super.onNewIntent(i);setIntent(i);readRoute(i);if(web!=null)web.evaluateJavascript("window.openJobAlert?.()",null);}
  private void playVideo(File file){
   if(isFinishing()||isDestroyed())return;
   Dialog dialog=new Dialog(this,android.R.style.Theme_Material_NoActionBar_Fullscreen);
@@ -174,8 +185,18 @@ public class MainActivity extends Activity {
   video.setOnErrorListener((mp,what,extra)->{dialog.dismiss();new android.app.AlertDialog.Builder(this).setMessage("Android could not decode this video. Your complete phone copy is still available to save to the camera roll.").setPositiveButton("OK",null).show();return true;});
   dialog.setOnDismissListener(v->{controls.hide();video.stopPlayback();});dialog.setContentView(frame);dialog.show();video.setVideoPath(file.getAbsolutePath());
  }
- @Override public void onRequestPermissionsResult(int code,String[] names,int[] grants){super.onRequestPermissionsResult(code,names,grants);if(code==104&&exportRequest!=-1){int id=exportRequest;exportRequest=-1;if(grants.length>0&&grants[0]==android.content.pm.PackageManager.PERMISSION_GRANTED)new NativeApi().localMedia(id,"export",exportArgs);else new NativeApi().callback(id,false,"Camera roll access denied. Your private copy was kept.");}}
- private static String read(InputStream input)throws IOException{if(input==null)return "";try(InputStream in=input;ByteArrayOutputStream out=new ByteArrayOutputStream()){byte[] b=new byte[8192];int n;while((n=in.read(b))!=-1)out.write(b,0,n);return out.toString("UTF-8");}}
+ @Override public void onRequestPermissionsResult(int code,String[] names,int[] grants){super.onRequestPermissionsResult(code,names,grants);if(code==105){JobWatch.resume(this);return;}if(code==104&&exportRequest!=-1){int id=exportRequest;exportRequest=-1;if(grants.length>0&&grants[0]==android.content.pm.PackageManager.PERMISSION_GRANTED)new NativeApi().localMedia(id,"export",exportArgs);else new NativeApi().callback(id,false,"Camera roll access denied. Your private copy was kept.");}}
+ static String read(InputStream input)throws IOException{if(input==null)return "";try(InputStream in=input;ByteArrayOutputStream out=new ByteArrayOutputStream()){byte[] b=new byte[8192];int n;while((n=in.read(b))!=-1)out.write(b,0,n);return out.toString("UTF-8");}}
+ private void alerts(boolean explicit){
+  JobWatch.channels(this);
+  if(android.os.Build.VERSION.SDK_INT>=33&&checkSelfPermission("android.permission.POST_NOTIFICATIONS")!=android.content.pm.PackageManager.PERMISSION_GRANTED){
+   if(explicit&&prefs.getBoolean("askedAlerts",false)&&!shouldShowRequestPermissionRationale("android.permission.POST_NOTIFICATIONS")){startActivity(new Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(android.provider.Settings.EXTRA_APP_PACKAGE,getPackageName()));return;}
+   if(explicit||!prefs.getBoolean("askedAlerts",false)){prefs.edit().putBoolean("askedAlerts",true).apply();requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"},105);}return;
+  }
+  JobWatch.resume(this);
+  if(explicit){Intent i=new Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(android.provider.Settings.EXTRA_APP_PACKAGE,getPackageName());startActivity(i);}
+ }
+ @Override protected void onResume(){super.onResume();if(prefs!=null)JobWatch.resume(this);}
  @Override protected void onActivityResult(int request,int result,Intent data){super.onActivityResult(request,result,data);
   if(request==100 && chooser!=null){chooser.onReceiveValue(result==RESULT_OK&&data!=null?new Uri[]{data.getData()}:null);chooser=null;}
  }

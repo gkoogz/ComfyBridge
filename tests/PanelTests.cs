@@ -49,10 +49,17 @@ partial class Bridge {
             try{app.power.PerformClick();Check(!online && File.Exists(app.offFile) && app.codeHint.Text.Contains(tlsPort.ToString()),"occupied port explained");}
             finally{conflict.Stop();}
             app.power.PerformClick();Check(online,"recovers after port conflict clears");
-            app.monitor.Close();Check(online&&!app.monitor.Visible,"X hides panel and keeps server on");
+            app.HidePanel();Check(online&&!app.monitor.Visible,"minimize hides panel and keeps server on");
             app.ShowMonitor();Check(app.monitor.Visible,"reopen panel");
-            seen=DateTime.UtcNow;app.RefreshState();Check(app.phone.Text.Contains("Phone connected"),"connected indicator");
-            int pct;var j=new Dictionary<string,object>{{"id","test"},{"kind","image"},{"ordinal",1},{"total",4},{"progress",0.47},{"status","running"},{"current_node","KSampler"}};
+            lock(phones)phones.Clear();
+            using(var http=new System.Net.WebClient()){http.Proxy=null;http.Headers["Authorization"]="Bearer "+token;
+                string baseUrl="http://127.0.0.1:"+loopbackPort+"/api/";
+                http.Headers["X-Bridge-Device"]=Guid.NewGuid().ToString();http.DownloadString(baseUrl+"ping");
+                http.Headers["X-Bridge-Device"]=Guid.NewGuid().ToString();http.DownloadString(baseUrl+"ping");
+                app.RefreshState();Check(app.phone.Text.Contains("2 phones"),"two connected phones");
+                http.DownloadString(baseUrl+"disconnect");app.RefreshState();Check(app.phone.Text.Contains("1 phone"),"disconnect only one phone");}
+            Check(app.monitor.FormBorderStyle==FormBorderStyle.None&&app.monitor.Region!=null&&Screen.FromControl(app.monitor).WorkingArea.Contains(app.monitor.Bounds),"rounded panel inside working area");
+            int pct;var j=new Dictionary<string,object>{{"id","test"},{"kind","image"},{"ordinal",1},{"total",4},{"progress",0.47},{"status","running"},{"current_node","Sample image · 12/32"}};
             var st=new Dictionary<string,object>{{"active","test"},{"jobs",new object[]{j}}};
             app.jobText.Text=JobSummary(st,out pct);app.bar.Value=pct;
             Check(app.jobText.Text.Contains("1/4")&&pct==47,"batch progress");
@@ -64,7 +71,8 @@ partial class Bridge {
             for(int i=0;i<5;i++){try{Pairing.Exchange("begin",bad,"test","test");throw new Exception("Accepted invalid public value.");}catch(ArgumentException){}}
             try{Pairing.Exchange("begin",bad,"test","test");throw new Exception("Attempt limit missing.");}catch(InvalidOperationException){}
             Check(Pairing.Display(out hint)=="—","attempt limit invalidates code");
-            Console.WriteLine("Passed: 20 fixed-port restarts with live clients and child process, occupied port recovery, power switch, panel, X to tray, connected status, 1/4 progress and pairing limits.");
+            app.monitor.Close();Check(!online&&!app.tray.Visible,"X quits and releases listeners");
+            Console.WriteLine("Passed: 20 fixed-port restarts, occupied port recovery, docked and rounded panel, hide and quit, two independent phones, batch progress and pairing limits.");
             return 0;
         }finally{app.timer.Stop();app.Server(false,false);app.tray.Dispose();app.monitor.Dispose();app.Dispose();Application.DoEvents();}
     }

@@ -1,12 +1,12 @@
 # ComfyBridge
 
-[Download the Android APK](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.4/ComfyBridge-0.1.0-beta.4.apk) | [Windows package and beta release notes](https://github.com/gkoogz/ComfyBridge/releases/tag/v0.1.0-beta.4)
+[Download the Android APK](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.5/ComfyBridge-0.1.0-beta.5.apk) | [Windows package and beta release notes](https://github.com/gkoogz/ComfyBridge/releases/tag/v0.1.0-beta.5)
 
 <img src="artwork/comfybridge.png" width="128" alt="ComfyBridge white cube and play icon on black">
 
 An Android remote for an existing Windows ComfyUI installation. The phone edits generation settings, uploads images and masks, and views results; the PC does the GPU work. A small Windows tray application wakes its Python worker on demand.
 
-**0.1.0-beta.4 is a personal-workflow beta**, adapted specifically to `Image gen.json` and `Video gen.json` in `E:\ComfyUI-Zluda\user\default\workflows`. It is not a general ComfyUI workflow importer. Models, LoRAs, workflow files, prompts, generated media, pairing credentials, and signing keys are not included in this repository or release.
+**0.1.0-beta.5 is a personal-workflow beta**, adapted specifically to `Image gen.json` and `Video gen.json` in `E:\ComfyUI-Zluda\user\default\workflows`. It is not a general ComfyUI workflow importer. Models, LoRAs, workflow files, prompts, generated media, pairing credentials, and signing keys are not included in this repository or release.
 
 The phone shows **PC connected** as soon as the bridge answers. Loading models and unavailable telemetry have their own messages. If the server or VPN drops, leave the phone app open: it retries automatically using the saved pairing. **Disconnect** or **Cancel reconnect** stops those retries.
 
@@ -19,6 +19,16 @@ The phone shows **PC connected** as soon as the bridge answers. Loading models a
 - A phone-only generation library with image/video viewing, verified offline playback and camera-roll export, archive, and unarchive.
 - Silent Windows sign-in startup, tray monitoring/pairing, authenticated HTTPS with certificate pinning, durable job queue, and worker sleep after inactivity.
 - Matching Android launcher, Windows executable/taskbar, and notification-area icons.
+
+## Queue, progress, and two phones
+
+Both paired phones can watch the PC queue. **Generate / Add to queue** captures the current settings and adds a new batch even while another is rendering. **Stop mine** targets your first active or queued batch on that screen. Use **Cancel batch** on a specific queue entry instead to keep the others. The PC checks the submitting installation before accepting cancellation. Jobs continue after either phone disconnects.
+
+The percentage is an estimate for the current image or video, alongside its batch position. It follows the submitted nodes: loading and LoRAs, prompt/source/mask encoding, sampling, VAE decoding, then saving. Video also includes frame assembly and MP4 encoding. Cached nodes have little weight. Between reported steps the estimate advances conservatively, and the PC learns relative stage costs from successful runs. Only indexing a finished result sets a job to 100%.
+
+**Bridge → PC settings backup** saves this phone’s settings, prompt library, presets, and starting images/masks to the PC. Check for **Saved on PC** before uninstalling. A fresh installation pairs again and restores the most recently updated profile; **Restore from a phone…** lets you pick another by model, ID and date. Each installation writes to its own profile, so two phones can edit independently. Private offline media is repopulated from the PC; a camera-roll export is separate.
+
+**Generation notifications** opens Android notification settings or requests permission. With notifications enabled, your phone watches batches it submits, including when you leave the app. The progress notification displays batch progress and the current item/stage. Completion, cancellation and failure are reported per batch. If the PC becomes unreachable, updates wait for connectivity; Android can defer background updates under its power and foreground-service limits. The other phone's jobs remain visible in the shared queue without sending duplicate alerts to both devices.
 
 ## Phone media and offline playback
 
@@ -38,7 +48,7 @@ The phone checks the PC on connection, about every five minutes while open, and 
 
 ![Example PC pairing panel and batch progress](docs/pc-panel.png)
 
-A single click on the tray icon opens the panel. **X** hides it; **Turn server off** closes incoming connections and preserves the off state across restart. Accepted jobs can finish on the PC. The panel shows phone presence and generation progress, including the current batch item. **Quit bridge** is in the right-click menu.
+A single click opens the compact, rounded panel at the taskbar. **–** hides it; **×** quits the tray and releases its ports. Queued jobs continue in the worker. **Turn server off** closes incoming connections and preserves the off state across restart. Accepted jobs can finish on the PC. The panel shows the connected phone count and generation progress, including the current batch item. **Quit bridge** is in the right-click menu.
 
 Use the same Windows account for installation and daily use. Installing over an existing version preserves its configuration, credentials, library, and Android state. Close active phone requests before upgrading. A worker already running finishes with its loaded version; it adopts updated Python code after sleeping and waking again. Keep the Android signing key backed up privately if building your own upgrades.
 
@@ -102,6 +112,6 @@ Install Java JDK 17 on PATH, Android SDK platform 35 and build-tools 35.0.1 unde
 E:\ComfyUI-Zluda\venv\Scripts\python.exe .\bridge\test_bridge.py
 ```
 
-The build creates a local APK signing key on first use. Release builds disable Android debugging. Windows binaries are not Authenticode signed. The installer must be packaged alongside `worker.py`, `media_index.py`, `workflows.py`, `config.json`, `Install.ps1`, `AllowNetwork.ps1`, and `Uninstall.ps1`. Icon source and its resizing utility are in `artwork/`.
+The build creates a local APK signing key on first use. Release builds disable Android debugging. Windows binaries are not Authenticode signed. The installer must be packaged alongside `worker.py`, `progress.py`, `media_index.py`, `workflows.py`, `config.json`, `Install.ps1`, `AllowNetwork.ps1`, and `Uninstall.ps1`. Icon source and its resizing utility are in `artwork/`.
 
 See [beta verification and remaining device tests](docs/BETA-TESTING.md). APK signing and automated tests do not establish that every GPU workflow has rendered successfully on a device.

@@ -4,7 +4,7 @@ New-Item -ItemType Directory -Force $target | Out-Null
 $exe = Join-Path $target 'ComfyBridge.exe'
 # Only replace this installation; the Python worker and queued Comfy jobs keep running.
 Get-Process ComfyBridge -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $exe } | ForEach-Object { Stop-Process -Id $_.Id; $_.WaitForExit() }
-Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'ComfyBridge.exe'),(Join-Path $PSScriptRoot 'worker.py'),(Join-Path $PSScriptRoot 'workflows.py'),(Join-Path $PSScriptRoot 'media_index.py') -Destination $target -Force
+Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'ComfyBridge.exe'),(Join-Path $PSScriptRoot 'worker.py'),(Join-Path $PSScriptRoot 'workflows.py'),(Join-Path $PSScriptRoot 'media_index.py'),(Join-Path $PSScriptRoot 'progress.py') -Destination $target -Force
 if (-not (Test-Path (Join-Path $target 'config.json'))) { Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'config.json') -Destination $target }
 $admin=([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 if($admin){ & (Join-Path $PSScriptRoot 'AllowNetwork.ps1') }

@@ -32,16 +32,21 @@ async function fillShelf(){
  }}finally{filling=false;if(firstError&&epoch===session){shelfError='Some phone copies are pending: '+firstError;nextSync=Math.min(nextSync,Date.now()+30000);showShelf();}}
 }
 function toast(text){$('#toast').textContent=text;$('#toast').classList.add('show');clearTimeout(toast.timer);toast.timer=setTimeout(()=>$('#toast').classList.remove('show'),3800);}
-function persist(){clearTimeout(saveTimer);saveTimer=setTimeout(()=>{if(db){let t=db.transaction('data','readwrite');t.objectStore('data').put(state,'state');t.onerror=()=>toast('Phone storage is full; settings could not be saved.');}},120);}
+function persist(){scheduleBackup();clearTimeout(saveTimer);saveTimer=setTimeout(()=>{if(db){let t=db.transaction('data','readwrite');t.objectStore('data').put(state,'state');t.onerror=()=>toast('Phone storage is full; settings could not be saved.');}},120);}
 async function init(){
  db=await new Promise((resolve,reject)=>{let r=indexedDB.open('comfybridge',1);r.onupgradeneeded=()=>r.result.createObjectStore('data');r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);});
- const saved=await new Promise(resolve=>{let r=db.transaction('data').objectStore('data').get('state');r.onsuccess=()=>resolve(r.result);r.onerror=()=>resolve(null);});if(saved)state=saved;
+ const saved=await new Promise(resolve=>{let r=db.transaction('data').objectStore('data').get('state');r.onsuccess=()=>resolve(r.result);r.onerror=()=>resolve(null);});freshPhone=!saved;if(saved)state=saved;
  $('#hamburger').onclick=()=>drawer(true);$('#shade').onclick=()=>drawer(false);$$('[data-nav]').forEach(b=>b.onclick=()=>navigate(b.dataset.nav));
  $('#presetButton').onclick=()=>{let m=$('#presetMenu');if(m.hidden){renderPresets();m.hidden=false;}else m.hidden=true;};
  $('#modalClose').onclick=closeModal;$('#modal').addEventListener('cancel',()=>{if(maskSession)maskSession=null;});
  document.addEventListener('click',e=>{if(!e.target.closest('#presetButton,#presetMenu'))$('#presetMenu').hidden=true;});
  if(window.Native&&JSON.parse(Native.configuration()).paired){try{setShelf(await local('list'));}catch(e){shelfError=e.message;}}
- render();setInterval(heartbeat,2500);document.addEventListener('visibilitychange',()=>{if(!document.hidden){nextProbe=0;nextSync=0;heartbeat();}});
+ render();setInterval(heartbeat,2500);document.addEventListener('visibilitychange',()=>{if(!document.hidden){nextProbe=0;nextSync=0;heartbeat();}else if(profileDirty)flushProfile();});
+ window.openJobAlert=async()=>{const route=window.Native?.notificationRoute();if(!route)return;
+  if(!connected&&info().paired&&!connecting&&!wanted){navigate('bridge');await $('#connect').onclick();}
+  if(route==='library'){navigate('library');return;}
+  if(connected){try{const status=await api('status'),j=status.jobs.find(x=>x.owner===info().device&&['running','pending','submitting','cancelling'].includes(x.status));navigate(j?.kind||'library');}catch(e){toast(e.message);}}
+ };window.openJobAlert();
 }
 function drawer(open){$('#drawer').classList.toggle('open',open);$('#shade').hidden=!open;}
 function navigate(to){page=to;archived=false;presetName='';drawer(false);render();window.scrollTo(0,0);if(connected)poll();}
@@ -56,7 +61,7 @@ let editPair=false,pairAddress=null,bridgeError="";
 let wanted=false,epoch=0,probing=false,nextProbe=0,misses=0,catalogLoading=false,serviceNote='',pollNote='';
 function notice(){const el=$('#linkNotice'),n=library.filter(j=>['missing','changed'].includes(j.warning)).length;const review=n?n+' PC file(s) changed or disappeared. Open Library to review your protected phone copies.':'';el.textContent=[wanted&&!connected?'Reconnecting to your PC. '+bridgeError+' Accepted jobs continue on the PC.':connected?[serviceNote,pollNote].filter(Boolean).join(' '):'',review].filter(Boolean).join(' ');el.hidden=!el.textContent;}
 function clearSession(){
- ++epoch;wanted=false;misses=0;nextProbe=0;catalogLoading=false;serviceNote=pollNote=bridgeError='';connection(false);notice();
+ ++epoch;profileReady=false;clearTimeout(profileTimer);wanted=false;misses=0;nextProbe=0;catalogLoading=false;serviceNote=pollNote=bridgeError='';connection(false);notice();
 }
 async function loadCatalog(){
  if(catalogLoading||catalog||!connected)return;
@@ -68,7 +73,9 @@ async function loadCatalog(){
  finally{if(id===epoch){catalogLoading=false;if(!catalog&&page==='bridge')renderBridge();notice();}}
 }
 function reached(){const cameBack=!connected;misses=0;nextProbe=0;bridgeError='';connection(true);
- if(cameBack){if(page==='bridge')renderBridge();if(!catalog)loadCatalog();}syncShelf(cameBack);notice();poll();
+ if(cameBack&&page==='bridge')renderBridge();
+ if(cameBack||!profileReady&&!profileLoad&&Date.now()>=retryProfiles)startProfiles(epoch).finally(()=>{if(connected&&!catalog)loadCatalog();});
+ syncShelf(cameBack);notice();poll();
 }
 function unreachable(e){
  bridgeError=e.message;
@@ -107,14 +114,14 @@ function renderBridge(){
    if(id!==epoch)return;wanted=true;await api('ping');if(id===epoch)reached();
   }catch(e){if(id!==epoch)return;if(wanted)unreachable(e);else{bridgeError='Pairing: '+e.message;if(page==='bridge')renderBridge();}}finally{connecting=false;}
  };
- $$('[data-open]').forEach(b=>b.onclick=()=>navigate(b.dataset.open));
+ profileControls();$$('[data-open]').forEach(b=>b.onclick=()=>navigate(b.dataset.open));
 }
 function slider(key,label,min,max,step=1,disabled=false){let s=state.settings[page];return `<div class="field"><label>${label}</label><div class="controlrow"><input type="range" data-setting="${key}" min="${min}" max="${max}" step="${step}" value="${s[key]}" ${disabled?'disabled':''}><input type="number" data-setting="${key}" min="${min}" max="${max}" step="${step}" value="${s[key]}" ${disabled?'disabled':''}></div></div>`;}
 function renderGenerator(){
  const kind=page,s=state.settings[kind],inp=state.inputs[kind];
  if(!s){$('#main').innerHTML='<div class="empty"><div class="symbol">◉</div><h2>'+(connected?'Waiting for workflow settings':'Connect your studio first')+'</h2><p>'+(connected?'The PC is connected. Check Bridge for model loading status.':'Workflow defaults and your model library will load from the PC.')+'</p><button class="green" id="goBridge">Open Bridge</button></div>';$('#goBridge').onclick=()=>navigate('bridge');return;}
  if(!inp.data)s.denoise=1;
- $('#main').innerHTML=`<div class="gentoolbar"><div class="row spread"><div class="row"><span id="runSpinner" class="spinner" hidden></span><div class="playwrap"><button id="play" class="green">▶ Generate</button><button id="batchButton" class="green" aria-label="Choose batch">⌄</button><div class="pop" id="batchMenu" hidden>${[2,4,8,16].map(n=>`<button data-batch="${n}" style="display:block;width:100%">Batch of ${n}</button>`).join('')}</div></div></div><span class="batchlabel" id="batchLabel">${s.batch>1?s.batch+' in batch':'Single generation'}</span></div><div class="progressrow" id="progressRow" hidden><img class="preview" id="livePreview" alt="Generation preview"><div class="progress"><i id="progressFill"></i><span id="progressText"></span></div></div><div class="statusmessage" id="jobMessage"></div></div><div id="genError"></div><div class="row spread" style="margin-bottom:17px"><p class="eyebrow">${kind==='image'?'A STILL, A STORY':'FROM STILL TO MOTION'}</p><span class="pill" id="mode">${kind==='video'?'IMAGE → VIDEO':inp.mask?'INPAINT':inp.data?'IMAGE → IMAGE':'TEXT → IMAGE'}</span></div><section class="card"><div class="row spread"><h2>Starting image</h2><small>${kind==='video'?'Required':'Optional'}</small></div><div class="upload">${inp.data?`<img src="${inp.data}" alt="Starting image">`:'<div><strong>＋</strong><span>Choose an image</span><br><small>Tap to browse your phone</small></div>'}<input type="file" id="upload" accept="image/*" aria-label="Choose starting image"></div><div class="uploadtools"><small>${inp.data?inp.width+' × '+inp.height:kind==='image'?'Leave empty for text to image':'The first frame of your video'}</small><div>${kind==='image'?'<button id="maskButton" '+(!inp.data?'disabled':'')+'>'+(inp.mask?'Edit mask':'◌ Apply mask')+'</button>':''} <button id="clearUpload" class="danger" ${!inp.data?'disabled':''}>Clear ×</button></div></div>${inp.mask?'<button id="clearMask" class="textbutton danger">Reset mask</button>':''}${kind==='image'&&inp.data&&(inp.width>1256||inp.height>1256)?'<div class="warning">ⓘ Large source image · above 1256 × 1256.</div>':''}</section><section class="card"><h2>Canvas & model</h2>${kind==='image'?`<div class="grid2 field"><div><label>Width</label><input type="number" data-setting="width" value="${s.width}" min="32" max="8192" step="8"></div><div><label>Height</label><input type="number" data-setting="height" value="${s.height}" min="32" max="8192" step="8"></div></div>`:`<div class="field"><div class="row spread"><label>Scale from source</label><strong id="scaleValue">${s.scale>0?'+':''}${s.scale}%</strong></div><input class="scaleRange" type="range" data-setting="scale" min="-90" max="100" step="1" value="${s.scale}"><div class="row spread"><small>−90%</small><small>Original · 0</small><small>+100%</small></div><p id="resolutionInfo" class="footnote"></p></div><div class="grid2 field"><div><label>Length · frames</label><input type="number" data-setting="frames" min="5" max="3592" value="${s.frames}"></div><div><label>FPS</label><input type="number" data-setting="fps" min="1" max="120" value="${s.fps}"></div></div><div id="durationInfo" class="footnote"></div>`}<div class="field"><label>${kind==='video'?'Model · locked to workflow':'Checkpoint'}</label>${kind==='video'?`<input readonly value="${esc(s.model)}">`:`<select data-setting="model">${(catalog?.models||[s.model]).map(m=>`<option ${m===s.model?'selected':''}>${esc(m)}</option>`).join('')}</select>`}</div></section><section class="card"><div class="row spread"><h2>LoRAs</h2><button id="addLora" class="textbutton">＋ Add</button></div><div id="loras"></div></section>${promptField('positive','Positive prompt')}${kind==='image'?promptField('negative','Negative prompt'):''}<section class="card"><h2>Generation settings</h2>${slider('steps','Steps',1,100)}${kind==='image'?slider('cfg','CFG',0,20,.1)+slider('denoise','Denoise'+(!inp.data?' · locked for text to image':''),0,1,.01,!inp.data):''}<div class="field"><label>Seed</label><input type="text" inputmode="numeric" data-setting="seed" value="${esc(s.seed)}"></div><label class="togglelabel"><input type="checkbox" id="increment" ${s.increment?'checked':''}>Increment seed after each generation</label></section><div class="sectionline"><h2>Latest result</h2><button id="toLibrary" class="textbutton">Library ↗</button></div><div class="resultbox" id="result"></div><div class="carousel" id="carousel"></div>`;
+ $('#main').innerHTML=`<div class="gentoolbar"><div class="row spread"><div class="row"><span id="runSpinner" class="spinner" hidden></span><div class="playwrap"><button id="play" class="green">▶ Generate</button><button id="batchButton" class="green" aria-label="Choose batch">⌄</button><div class="pop" id="batchMenu" hidden>${[2,4,8,16].map(n=>`<button data-batch="${n}" style="display:block;width:100%">Batch of ${n}</button>`).join('')}</div></div></div><button id="stopBatch" class="stop" hidden>■ Stop mine</button><span class="batchlabel" id="batchLabel">${s.batch>1?s.batch+' in batch':'Single generation'}</span></div><div class="progressrow" id="progressRow" hidden><img class="preview" id="livePreview" alt="Generation preview"><div class="progress"><i id="progressFill"></i><span id="progressText"></span></div></div><div class="statusmessage" id="jobMessage"></div></div><div id="genError"></div><div id="queueList"></div><div class="row spread" style="margin-bottom:17px"><p class="eyebrow">${kind==='image'?'A STILL, A STORY':'FROM STILL TO MOTION'}</p><span class="pill" id="mode">${kind==='video'?'IMAGE → VIDEO':inp.mask?'INPAINT':inp.data?'IMAGE → IMAGE':'TEXT → IMAGE'}</span></div><section class="card"><div class="row spread"><h2>Starting image</h2><small>${kind==='video'?'Required':'Optional'}</small></div><div class="upload">${inp.data?`<img src="${inp.data}" alt="Starting image">`:'<div><strong>＋</strong><span>Choose an image</span><br><small>Tap to browse your phone</small></div>'}<input type="file" id="upload" accept="image/*" aria-label="Choose starting image"></div><div class="uploadtools"><small>${inp.data?inp.width+' × '+inp.height:kind==='image'?'Leave empty for text to image':'The first frame of your video'}</small><div>${kind==='image'?'<button id="maskButton" '+(!inp.data?'disabled':'')+'>'+(inp.mask?'Edit mask':'◌ Apply mask')+'</button>':''} <button id="clearUpload" class="danger" ${!inp.data?'disabled':''}>Clear ×</button></div></div>${inp.mask?'<button id="clearMask" class="textbutton danger">Reset mask</button>':''}${kind==='image'&&inp.data&&(inp.width>1256||inp.height>1256)?'<div class="warning">ⓘ Large source image · above 1256 × 1256.</div>':''}</section><section class="card"><h2>Canvas & model</h2>${kind==='image'?`<div class="grid2 field"><div><label>Width</label><input type="number" data-setting="width" value="${s.width}" min="32" max="8192" step="8"></div><div><label>Height</label><input type="number" data-setting="height" value="${s.height}" min="32" max="8192" step="8"></div></div>`:`<div class="field"><div class="row spread"><label>Scale from source</label><strong id="scaleValue">${s.scale>0?'+':''}${s.scale}%</strong></div><input class="scaleRange" type="range" data-setting="scale" min="-90" max="100" step="1" value="${s.scale}"><div class="row spread"><small>−90%</small><small>Original · 0</small><small>+100%</small></div><p id="resolutionInfo" class="footnote"></p></div><div class="grid2 field"><div><label>Length · frames</label><input type="number" data-setting="frames" min="5" max="3592" value="${s.frames}"></div><div><label>FPS</label><input type="number" data-setting="fps" min="1" max="120" value="${s.fps}"></div></div><div id="durationInfo" class="footnote"></div>`}<div class="field"><label>${kind==='video'?'Model · locked to workflow':'Checkpoint'}</label>${kind==='video'?`<input readonly value="${esc(s.model)}">`:`<select data-setting="model">${(catalog?.models||[s.model]).map(m=>`<option ${m===s.model?'selected':''}>${esc(m)}</option>`).join('')}</select>`}</div></section><section class="card"><div class="row spread"><h2>LoRAs</h2><button id="addLora" class="textbutton">＋ Add</button></div><div id="loras"></div></section>${promptField('positive','Positive prompt')}${kind==='image'?promptField('negative','Negative prompt'):''}<section class="card"><h2>Generation settings</h2>${slider('steps','Steps',1,100)}${kind==='image'?slider('cfg','CFG',0,20,.1)+slider('denoise','Denoise'+(!inp.data?' · locked for text to image':''),0,1,.01,!inp.data):''}<div class="field"><label>Seed</label><input type="text" inputmode="numeric" data-setting="seed" value="${esc(s.seed)}"></div><label class="togglelabel"><input type="checkbox" id="increment" ${s.increment?'checked':''}>Increment seed after each generation</label></section><div class="sectionline"><h2>Latest result</h2><button id="toLibrary" class="textbutton">Library ↗</button></div><div class="resultbox" id="result"></div><div class="carousel" id="carousel"></div>`;
  $('#upload').onchange=e=>loadImage(e.target.files[0]);$('#clearUpload').onclick=()=>{state.inputs[kind]={};s.upload=null;s.mask=null;if(kind==='image'){s.width=1024;s.height=1536;s.denoise=1;}persist();renderGenerator();};
  if($('#maskButton'))$('#maskButton').onclick=openMask;if($('#clearMask'))$('#clearMask').onclick=()=>{delete inp.mask;delete s.mask;persist();renderGenerator();};
  $('#increment').onchange=e=>{s.increment=e.target.checked;persist();};
@@ -166,20 +173,27 @@ async function openMask(){
  $('#maskColor').onchange=e=>canvas.classList.toggle('greenmask',e.target.value==='green');$('#resetDraw').onclick=()=>{ctx.clearRect(0,0,canvas.width,canvas.height);maskSession.dirty=false;};$('#discardMask').onclick=closeModal;
  $('#applyMask').onclick=()=>{if(maskSession.dirty){inp.mask=canvas.toDataURL('image/png');}else delete inp.mask;state.settings.image.mask=null;persist();closeModal();renderGenerator();};
 }
+let submitting=false;
+async function stopBatch(batch){try{await api('stop',{batch});toast('Stopping this batch');await poll();}catch(e){toast(e.message);}}
 async function generate(){
- if(!connected)return toast('Connect to your PC first.');const kind=page,s=state.settings[kind],inp=state.inputs[kind];
- const running=jobs.find(j=>j.kind===kind&&j.id===active)||jobs.find(j=>j.kind===kind&&['pending','running','submitting','cancelling'].includes(j.status));
- if(running){try{await api('stop',{batch:running.batch});toast('Stopping this batch…');await poll();}catch(e){toast(e.message);}return;}
- if(kind==='video'&&!inp.data)return toast('Choose a starting image first.');
- $('#play').disabled=true;$('#jobMessage').textContent='Preparing your generation…';
+ if(!connected)return toast('Connect to your PC first.');if(submitting)return;
+ const kind=page,s=state.settings[kind],inp=structuredClone(state.inputs[kind]),snapshot=structuredClone(s),count=s.batch||1;
+ state.pendingByKind??={};if(state.pendingRequest){state.pendingByKind[state.pendingRequest.kind]=state.pendingRequest;delete state.pendingRequest;}
+ let payload=state.pendingByKind[kind];
+ if(!payload&&kind==='video'&&!inp.data)return toast('Choose a starting image first.');
+ submitting=true;$('#play').disabled=true;
  try{
-  if(inp.data&&!s.upload){const up=await api('upload',{data:inp.data});s.upload=up.name;}
-  if(inp.mask&&!s.mask){const up=await api('upload',{data:inp.mask});s.mask=up.name;}
-  const payload={kind,count:s.batch||1,settings:structuredClone(s),requestId:state.pendingRequest?.kind===kind?state.pendingRequest.requestId:crypto.randomUUID()};
-  if(state.pendingRequest){Object.assign(payload,state.pendingRequest);}else{state.pendingRequest=payload;persist();}
-  await api('generate',payload);delete state.pendingRequest;s.batch=1;
-  if(payload.settings.increment)s.seed=((BigInt(payload.settings.seed)+BigInt(payload.count))%(2n**64n)).toString();persist();const seed=$('[data-setting="seed"]');if(seed)seed.value=s.seed;await poll();
- }catch(e){if(/^HTTP (400|401|413)/.test(e.message)){delete state.pendingRequest;persist();}$('#genError').innerHTML='<div class="errorbox">'+esc(e.message)+'</div>';toast('Generation could not be submitted.');}finally{if($('#play'))$('#play').disabled=false;}
+  if(!payload){
+   if(inp.data&&!snapshot.upload)snapshot.upload=(await api('upload',{data:inp.data})).name;
+   if(inp.mask&&!snapshot.mask)snapshot.mask=(await api('upload',{data:inp.mask})).name;
+   if(inp.data===state.inputs[kind].data&&inp.mask===state.inputs[kind].mask){s.upload=snapshot.upload;s.mask=snapshot.mask;}
+   payload={kind,count,settings:snapshot,requestId:crypto.randomUUID()};state.pendingByKind[kind]=payload;persist();
+  }
+  const accepted=await api('generate',payload);delete state.pendingByKind[kind];s.batch=1;
+  if(payload.settings.increment&&String(s.seed)===String(payload.settings.seed))s.seed=((BigInt(s.seed)+BigInt(payload.count))%(2n**64n)).toString();
+  persist();Native.watchBatch(accepted.batch);toast('Added '+payload.count+' to the PC queue');if(page===kind){const seed=$('[data-setting="seed"]');if(seed)seed.value=s.seed;}await poll();
+ }catch(e){if(/^HTTP (400|401|403|413)/.test(e.message)){delete state.pendingByKind[kind];persist();}if($('#genError'))$('#genError').textContent=e.message;toast(e.message);}
+ finally{submitting=false;if($('#play'))$('#play').disabled=false;}
 }
 async function poll(){
  if(!connected||pollBusy||document.hidden)return;const id=epoch,view=page;pollBusy=true;
@@ -196,8 +210,14 @@ async function poll(){
  finally{pollBusy=false;notice();}
 }
 function showMetrics(m){const gb=v=>(v/1073741824).toFixed(1);let vals=[[m.cpu==null?'—':m.cpu.toFixed(0)+'%',m.cpuWatts==null?'Power unavailable':m.cpuWatts.toFixed(1)+' W',m.cpu],[m.gpu==null?'—':m.gpu.toFixed(0)+'%',m.gpuWatts==null?'HWiNFO unavailable':m.gpuWatts.toFixed(0)+' W',m.gpu],[gb(m.ramUsed)+' GB','of '+gb(m.ramTotal)+' GB',m.ramUsed/m.ramTotal*100],[m.vramUsed==null?'—':gb(m.vramUsed)+' GB','of '+gb(m.vramTotal)+' GB',m.vramUsed/m.vramTotal*100],[gb(m.commitUsed)+' GB','of '+gb(m.commitTotal)+' GB committed',m.commitUsed/m.commitTotal*100]];vals.forEach((v,i)=>{if($('#m'+i)){$('#m'+i).textContent=v[0];$('#ms'+i).textContent=v[1];$('#mb'+i).style.width=Math.max(0,Math.min(100,v[2]||0))+'%';}});}
-function updateProgress(){if(!$('#play'))return;let pendingJobs=jobs.filter(j=>j.kind===page&&['pending','running','submitting','cancelling'].includes(j.status));let j=pendingJobs.find(j=>j.id===active)||pendingJobs.sort((a,b)=>a.created-b.created||a.ordinal-b.ordinal)[0];$('#play').className=j?'stop':'green';$('#play').textContent=j?'■ Stop':'▶ Generate';$('#batchButton').disabled=!!j;$('#runSpinner').hidden=!j;$('#progressRow').hidden=!j;
- if(j){$('#progressFill').style.width=(j.progress*100)+'%';$('#progressText').textContent=`${j.ordinal}/${j.total} · ${j.status==='pending'?'Queued':Math.round(j.progress*100)+'%'}`;$('#jobMessage').textContent=j.status==='running'?'Working on your PC · you can leave this screen':j.status;$('#livePreview').hidden=!previewAvailable;if(previewAvailable)$('#livePreview').src='/preview?t='+Date.now();$('#batchLabel').textContent=j.total>1?j.total+' in batch':'Single generation';}
+function updateProgress(){if(!$('#play'))return;const me=info().device,pendingJobs=jobs.filter(j=>['pending','running','submitting','cancelling'].includes(j.status)).sort((a,b)=>a.created-b.created||a.ordinal-b.ordinal);
+ const same=pendingJobs.filter(j=>j.kind===page),j=same.find(j=>j.id===active)||same[0],mine=same.find(j=>j.owner===me);
+ $('#play').textContent=pendingJobs.length?'▶ Add to queue':'▶ Generate';$('#play').disabled=submitting;$('#batchButton').disabled=submitting;$('#stopBatch').hidden=!mine;$('#stopBatch').onclick=()=>mine&&stopBatch(mine.batch);
+ $('#runSpinner').hidden=!j;$('#progressRow').hidden=!j;
+ const list=$('#queueList'),batches=[...new Set(pendingJobs.map(j=>j.batch))];
+ list.innerHTML=batches.length?'<section class="card"><strong>PC queue · '+pendingJobs.length+' remaining</strong>'+batches.map(batch=>{const x=pendingJobs.find(j=>j.batch===batch),own=x.owner===me;return '<div class="row spread"><small>'+esc(x.kind)+' · '+(own?'This phone':'Other phone')+' · '+x.ordinal+'/'+x.total+' · '+esc(x.status)+'</small>'+(own?'<button data-stop="'+x.batch+'">Cancel batch</button>':'')+'</div>';}).join('')+'</section>':'';
+ $$('[data-stop]',list).forEach(b=>b.onclick=()=>stopBatch(b.dataset.stop));
+ if(j){const pct=Math.min(j.status==='complete'?100:99,Math.round(j.progress*100));$('#progressFill').style.width=pct+'%';$('#progressText').textContent=j.ordinal+'/'+j.total+' · '+(j.id===active?pct+'%':'Queued');$('#jobMessage').textContent=j.current_node||(j.id===active?'Preparing workflow':'Waiting in PC queue');$('#livePreview').hidden=!previewAvailable||j.id!==active;if(previewAvailable&&j.id===active)$('#livePreview').src='/preview?t='+Date.now();$('#batchLabel').textContent=j.total>1?j.total+' in batch':'Single generation';}
  else{const last=jobs.find(j=>j.kind===page);$('#jobMessage').textContent=last?.status==='complete'?'Generation complete':last?.status==='error'?'Generation failed — details below':'';if(last?.status==='error')$('#genError').innerHTML='<div class="errorbox">'+esc(last.error)+'</div>';}
  renderCarousel();
 }

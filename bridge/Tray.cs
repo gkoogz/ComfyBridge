@@ -21,8 +21,8 @@ using Microsoft.Win32;
 [assembly: System.Reflection.AssemblyTitle("Comfy Bridge")]
 [assembly: System.Reflection.AssemblyDescription("Phone to ComfyUI bridge")]
 [assembly: System.Reflection.AssemblyVersion("0.1.0.0")]
-[assembly: System.Reflection.AssemblyFileVersion("0.1.0.7")]
-[assembly: System.Reflection.AssemblyInformationalVersion("0.1.0-beta.4")]
+[assembly: System.Reflection.AssemblyFileVersion("0.1.0.8")]
+[assembly: System.Reflection.AssemblyInformationalVersion("0.1.0-beta.5")]
 
 partial class Bridge : ApplicationContext {
     static readonly string Home = AppDomain.CurrentDomain.BaseDirectory;
@@ -35,7 +35,10 @@ partial class Bridge : ApplicationContext {
     static string fingerprint;
     static Process worker;
     static SemaphoreSlim starting = new SemaphoreSlim(1,1);
-    static DateTime seen = DateTime.MinValue;
+    static readonly Dictionary<string,DateTime> phones=new Dictionary<string,DateTime>();
+    static readonly Dictionary<string,DateTime> watchers=new Dictionary<string,DateTime>();
+    static void Expire(Dictionary<string,DateTime> source){var stale=new List<string>();foreach(var p in source)if((DateTime.UtcNow-p.Value).TotalSeconds>=20)stale.Add(p.Key);foreach(string id in stale)source.Remove(id);}
+    static int PhoneCount(){lock(phones){Expire(phones);Expire(watchers);var ids=new HashSet<string>(phones.Keys);ids.UnionWith(watchers.Keys);return ids.Count;}}
     static PerformanceCounter cpu;
     static PerformanceCounter[] vram;
     static DateTime sampled = DateTime.MinValue;
@@ -97,7 +100,7 @@ partial class Bridge : ApplicationContext {
         try{Server(!File.Exists(offFile),false);}catch(Exception ex){MessageBox.Show("Could not start the bridge: "+ex.Message);}
         timer=new System.Windows.Forms.Timer {Interval=5000};
         timer.Tick+=(s,e)=>{
-            bool connected=online&&(DateTime.UtcNow-seen).TotalSeconds<20;
+            bool connected=online&&PhoneCount()>0;
             RefreshState();RefreshJobs();
             if(!connected && (worker==null || worker.HasExited)) { lock(Json){
                 if(cpu!=null){cpu.Dispose();cpu=null;}
@@ -136,7 +139,15 @@ partial class Bridge : ApplicationContext {
         await starting.WaitAsync();
         try {
             // An earlier tray instance may have left its worker finishing jobs.
-            try {using(var c=new System.Net.Sockets.TcpClient()){await c.ConnectAsync("127.0.0.1",18766);return;}}catch(System.Net.Sockets.SocketException){}
+            try {using(var c=new System.Net.Sockets.TcpClient()){await c.ConnectAsync("127.0.0.1",18766);}
+                if(worker==null||worker.HasExited){using(var probe=new WebClient()){
+                    probe.Proxy=null;probe.Headers["Authorization"]="Bearer "+token;
+                    var monitor=new JavaScriptSerializer().Deserialize<Dictionary<string,object>>(await probe.DownloadStringTaskAsync("http://127.0.0.1:18766/api/monitor"));
+                    if(!monitor.ContainsKey("protocol")||Convert.ToInt32(monitor["protocol"])<5)
+                        throw new IOException("Finishing the previous bridge version. Jobs continue on the PC; new requests resume automatically after the old worker goes idle.");
+                }}
+                return;
+            }catch(System.Net.Sockets.SocketException){}
             if(worker==null || worker.HasExited) {
                 worker=Process.Start(new ProcessStartInfo(python,"\""+Path.Combine(Home,"worker.py")+"\""){WorkingDirectory=Home,UseShellExecute=false,CreateNoWindow=true,WindowStyle=ProcessWindowStyle.Hidden});
             }
@@ -180,15 +191,18 @@ partial class Bridge : ApplicationContext {
             if(!Equal(auth,"Bearer "+token)){await Reply(stream,401,"{\"error\":\"This phone is not paired. Open the PC panel and pair again.\"}");return;}
             string raw=first[1],path=raw.Split('?')[0];
             if(!path.StartsWith("/api/",StringComparison.Ordinal) || raw.Contains("..") || raw.Contains("\\")){await Reply(stream,404,"{}");return;}
-            if(path=="/api/disconnect"){seen=DateTime.MinValue;await Reply(stream,200,"{}");return;}
-            seen=DateTime.UtcNow;
-            if(path=="/api/ping"){await Reply(stream,200,"{\"ok\":true,\"name\":\"Comfy Bridge\"}");return;}
+            string device;Guid guid;bool identified=headers.TryGetValue("X-Bridge-Device",out device)&&Guid.TryParse(device,out guid);
+            if(!identified)device=((IPEndPoint)client.Client.RemoteEndPoint).Address.ToString();
+            if(path=="/api/disconnect"){lock(phones){phones.Remove(device);watchers.Remove(device);}await Reply(stream,200,"{}");return;}
+            if(path=="/api/ping"){lock(phones)phones[device]=DateTime.UtcNow;await Reply(stream,200,"{\"ok\":true,\"name\":\"Comfy Bridge\"}");return;}
+            if(identified&&path.StartsWith("/api/batch/")){lock(phones)watchers[device]=DateTime.UtcNow;}
             if(path=="/api/metrics"){await Reply(stream,200,Metrics());return;}
             string lengthText;long length=0;
             if(headers.ContainsKey("Transfer-Encoding") || (headers.TryGetValue("Content-Length",out lengthText) && (!long.TryParse(lengthText,out length) || length<0 || length>55L*1024*1024))){await Reply(stream,413,"{\"error\":\"Invalid upload length\"}");return;}
             await Wake();
             var req=(HttpWebRequest)WebRequest.Create("http://127.0.0.1:18766"+raw);
             req.Method=first[0];req.Headers["Authorization"]="Bearer "+token;req.Timeout=240000;req.ReadWriteTimeout=240000;req.Proxy=null;
+            if(identified)req.Headers["X-Bridge-Device"]=device;
             string range;
             if(headers.TryGetValue("Range",out range)) {
                 string[] halves=range.Replace("bytes=","").Split('-');long start,end;

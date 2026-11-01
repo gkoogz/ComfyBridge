@@ -1,5 +1,7 @@
 import asyncio
 import base64
+import hashlib
+import re
 from media_index import media_manifest
 import io
 import json
@@ -19,6 +21,7 @@ from aiohttp import web
 from PIL import Image, ImageOps
 
 from workflows import Workflows
+from progress import Progress
 
 BASE = Path(__file__).resolve().parent
 DATA = Path(os.environ.get('COMFYBRIDGE_DATA', str(Path(os.environ.get('LOCALAPPDATA', BASE)) / 'ComfyBridge')))
@@ -38,7 +41,12 @@ CREATE TABLE IF NOT EXISTS jobs(id TEXT PRIMARY KEY, batch TEXT, kind TEXT, sett
  created REAL, ordinal INTEGER, total INTEGER);
 CREATE TABLE IF NOT EXISTS media(id TEXT PRIMARY KEY, job TEXT, kind TEXT, path TEXT UNIQUE,
  thumbnail TEXT, duration REAL, created REAL, archived INTEGER DEFAULT 0);
+CREATE TABLE IF NOT EXISTS profiles(device TEXT PRIMARY KEY, name TEXT, modified REAL, state TEXT);
+CREATE TABLE IF NOT EXISTS stage_cost(kind TEXT, node TEXT, factor REAL, PRIMARY KEY(kind,node));
 ''')
+if 'owner' not in {r[1] for r in DB.execute('PRAGMA table_info(jobs)')}:
+    DB.execute("ALTER TABLE jobs ADD COLUMN owner TEXT NOT NULL DEFAULT 'legacy'");DB.commit()
+TRACKER = None
 LAST_REQUEST = time.monotonic()
 IN_FLIGHT = 0
 ACTIVE = None
@@ -50,6 +58,7 @@ if not CLIENT_FILE.exists():
     CLIENT_FILE.write_text('comfybridge-' + secrets.token_hex(16))
 CLIENT = CLIENT_FILE.read_text().strip()
 CATALOG = None
+CATALOG_LOCK = asyncio.Lock()
 STOPPING = set()
 
 
@@ -107,6 +116,12 @@ async def ensure_comfy():
 
 
 async def catalogue():
+    if CATALOG is not None:return CATALOG
+    async with CATALOG_LOCK:
+        return await load_catalogue()
+
+
+async def load_catalogue():
     global CATALOG
     if CATALOG is not None:
         return CATALOG
@@ -149,10 +164,7 @@ async def websocket():
                         event = json.loads(msg.data); d = event.get('data', {})
                         if not ACTIVE or d.get('prompt_id') != ACTIVE:
                             continue
-                        if event['type'] == 'progress':
-                            update(ACTIVE, progress=d.get('value', 0)/max(1, d.get('max', 1)))
-                        elif event['type'] == 'executing':
-                            update(ACTIVE, current_node=str(d.get('node') or 'Saving'))
+                        if TRACKER: TRACKER.event(event['type'],d)
         except (aiohttp.ClientError, asyncio.TimeoutError):
             await asyncio.sleep(3)
 
@@ -184,37 +196,50 @@ def collect(job, entry):
 
 
 async def run_jobs():
-    global ACTIVE, PREVIEW
+    global ACTIVE, PREVIEW, TRACKER
     while True:
         jobs = rows("SELECT * FROM jobs WHERE status IN ('pending','submitting','running','cancelling') ORDER BY created, ordinal LIMIT 1")
         if not jobs:
             ACTIVE = None
             await asyncio.sleep(1)
             continue
-        j = jobs[0]; ACTIVE = j['id']; PREVIEW = None
+        j = jobs[0]; PREVIEW = None
         try:
+            settings = json.loads(j['settings'])
+            graph = WF.build(j['kind'], settings, 'ComfyBridge/'+j['id'])
+            if ACTIVE!=j['id'] or not TRACKER:
+                learned=dict(DB.execute('SELECT node,factor FROM stage_cost WHERE kind=?',(j['kind'],)))
+                TRACKER=Progress(j['kind'],graph,settings,learned=learned)
+                TRACKER.last=min(.99,float(j['progress'] or 0))
+            ACTIVE=j['id']
             await ensure_comfy()
             if j['status'] == 'pending':
                 if j['batch'] in STOPPING:
                     update(j['id'], status='cancelled'); continue
-                settings = json.loads(j['settings'])
-                graph = WF.build(j['kind'], settings, 'ComfyBridge/'+j['id'])
                 update(j['id'], status='submitting')
                 await comfy('/prompt', dict(prompt=graph, client_id=CLIENT, prompt_id=j['id']))
                 update(j['id'], status='running')
+                if j['batch'] in STOPPING:
+                    await cancel_submitted(j['batch'])
             missing = 0
             while True:
                 history = await comfy('/history/'+j['id'])
                 if j['id'] in history:
                     entry = history[j['id']]
                     status = entry.get('status', {})
-                    if status.get('status_str') == 'error':
+                    if j['batch'] in STOPPING and not entry.get('outputs'):
+                        update(j['id'], status='cancelled')
+                    elif status.get('status_str') == 'error':
                         update(j['id'], status='cancelled' if j['batch'] in STOPPING else 'error', error=json.dumps(status.get('messages', []))[-3000:])
                     else:
                         collect(j, entry)
-                        update(j['id'], status='complete', progress=1)
+                        DB.executemany('INSERT INTO stage_cost VALUES(?,?,?) ON CONFLICT(kind,node) DO UPDATE SET factor=0.65*stage_cost.factor+0.35*excluded.factor',
+                                       ((j['kind'],node,factor) for node,factor in TRACKER.observed.items()))
+                        update(j['id'], status='complete', progress=1, current_node='Saved to library')
                     break
                 q = await comfy('/queue')
+                progress,stage=TRACKER.sample()
+                update(j['id'],progress=progress,current_node=stage)
                 known = any(x[1] == j['id'] for x in q['queue_running']+q['queue_pending'])
                 missing = 0 if known else missing+1
                 if missing >= 3:
@@ -269,16 +294,75 @@ async def guard(request, handler):
             LAST_REQUEST = time.monotonic()
 
 
+async def cancel_submitted(batch):
+    ids={r['id'] for r in rows("SELECT id FROM jobs WHERE batch=? AND status IN ('running','submitting','cancelling')",(batch,))}
+    if not ids:return
+    q=await comfy('/queue')
+    queued=[j[1] for j in q['queue_pending'] if j[1] in ids]
+    if queued:
+        await comfy('/queue',{'delete':queued})
+        q=await comfy('/queue')
+        remaining={j[1] for j in q['queue_running']+q['queue_pending']}
+        for id in queued:
+            if id not in remaining and id not in await comfy('/history/'+id):
+                update(id,status='cancelled')
+    for j in q['queue_running']:
+        if j[1] in ids:
+            update(j[1],status='cancelling')
+            await comfy('/interrupt',{'prompt_id':j[1]})
+
+
 async def api(request):
     path = request.match_info.get('path', '')
+    device=request.headers.get('X-Bridge-Device','legacy')
+    if device!='legacy': device=str(uuid.UUID(device))
+    if path.startswith(('profile-blob/','profile-has/')):
+        digest=path.split('/',1)[1]
+        if not re.fullmatch('[0-9a-f]{64}',digest): raise ValueError('Invalid backup reference')
+        folder=DATA/'profile-inputs';folder.mkdir(exist_ok=True);target=folder/digest
+        if path.startswith('profile-has/'):return web.json_response({'exists':target.is_file()})
+        if request.method=='POST':
+            value=(await request.json())['value']
+            if not value.startswith('data:image/') or hashlib.sha256(value.encode()).hexdigest()!=digest:raise ValueError('Invalid backup data')
+            if not target.exists():
+                tmp=folder/(digest+'.tmp');tmp.write_text(value,encoding='utf8');tmp.replace(target)
+            return web.json_response({'ok':True})
+        if not target.exists():raise web.HTTPNotFound()
+        return web.json_response({'value':target.read_text(encoding='utf8')})
+    if path=='profiles':
+        return web.json_response(rows('SELECT device,name,modified FROM profiles ORDER BY modified DESC'))
+    if path=='profile' and request.method=='POST':
+        d=await request.json(); profile=d['state']
+        if device=='legacy' or not all(k in profile for k in ('settings','presets','prompts','inputs')):raise ValueError('Incomplete phone backup')
+        def verify(value):
+            if isinstance(value,dict):
+                if 'bridgeInput' in value:
+                    h=value['bridgeInput']
+                    if not isinstance(h,str) or not re.fullmatch('[0-9a-f]{64}',h) or not (DATA/'profile-inputs'/h).is_file():
+                        raise ValueError('A backup input is missing. Previous settings were kept.')
+                else:
+                    for v in value.values():verify(v)
+            elif isinstance(value,list):
+                for v in value:verify(v)
+        verify(profile)
+        DB.execute('INSERT INTO profiles VALUES(?,?,?,?) ON CONFLICT(device) DO UPDATE SET name=excluded.name,modified=excluded.modified,state=excluded.state WHERE profiles.state!=excluded.state OR profiles.name!=excluded.name',
+                   (device,str(d['name'])[:80],time.time(),json.dumps(profile,sort_keys=True)));DB.commit()
+        return web.json_response({'ok':True})
+    if path.startswith('profile/'):
+        p=rows('SELECT state FROM profiles WHERE device=?',(str(uuid.UUID(path[8:])),))
+        if not p:raise web.HTTPNotFound()
+        return web.json_response(json.loads(p[0]['state']))
     if path == 'catalog':
         return web.json_response(await catalogue())
-    if path == 'monitor':
-        jobs = rows("SELECT id,kind,status,progress,current_node,ordinal,total,created FROM jobs WHERE status IN ('pending','submitting','running','cancelling') ORDER BY created,ordinal")
-        return web.json_response(dict(jobs=jobs, active=ACTIVE))
-    if path == 'status':
-        jobs = rows('SELECT id,batch,kind,status,progress,current_node,error,ordinal,total,created FROM jobs ORDER BY created DESC,ordinal DESC LIMIT 100')
-        return web.json_response(dict(jobs=jobs, active=ACTIVE, preview=bool(PREVIEW), ownedComfy=bool(OWNED)))
+    if path in ('monitor','status') or path.startswith('batch/'):
+        fields='id,batch,owner,kind,status,progress,current_node,error,ordinal,total,created'
+        if path=='monitor':jobs=rows(f"SELECT {fields} FROM jobs WHERE status IN ('pending','submitting','running','cancelling') ORDER BY created,ordinal")
+        elif path=='status':jobs=rows(f'SELECT {fields} FROM jobs ORDER BY created DESC,ordinal DESC LIMIT 100')
+        else:jobs=rows(f'SELECT {fields} FROM jobs WHERE batch=? AND owner=? ORDER BY ordinal',(str(uuid.UUID(path[6:])),device))
+        for j in jobs:
+            if j['id']==ACTIVE and TRACKER and j['status'] not in ('complete','cancelled','error'):
+                j['progress'],j['current_node']=TRACKER.sample()
+        return web.json_response(dict(protocol=5,jobs=jobs, active=ACTIVE, preview=bool(PREVIEW), ownedComfy=bool(OWNED)))
     if path == 'preview':
         return web.Response(body=PREVIEW or b'', content_type='image/jpeg')
     if path == 'library':
@@ -310,16 +394,21 @@ async def api(request):
             return web.json_response(dict(name=name, width=img.width, height=img.height))
     if path == 'generate' and request.method == 'POST':
         d = await request.json(); batch = str(uuid.UUID(d['requestId']))
-        existing = rows('SELECT id FROM jobs WHERE batch=?', (batch,))
-        if existing:
-            return web.json_response(dict(batch=batch, ids=[j['id'] for j in existing]))
         kind = d['kind']; s = d['settings']; count = int(d.get('count', 1))
         if count not in (1, 2, 4, 8, 16):
             raise ValueError('Batch must be 1, 2, 4, 8 or 16.')
-        if len(rows("SELECT id FROM jobs WHERE status IN ('pending','running','submitting','cancelling')")) + count > 64:
-            raise ValueError('The bridge queue is full (64 jobs).')
+        existing=rows('SELECT id,owner FROM jobs WHERE batch=? ORDER BY ordinal',(batch,))
+        if existing:
+            if existing[0]['owner']!=device:raise web.HTTPForbidden()
+            return web.json_response(dict(batch=batch,ids=[r['id'] for r in existing]))
         checked_upload(s.get('upload')); checked_upload(s.get('mask'))
         cat = await catalogue()
+        existing=rows('SELECT id,owner FROM jobs WHERE batch=? ORDER BY ordinal',(batch,))
+        if existing:
+            if existing[0]['owner']!=device:raise web.HTTPForbidden()
+            return web.json_response(dict(batch=batch,ids=[r['id'] for r in existing]))
+        if len(rows("SELECT id FROM jobs WHERE status IN ('pending','running','submitting','cancelling')")) + count > 64:
+            raise ValueError('The bridge queue is full (64 jobs).')
         if kind == 'image' and s['model'] not in cat['models']:
             raise ValueError('The selected checkpoint is not available.')
         for l in s.get('loras', []):
@@ -330,23 +419,16 @@ async def api(request):
         for i in range(count):
             settings = dict(s); settings['seed'] = str((int(s['seed'])+(i if s.get('increment') else 0)) % (2**64))
             id = str(uuid.uuid4()); WF.build(kind, settings, 'ComfyBridge/'+id)
-            prepared.append((id,batch,kind,json.dumps(settings),'pending',created,i+1,count)); ids.append(id)
-        DB.executemany('INSERT INTO jobs(id,batch,kind,settings,status,created,ordinal,total) VALUES(?,?,?,?,?,?,?,?)', prepared); DB.commit()
+            prepared.append((id,batch,kind,json.dumps(settings),'pending',created,i+1,count,device)); ids.append(id)
+        DB.executemany('INSERT INTO jobs(id,batch,kind,settings,status,created,ordinal,total,owner) VALUES(?,?,?,?,?,?,?,?,?)', prepared); DB.commit()
         return web.json_response(dict(batch=batch, ids=ids))
     if path == 'stop' and request.method == 'POST':
-        d = await request.json(); batch = d['batch']; STOPPING.add(batch)
-        affected = rows("SELECT id,status FROM jobs WHERE batch=? AND status IN ('pending','running','submitting','cancelling')", (batch,))
+        d = await request.json(); batch = str(uuid.UUID(d['batch']))
+        owner=rows('SELECT owner FROM jobs WHERE batch=? LIMIT 1',(batch,))
+        if not owner or owner[0]['owner']!=device:raise web.HTTPForbidden()
+        STOPPING.add(batch)
         DB.execute("UPDATE jobs SET status='cancelled' WHERE batch=? AND status='pending'", (batch,)); DB.commit()
-        q = await comfy('/queue')
-        ids = {j['id'] for j in affected}
-        queued = [j[1] for j in q['queue_pending'] if j[1] in ids]
-        if queued:
-            await comfy('/queue', {'delete': queued})
-        for j in q['queue_running']:
-            if j[1] in ids:
-                # This ComfyUI version supports targeted interruption; never interrupt another client.
-                update(j[1], status='cancelling')
-                await comfy('/interrupt', {'prompt_id': j[1]})
+        await cancel_submitted(batch)
         return web.json_response({'ok': True})
     raise web.HTTPNotFound()
 
