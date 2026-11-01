@@ -2,6 +2,10 @@
 
 Validation performed on November 1, 2026, on Windows with the existing ComfyUI-ZLUDA installation and a connected Moto g stylus 2025.
 
+## Beta 8 shared queue count
+
+The running video on the paired Moto showed **Queue 1/6 · 76%** with five more jobs queued across image and video. The running job ID matched before and after updating Windows. The worker tests covered extending a running queue from a second phone, retrying the same submission, cancelling a waiting job, advancing after completion and starting a new count after idle. The tray panel test used a single-item batch at shared queue position 2/4.
+
 ## Beta 6 Android gallery
 
 - On the paired Moto, the grid touched both viewport edges and its first row began 94 CSS pixels below the app's top edge. The Bridge fit without scrolling both connected and disconnected. Image and video Latest result containers also met both viewport edges.

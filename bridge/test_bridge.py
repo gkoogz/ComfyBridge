@@ -114,6 +114,41 @@ class BridgeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(batch['jobs'][0]['status'],'running')
         self.assertEqual(w.rows('SELECT status FROM jobs WHERE batch=?',(c['batch'],))[0]['status'],'pending')
 
+    async def test_queue_position_across_submissions_and_idle_reset(self):
+        _,first = await self.submit()
+        first_id = first['ids'][0]
+        w.update(first_id, status='running')
+
+        async def place(path, job_id, expected, headers=None):
+            _, data = await self.request(path, headers=headers)
+            job = next(job for job in data['jobs'] if job['id'] == job_id)
+            self.assertEqual((job['queuePosition'], job['queueTotal']), expected)
+
+        await place('status', first_id, (1,1))
+        _, second = await self.submit()
+        await place('monitor', first_id, (1,2))
+        await place('batch/'+second['batch'], second['ids'][0], (2,2))
+
+        owner = {'Authorization':'Bearer integration-test-key','X-Bridge-Device':str(uuid.uuid4())}
+        video = copy.deepcopy(w.CATALOG['defaults']['video'])
+        name = 'ComfyBridge/queue-test.png'
+        Image.new('RGB',(64,64)).save(w.ROOT/'input'/name)
+        video['upload'] = name
+        w.CATALOG['loras'].extend(l['name'] for l in video.get('loras', []))
+        request = dict(kind='video', count=2, settings=video, requestId=str(uuid.uuid4()))
+        response, third = await self.request('generate', request, owner)
+        self.assertEqual(response.status, 200, third)
+        await self.request('generate', request, owner)
+        await place('batch/'+third['batch'], third['ids'][-1], (4,4), owner)
+        w.update(first_id, status='complete')
+        await place('monitor', second['ids'][0], (2,4))
+        await self.request('stop', {'batch':second['batch']})
+        await place('status', third['ids'][0], (2,3))
+        for job_id in third['ids']:
+            w.update(job_id, status='complete')
+        _, fresh = await self.submit()
+        await place('monitor', fresh['ids'][0], (1,1))
+
     async def test_profiles_remain_separate_and_restorable(self):
         owners=[str(uuid.uuid4()) for _ in range(3)]
         def headers(i):return {'Authorization':'Bearer integration-test-key','X-Bridge-Device':owners[i]}
@@ -143,7 +178,10 @@ class BridgeTests(unittest.IsolatedAsyncioTestCase):
             p.step(sampler,{'value':4,'max':4});after=p.sample()[0]
             p.event('executing',{'node':'14' if kind=='video' else '8'});decode,label=p.sample()
             self.assertGreaterEqual(decode,after);self.assertLess(decode,.99);self.assertIn('Decode',label)
-            p.event('execution_success',{});self.assertEqual(p.sample(),(.99,'Indexing output'))
+            p.event('execution_success',{})
+            value, stage = p.sample()
+            self.assertAlmostEqual(value,.99)
+            self.assertEqual(stage,'Indexing output')
 
     async def test_media_manifest_tracks_replacement_deletion_and_archive(self):
         await self.submit();self.runner=asyncio.create_task(w.run_jobs());await self.wait_done(1)

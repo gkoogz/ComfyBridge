@@ -39,15 +39,15 @@ public class JobWatch extends Service {
    try{if(conn.getResponseCode()!=200)throw new java.io.IOException("PC unavailable");jobs=new JSONObject(MainActivity.read(conn.getInputStream())).getJSONArray("jobs");}finally{conn.disconnect();}
    if(!scope.equals(key(c)))return !watched(c).isEmpty();
    if(jobs.length()==0){done(c,batch);continue;}
-   int complete=0,error=0,cancelled=0;double sum=0;JSONObject current=null;
+   int complete=0,error=0,cancelled=0;JSONObject current=null;
    for(int i=0;i<jobs.length();i++){JSONObject j=jobs.getJSONObject(i);String status=j.getString("status");
-    if(status.equals("complete")){complete++;sum++;}else if(status.equals("error"))error++;else if(status.equals("cancelled"))cancelled++;
-    else{sum+=j.optDouble("progress",0);if(current==null||status.equals("running"))current=j;}
+    if(status.equals("complete")){complete++;}else if(status.equals("error"))error++;else if(status.equals("cancelled"))cancelled++;
+    else if(current==null||status.equals("running"))current=j;
    }
    String kind=jobs.getJSONObject(0).getString("kind");
    if(current==null){String summary=complete+" saved"+(error>0?", "+error+" failed":"")+(cancelled>0?", "+cancelled+" cancelled":"");
     m.notify(batch,1,notice(c,FINISHED,"ComfyBridge · "+kind+" batch finished",summary,-1));done(c,batch);
-   }else{nActive++;if(live==null||current.getString("status").equals("running")){pct=Math.min(99,(int)Math.round(100*sum/jobs.length()));String stage=current.optString("current_node","");live=kind+" "+current.getInt("ordinal")+"/"+jobs.length()+" · "+(stage.isEmpty()?current.getString("status"):stage);}}
+   }else{nActive++;if(live==null||current.getString("status").equals("running")){pct=Math.min(99,(int)Math.round(100*current.optDouble("progress",0)));String stage=current.optString("current_node","");live=kind+" · Queue "+current.optInt("queuePosition",current.getInt("ordinal"))+"/"+current.optInt("queueTotal",jobs.length())+" · "+(stage.isEmpty()?current.getString("status"):stage);}}
   }
   if(live!=null)m.notify(LIVE,notice(c,PROGRESS,"ComfyBridge · "+pct+"%"+(nActive>1?" · "+nActive+" batches":""),live,pct));
   return !watched(c).isEmpty();

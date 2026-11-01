@@ -20,6 +20,7 @@ import aiohttp
 from aiohttp import web
 from PIL import Image, ImageOps
 
+from queue_progress import LIVE_JOBS, positions, prepare
 from workflows import Workflows
 from progress import Progress
 
@@ -46,6 +47,7 @@ CREATE TABLE IF NOT EXISTS stage_cost(kind TEXT, node TEXT, factor REAL, PRIMARY
 ''')
 if 'owner' not in {r[1] for r in DB.execute('PRAGMA table_info(jobs)')}:
     DB.execute("ALTER TABLE jobs ADD COLUMN owner TEXT NOT NULL DEFAULT 'legacy'");DB.commit()
+prepare(DB)
 TRACKER = None
 LAST_REQUEST = time.monotonic()
 IN_FLIGHT = 0
@@ -64,9 +66,6 @@ STOPPING = set()
 
 def rows(sql, args=()):
     return [dict(r) for r in DB.execute(sql, args).fetchall()]
-
-
-
 
 def update(id, **values):
     DB.execute('UPDATE jobs SET ' + ','.join(k+'=?' for k in values) + ' WHERE id=?', (*values.values(), id))
@@ -198,7 +197,7 @@ def collect(job, entry):
 async def run_jobs():
     global ACTIVE, PREVIEW, TRACKER
     while True:
-        jobs = rows("SELECT * FROM jobs WHERE status IN ('pending','submitting','running','cancelling') ORDER BY created, ordinal LIMIT 1")
+        jobs = rows(f"SELECT * FROM jobs WHERE {LIVE_JOBS} ORDER BY rowid LIMIT 1")
         if not jobs:
             ACTIVE = None
             await asyncio.sleep(1)
@@ -356,13 +355,18 @@ async def api(request):
         return web.json_response(await catalogue())
     if path in ('monitor','status') or path.startswith('batch/'):
         fields='id,batch,owner,kind,status,progress,current_node,error,ordinal,total,created'
-        if path=='monitor':jobs=rows(f"SELECT {fields} FROM jobs WHERE status IN ('pending','submitting','running','cancelling') ORDER BY created,ordinal")
-        elif path=='status':jobs=rows(f'SELECT {fields} FROM jobs ORDER BY created DESC,ordinal DESC LIMIT 100')
+        if path=='monitor':jobs=rows(f"SELECT {fields} FROM jobs WHERE {LIVE_JOBS} ORDER BY rowid")
+        elif path=='status':
+            jobs=rows(f"SELECT {fields} FROM jobs WHERE {LIVE_JOBS} OR rowid IN "
+                      "(SELECT rowid FROM jobs ORDER BY rowid DESC LIMIT 100) ORDER BY rowid DESC")
         else:jobs=rows(f'SELECT {fields} FROM jobs WHERE batch=? AND owner=? ORDER BY ordinal',(str(uuid.UUID(path[6:])),device))
+        counts = positions(DB) if jobs else {}
         for j in jobs:
+            if j['id'] in counts:
+                j['queuePosition'], j['queueTotal'] = counts[j['id']]
             if j['id']==ACTIVE and TRACKER and j['status'] not in ('complete','cancelled','error'):
                 j['progress'],j['current_node']=TRACKER.sample()
-        return web.json_response(dict(protocol=5,jobs=jobs, active=ACTIVE, preview=bool(PREVIEW), ownedComfy=bool(OWNED)))
+        return web.json_response(dict(protocol=6,jobs=jobs, active=ACTIVE, preview=bool(PREVIEW), ownedComfy=bool(OWNED)))
     if path == 'preview':
         return web.Response(body=PREVIEW or b'', content_type='image/jpeg')
     if path == 'library':
@@ -420,7 +424,9 @@ async def api(request):
             settings = dict(s); settings['seed'] = str((int(s['seed'])+(i if s.get('increment') else 0)) % (2**64))
             id = str(uuid.uuid4()); WF.build(kind, settings, 'ComfyBridge/'+id)
             prepared.append((id,batch,kind,json.dumps(settings),'pending',created,i+1,count,device)); ids.append(id)
-        DB.executemany('INSERT INTO jobs(id,batch,kind,settings,status,created,ordinal,total,owner) VALUES(?,?,?,?,?,?,?,?,?)', prepared); DB.commit()
+        with DB:
+            DB.executemany('INSERT INTO jobs(id,batch,kind,settings,status,created,ordinal,total,owner) '
+                           'VALUES(?,?,?,?,?,?,?,?,?)', prepared)
         return web.json_response(dict(batch=batch, ids=ids))
     if path == 'stop' and request.method == 'POST':
         d = await request.json(); batch = str(uuid.UUID(d['batch']))

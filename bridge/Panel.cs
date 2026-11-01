@@ -116,15 +116,63 @@ partial class Bridge {
         if(j==null)return "No active generation";
         percent=Math.Max(0,Math.Min(99,(int)Math.Round(Convert.ToDouble(j["progress"])*100)));
         string stage=Convert.ToString(j["current_node"]);
-        return String.Format("{0}  ·  {1}/{2}  ·  {3}%   {4}\n{5}{6}",j["kind"],j["ordinal"],j["total"],percent,j["status"],
+        return String.Format("{0}  ·  Queue {1}/{2}  ·  {3}%   {4}\n{5}{6}",j["kind"],
+            j.ContainsKey("queuePosition")?j["queuePosition"]:j["ordinal"],j.ContainsKey("queueTotal")?j["queueTotal"]:j["total"],percent,j["status"],
             stage==""?"Preparing workflow":stage,jobs.Count>1?"  ·  "+(jobs.Count-1)+" waiting":"");
+    }
+    // During an in-place upgrade the old worker still owns the running jobs.
+    // Cache the DB-derived positions until its outstanding job IDs change.
+    static readonly System.Threading.SemaphoreSlim countLock=new System.Threading.SemaphoreSlim(1,1);
+    static string outstandingKey;
+    static Dictionary<string,int[]> rollingCounts;
+    static bool LiveJob(Dictionary<string,object> job){
+        return new[]{"pending","submitting","running","cancelling"}.Contains(Convert.ToString(job["status"]));
+    }
+    static async Task<string> MonitorJson(){
+        using(var client=new WebClient()){
+            client.Proxy=null;client.Headers["Authorization"]="Bearer "+token;
+            return await client.DownloadStringTaskAsync("http://127.0.0.1:18766/api/monitor").ConfigureAwait(false);
+        }
+    }
+    static async Task<string> QueueResponse(string body,bool singleBatch){
+        var serializer=new System.Web.Script.Serialization.JavaScriptSerializer();
+        var response=serializer.Deserialize<Dictionary<string,object>>(body);
+        if(Convert.ToInt32(response["protocol"])>=6)return body;
+        var jobs=((IEnumerable)response["jobs"]).Cast<Dictionary<string,object>>().Where(LiveJob).ToArray();
+        if(jobs.Length==0)return body;
+        // The batch endpoint contains only the requesting phone's jobs. Use the
+        // shared monitor privately for cache invalidation, never in its response.
+        var shared=singleBatch?serializer.Deserialize<Dictionary<string,object>>(await MonitorJson()):response;
+        var ids=((IEnumerable)shared["jobs"]).Cast<Dictionary<string,object>>().Where(LiveJob)
+            .Select(j=>Convert.ToString(j["id"])).OrderBy(id=>id);
+        string key=String.Join(",",ids);
+        await countLock.WaitAsync().ConfigureAwait(false);
+        try{
+            if(rollingCounts==null||key!=outstandingKey){
+                var start=new System.Diagnostics.ProcessStartInfo(python,"\""+Path.Combine(Home,"queue_progress.py")+"\""){
+                    WorkingDirectory=Home,UseShellExecute=false,CreateNoWindow=true,RedirectStandardOutput=true};
+                using(var proc=System.Diagnostics.Process.Start(start)){
+                    string json=await proc.StandardOutput.ReadToEndAsync().ConfigureAwait(false);proc.WaitForExit();
+                    if(proc.ExitCode!=0)throw new IOException("Could not read queue progress.");
+                    rollingCounts=serializer.Deserialize<Dictionary<string,int[]>>(json);outstandingKey=key;
+                }
+            }
+            foreach(var job in jobs){
+                int[] count;
+                if(rollingCounts.TryGetValue(Convert.ToString(job["id"]),out count)){
+                    job["queuePosition"]=count[0];job["queueTotal"]=count[1];
+                }
+            }
+        }finally{countLock.Release();}
+        return serializer.Serialize(response);
     }
     async void RefreshJobs(){
         var target=monitor;if(reading||target==null||target.IsDisposed||!target.Visible)return;reading=true;
         string caption;int progress=0;
-        try{using(var c=new WebClient()){c.Headers["Authorization"]="Bearer "+token;
-            string json=await c.DownloadStringTaskAsync("http://127.0.0.1:18766/api/monitor").ConfigureAwait(false);
-            caption=JobSummary(new System.Web.Script.Serialization.JavaScriptSerializer().Deserialize<Dictionary<string,object>>(json),out progress);}}
+        try{
+            string json=await QueueResponse(await MonitorJson().ConfigureAwait(false),false).ConfigureAwait(false);
+            caption=JobSummary(new System.Web.Script.Serialization.JavaScriptSerializer().Deserialize<Dictionary<string,object>>(json),out progress);
+        }
         catch(WebException ex){caption=ex.Status==WebExceptionStatus.ConnectFailure?"No active generation":"Generation status unavailable";}
         catch(Exception){caption="Generation status unavailable";}
         try{target.BeginInvoke((Action)(()=>{reading=false;if(!target.IsDisposed && target.Visible){jobText.Text=caption;bar.Value=progress;}}));}

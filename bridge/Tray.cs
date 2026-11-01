@@ -21,8 +21,8 @@ using Microsoft.Win32;
 [assembly: System.Reflection.AssemblyTitle("Comfy Bridge")]
 [assembly: System.Reflection.AssemblyDescription("Phone to ComfyUI bridge")]
 [assembly: System.Reflection.AssemblyVersion("0.1.0.0")]
-[assembly: System.Reflection.AssemblyFileVersion("0.1.0.8")]
-[assembly: System.Reflection.AssemblyInformationalVersion("0.1.0-beta.5")]
+[assembly: System.Reflection.AssemblyFileVersion("0.1.0.12")]
+[assembly: System.Reflection.AssemblyInformationalVersion("0.1.0-beta.8")]
 
 partial class Bridge : ApplicationContext {
     static readonly string Home = AppDomain.CurrentDomain.BaseDirectory;
@@ -219,6 +219,13 @@ partial class Bridge : ApplicationContext {
             try {upstream=(HttpWebResponse)await req.GetResponseAsync();}
             catch(WebException ex){if(ex.Response==null)throw;upstream=(HttpWebResponse)ex.Response;}
             using(upstream){
+                if(upstream.StatusCode==HttpStatusCode.OK && first[0]=="GET" &&
+                   (path=="/api/status" || path=="/api/monitor" || path.StartsWith("/api/batch/"))){
+                    using(var reader=new StreamReader(upstream.GetResponseStream())){
+                        string body=await QueueResponse(await reader.ReadToEndAsync(),path.StartsWith("/api/batch/"));
+                        await Reply(stream,200,body);return;
+                    }
+                }
                 if(path=="/api/media-index" && first[0]=="GET" && upstream.StatusCode==HttpStatusCode.NotFound){
                     // A prior worker may still be rendering. Leave it running; read its index separately.
                     using(var p=Process.Start(new ProcessStartInfo(python,"\""+Path.Combine(Home,"media_index.py")+"\""){WorkingDirectory=Home,UseShellExecute=false,CreateNoWindow=true,RedirectStandardOutput=true})){

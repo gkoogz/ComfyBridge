@@ -59,10 +59,10 @@ partial class Bridge {
                 app.RefreshState();Check(app.phone.Text.Contains("2 phones"),"two connected phones");
                 http.DownloadString(baseUrl+"disconnect");app.RefreshState();Check(app.phone.Text.Contains("1 phone"),"disconnect only one phone");}
             Check(app.monitor.FormBorderStyle==FormBorderStyle.None&&app.monitor.Region!=null&&Screen.FromControl(app.monitor).WorkingArea.Contains(app.monitor.Bounds),"rounded panel inside working area");
-            int pct;var j=new Dictionary<string,object>{{"id","test"},{"kind","image"},{"ordinal",1},{"total",4},{"progress",0.47},{"status","running"},{"current_node","Sample image · 12/32"}};
+            int pct;var j=new Dictionary<string,object>{{"id","test"},{"kind","image"},{"ordinal",1},{"total",1},{"queuePosition",2},{"queueTotal",4},{"progress",0.47},{"status","running"},{"current_node","Sample image · 12/32"}};
             var st=new Dictionary<string,object>{{"active","test"},{"jobs",new object[]{j}}};
             app.jobText.Text=JobSummary(st,out pct);app.bar.Value=pct;
-            Check(app.jobText.Text.Contains("1/4")&&pct==47,"batch progress");
+            Check(app.jobText.Text.Contains("Queue 2/4")&&pct==47,"shared queue progress");
             if(args.Length==1){using(var bmp=new Bitmap(app.monitor.Width,app.monitor.Height)){app.monitor.DrawToBitmap(bmp,new Rectangle(0,0,bmp.Width,bmp.Height));bmp.Save(args[0]);}}
             typeof(Pairing).GetField("expires",BindingFlags.Static|BindingFlags.NonPublic).SetValue(null,DateTime.UtcNow.AddSeconds(-1));
             Check(Pairing.Display(out hint)=="—","expired code invalidated");
