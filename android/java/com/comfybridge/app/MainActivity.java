@@ -26,6 +26,12 @@ import java.util.concurrent.*;
 
 public class MainActivity extends Activity {
  private WebView web;
+ private int statusInsetPx;
+ private void applyStatusInset(){
+  // WebView layout uses CSS pixels, while Android reports physical pixels.
+  web.evaluateJavascript("document.documentElement.style.setProperty('--status-inset',("+
+    statusInsetPx+"/window.devicePixelRatio)+'px')",null);
+ }
  private final java.util.concurrent.atomic.AtomicReference<String> noticeRoute=new java.util.concurrent.atomic.AtomicReference<>("");
  private SharedPreferences prefs;
  private final ExecutorService io=Executors.newFixedThreadPool(4);
@@ -44,14 +50,22 @@ public class MainActivity extends Activity {
  private static final String ORIGIN="https://appassets.androidplatform.net";
  @Override public void onCreate(Bundle b){
   super.onCreate(b);prefs=getSharedPreferences("connection",MODE_PRIVATE);readRoute(getIntent());
-  getWindow().setStatusBarColor(Color.rgb(11,16,20));getWindow().setNavigationBarColor(Color.rgb(11,16,20));
+  getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN);
+  getWindow().setStatusBarColor(Color.TRANSPARENT);
+  if(android.os.Build.VERSION.SDK_INT>=29)getWindow().setStatusBarContrastEnforced(false);
+  getWindow().setNavigationBarColor(Color.rgb(11,16,20));
   web=new WebView(this);web.setBackgroundColor(Color.rgb(11,16,20));FrameLayout root=new FrameLayout(this);root.addView(web,new FrameLayout.LayoutParams(-1,-1));setContentView(root);
-  // Respect system bars, including Android 15 edge-to-edge enforcement.
-  root.setOnApplyWindowInsetsListener((v,insets)->{v.setPadding(insets.getSystemWindowInsetLeft(),insets.getSystemWindowInsetTop(),insets.getSystemWindowInsetRight(),insets.getSystemWindowInsetBottom());return insets.consumeSystemWindowInsets();});root.requestApplyInsets();
+  root.setOnApplyWindowInsetsListener((v,insets)->{
+   v.setPadding(insets.getSystemWindowInsetLeft(),0,insets.getSystemWindowInsetRight(),insets.getSystemWindowInsetBottom());
+   int top=insets.getSystemWindowInsetTop();
+   if(top!=statusInsetPx){statusInsetPx=top;applyStatusInset();}
+   return insets.consumeSystemWindowInsets();
+  });root.requestApplyInsets();
   if((getApplicationInfo().flags & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE)!=0)WebView.setWebContentsDebuggingEnabled(true);
   WebSettings s=web.getSettings();s.setJavaScriptEnabled(true);s.setDomStorageEnabled(true);s.setAllowFileAccess(false);s.setAllowContentAccess(true);s.setMediaPlaybackRequiresUserGesture(false);s.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
   web.addJavascriptInterface(new NativeApi(),"Native");
   web.setWebViewClient(new WebViewClient(){
+   @Override public void onPageFinished(WebView view,String url){applyStatusInset();}
    @Override public boolean shouldOverrideUrlLoading(WebView view,WebResourceRequest r){return !r.getUrl().toString().startsWith(ORIGIN+"/");}
    @Override public WebResourceResponse shouldInterceptRequest(WebView view,WebResourceRequest r){
     Uri uri=r.getUrl();if(!"appassets.androidplatform.net".equals(uri.getHost()))return response(403,"Forbidden","text/plain",new byte[0]);

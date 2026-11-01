@@ -1,5 +1,8 @@
-/* Routes scroll independently of the media viewer. Android owns the system bars. */
-#workspace{position:fixed;inset:0;overflow:auto;overflow-x:clip;background:var(--bg);overscroll-behavior:contain;touch-action:pan-y pinch-zoom}
+/* The drawer and its shade extend behind the Android status icons. */
+:root{--status-inset:env(safe-area-inset-top,0px);background:#0b1014}
+#workspace{position:fixed;inset:var(--status-inset) 0 0;overflow:auto;overflow-x:clip;background:var(--bg);overscroll-behavior:contain;touch-action:pan-y pinch-zoom}
+#drawer{padding-top:calc(33px + var(--status-inset))}
+#modal{padding-top:var(--status-inset)}
 #workspace.behind{transform:translateX(-100%);overflow:hidden;transition:transform .18s ease-out}
 header{height:52px;padding-top:4px;padding-bottom:4px}
 .gentoolbar{top:52px}
@@ -13,7 +16,7 @@ body[data-page=library] main{padding:0;max-width:none}
 .libraryitem img{display:block;position:absolute;inset:0}
 .galleryEmpty{grid-column:1/-1;margin:20px;text-align:center;color:var(--muted)}
 body[data-page=library] #linkNotice:not([hidden]){margin:0;padding:4px 12px;font-size:12px}
-#viewer{position:fixed;inset:0;z-index:32;background:#050708;overflow:hidden;touch-action:pan-y pinch-zoom;transition:transform .18s ease-out;color:white}
+#viewer{position:fixed;inset:var(--status-inset) 0 0;z-index:32;background:#050708;overflow:hidden;touch-action:pan-y pinch-zoom;transition:transform .18s ease-out;color:white}
 #viewer[hidden]{display:none}
 .asset{position:relative;width:100%;line-height:1;background:#050708;color:white}
 .galleryAsset{height:100%;display:grid;place-items:center}

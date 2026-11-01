@@ -5,3 +5,6 @@ input[type=range]{-webkit-appearance:none;appearance:none;background:#304039;hei
 /* Keep navigation and control labels out of Android's long-press selection menu. */
 body,button,label{-webkit-user-select:none;user-select:none}
 textarea,input:not([type]),input:is([type=text],[type=url],[type=number],[type=search],[type=password]),[contenteditable=true],.pairHost,.errorbox{-webkit-user-select:text;user-select:text}
+
+/* Buttons already provide pressed feedback. Suppress WebView's rectangular tap overlay. */
+html{-webkit-tap-highlight-color:transparent}
