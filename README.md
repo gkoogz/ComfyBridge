@@ -1,6 +1,6 @@
 # ComfyBridge
 
-<img src="artwork/comfybridge.png" width="128" alt="ComfyBridge white outline cube and play icon">
+<img src="artwork/comfybridge.png" width="128" alt="ComfyBridge white cube and play icon on black">
 
 An Android remote for an existing Windows ComfyUI installation. The phone edits generation settings, uploads images and masks, and views results; the PC does the GPU work. A small Windows tray application wakes its Python worker on demand.
 
