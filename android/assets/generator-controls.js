@@ -34,17 +34,18 @@ function installFold(panel){
 }
 
 const linkIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 14 4-4m-6 3-1 1a3 3 0 1 0 4 4l3-3a3 3 0 0 0 0-4m2 0 1-1a3 3 0 1 0-4-4l-3 3a3 3 0 0 0 0 4"/></svg>';
-function canvasInputs(s){
- return '<div class="canvasFields"><label>Width<input type="number" inputmode="numeric" data-setting="width" min="32" max="8192" step="1" value="'+s.width+'"></label>'+
+function canvasInputs(s,step=1){
+ return '<div class="canvasFields"><label>Width<input type="number" inputmode="numeric" data-setting="width" min="32" max="8192" step="'+step+'" value="'+s.width+'"></label>'+
  '<button id="linkAspect" type="button" aria-label="Lock aspect ratio">'+linkIcon+'</button>'+
- '<label>Height<input type="number" inputmode="numeric" data-setting="height" min="32" max="8192" step="1" value="'+s.height+'"></label></div>'+
+ '<label>Height<input type="number" inputmode="numeric" data-setting="height" min="32" max="8192" step="'+step+'" value="'+s.height+'"></label></div>'+
  '<div class="ratioLine">Canvas aspect ratio <strong id="canvasRatio"></strong></div>';
 }
-function bindCanvas(s){
+function bindCanvas(s,step=1){
  const w=$('[data-setting="width"]'),h=$('[data-setting="height"]'),link=$('#linkAspect');
  function refresh(){const locked=!!s.aspectLock;
   link.setAttribute('aria-pressed',String(locked));link.setAttribute('aria-label',locked?'Unlock aspect ratio':'Lock aspect ratio');
   $('#canvasRatio').textContent=aspect(s.width,s.height)+(locked?' · Locked':'');
+  if(step===32)updateVideo(false);
  }
  link.onclick=()=>{s.aspectLock=s.aspectLock?null:[s.width,s.height];refresh();persist();};
  function edit(input,companion,key,other,commit){
@@ -56,9 +57,9 @@ function bindCanvas(s){
    min=Math.max(min,Math.ceil(32*ratio-1e-8));max=Math.min(max,Math.floor(8192*ratio+1e-8));
   }
   if(!commit&&(value<min||value>max))return;
-  value=limit(Math.round(value),min,max);s[key]=value;
+  value=limit(Math.round(value/step)*step,Math.ceil(min/step)*step,Math.floor(max/step)*step);s[key]=value;
   if(commit)input.value=value;
-  if(ratio){s[other]=limit(Math.round(value/ratio),32,8192);companion.value=s[other];}
+  if(ratio){s[other]=limit(Math.round(value/ratio/step)*step,32,8192);companion.value=s[other];}
   refresh();persist();
  }
  for(const [input,companion,key,other] of [[w,h,'width','height'],[h,w,'height','width']]){

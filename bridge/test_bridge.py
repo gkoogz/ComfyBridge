@@ -375,9 +375,16 @@ class BridgeTests(unittest.IsolatedAsyncioTestCase):
         submits=[d for p,d in self.calls if p=='/prompt'];self.assertEqual(len(submits),2)
         self.assertEqual(submits[0]['prompt']['3']['inputs']['seed'],submits[1]['prompt']['3']['inputs']['seed'])
 
-    async def test_validation_rejects_missing_video_input_and_path_escape(self):
+    async def test_text_video_uses_no_image_nodes_and_validates_canvas(self):
         video=copy.deepcopy(w.WF.defaults()['video'])
-        with self.assertRaises(ValueError):w.WF.build('video',video,'ComfyBridge/test')
+        video.update(width=512,height=768,upload=None)
+        graph=w.WF.build('video',video,'ComfyBridge/test')
+        self.assertNotIn('first_frame',graph['6']['inputs'])
+        self.assertNotIn('LoadImage',{n['class_type'] for n in graph.values()})
+        video['width']=513
+        with self.assertRaisesRegex(ValueError,'multiples of 32'):w.WF.build('video',video,'ComfyBridge/test')
+
+    async def test_validation_rejects_invalid_resolution_and_path_escape(self):
         with self.assertRaises(ValueError):w.checked_upload('../../worker.py')
         self.settings['width']=0;r,d=await self.submit();self.assertEqual(r.status,400)
         self.assertEqual(w.rows('SELECT * FROM jobs'),[])

@@ -93,6 +93,7 @@ function extendVideoButton(item){
    if(session!==epoch||!button.isConnected||viewerClosing)return;
    const settings=state.settings.video;
    if(!settings)throw Error('Wait for the PC to load your video settings.');
+   rememberTextCanvas(settings);
    Object.assign(settings,{extension:source,upload:null,mask:null,scale:0,width:source.width,height:source.height,
     fps:source.fps,frames:Math.min(3570,Math.max(1,Math.round(source.fps*3)))});
    state.inputs.video={};

@@ -93,8 +93,9 @@ class Workflows:
             node(9, 'SaveImage', images=image, filename_prefix=prefix)
         elif kind == 'video':
             extension = s.get('extension')
-            if not extension and not s.get('upload'):
-                raise ValueError('Choose a starting image for video.')
+            text_only = not extension and not s.get('upload')
+            if text_only and (width % 32 or height % 32):
+                raise ValueError('Video width and height must be multiples of 32.')
             frames = 5 + 17 * max(0, math.ceil((int(s['frames']) - 5)/17))
             fps = float(s['fps'])
             if not 5 <= frames <= 3600 or not 1 <= fps <= 120:
@@ -109,11 +110,14 @@ class Workflows:
                 for i, name in enumerate(names[1:]):
                     frame = node(30+i, 'LoadImage', image=name)
                     image = node(40+i, 'ImageBatch', image1=image, image2=frame)
-            else:
+            elif not text_only:
                 image = node(1, 'LoadImage', image=s['upload'])
-            image = node(2, 'CUDNNToggleAMD', any_input=image, enable_cudnn=False)
+            if not text_only:
+                image = node(2, 'CUDNNToggleAMD', any_input=image, enable_cudnn=False)
             c = self.widgets('video', 3)
             clip = node(3, 'CLIPLoader', clip_name=c[0], type=c[1], device=c[2])
+            if text_only:
+                clip = node(2, 'CUDNNToggleAMD', any_input=clip, enable_cudnn=False)
             vae = node(4, 'VAELoader', vae_name=self.widgets('video', 4)[0])
             u = self.widgets('video', 5)
             model = node(5, 'UNETLoader', unet_name=u[0], weight_dtype=u[1])
@@ -125,7 +129,7 @@ class Workflows:
                     fixed = mandatory[1] if recorded_video_strength is None else recorded_video_strength
                     strength = fixed if i == 0 else l['strength']
                     model = node(100+i, 'LoraLoaderModelOnly', model=model, lora_name=l['name'], strength_model=float(strength))
-            first_frame = {} if extension else {'first_frame':image}
+            first_frame = {'first_frame':image} if not extension and not text_only else {}
             cond = node(6, 'MiniMaxH3ImageToVideo', clip=clip, vae=vae, prompt=s.get('positive', ''), width=width, height=height, length=frames, **first_frame)
             if extension:
                 cond = node(50, 'MiniMaxH3AddGuide', positive=cond, latent=['6',1], vae=vae, image=image, frame_idx=0)

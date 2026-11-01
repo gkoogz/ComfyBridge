@@ -219,16 +219,26 @@ async def collect(job, entry):
                         if stop.is_set():raise InterruptedError('Extension cancelled.')
                     finally:
                         stop.set()
-                else:
+                elif settings.get('upload'):
                     duration = (5+17*max(0, math.ceil((int(settings['frames'])-5)/17)))/float(settings['fps'])
                     # The submitted first frame is a reliable cover even without ffmpeg installed.
                     with Image.open(ROOT/'input'/settings['upload']) as img:
                         img.thumbnail((400, 400)); img.convert('RGB').save(thumb, quality=80)
+                else:
+                    import av
+                    with av.open(str(path)) as video:
+                        stream = video.streams.video[0]
+                        frame = next(video.decode(stream), None)
+                        if frame is None:
+                            raise ValueError('The generated video has no frames.')
+                        img = frame.to_image()
+                        img.thumbnail((400, 400)); img.convert('RGB').save(thumb, quality=80)
+                        duration = stream.frames / float(stream.average_rate)
                 DB.execute('INSERT OR IGNORE INTO media VALUES(?,?,?,?,?,?,?,0)',
                            (id, job['id'], job['kind'], str(path), str(thumb), duration, time.time()))
                 collected = True
-    if ext and not collected:
-        raise ValueError('ComfyUI returned no continuation video.')
+    if job['kind']=='video' and not collected:
+        raise ValueError('ComfyUI returned no video.')
     DB.commit()
 
 
@@ -446,7 +456,7 @@ async def api(request):
                 j['queuePosition'], j['queueTotal'] = counts[j['id']]
             if j['id']==ACTIVE and TRACKER and j['status'] not in ('complete','cancelled','error'):
                 j['progress'],j['current_node']=TRACKER.sample()
-        return web.json_response(dict(protocol=9,jobs=jobs, active=ACTIVE, preview=bool(PREVIEW), previewRevision=PREVIEW_REV,ownedComfy=bool(OWNED)))
+        return web.json_response(dict(protocol=10,jobs=jobs, active=ACTIVE, preview=bool(PREVIEW), previewRevision=PREVIEW_REV,ownedComfy=bool(OWNED)))
     if path.startswith('preview/'):
         job=str(uuid.UUID(path[8:]))
         after=int(request.query.get('after','-1'))
