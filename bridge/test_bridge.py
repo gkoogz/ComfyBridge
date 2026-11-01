@@ -236,9 +236,19 @@ class BridgeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(w.rows("SELECT * FROM jobs WHERE status='cancelled'")),4)
 
     async def test_skip_only_previewed_image_and_continue_batch(self):
+        await self.check_skip_and_continue('image',self.settings)
+
+    async def test_skip_current_video_and_continue_batch(self):
+        video=copy.deepcopy(w.CATALOG['defaults']['video'])
+        video['upload']='ComfyBridge/skip-test.png'
+        Image.new('RGB',(64,64)).save(w.ROOT/'input'/video['upload'])
+        w.CATALOG['loras'].extend(l['name'] for l in video['loras'])
+        await self.check_skip_and_continue('video',video)
+
+    async def check_skip_and_continue(self,kind,settings):
         owner={'Authorization':'Bearer integration-test-key','X-Bridge-Device':str(uuid.uuid4())}
         other={**owner,'X-Bridge-Device':str(uuid.uuid4())}
-        _,batch=await self.request('generate',dict(requestId=str(uuid.uuid4()),kind='image',count=2,settings=self.settings),owner)
+        _,batch=await self.request('generate',dict(requestId=str(uuid.uuid4()),kind=kind,count=2,settings=settings),owner)
         first,second=batch['ids']
         self.complete=False
         simulate=w.comfy

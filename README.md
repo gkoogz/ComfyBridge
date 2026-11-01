@@ -1,12 +1,12 @@
 # ComfyBridge
 
-**[Open the beta 12 release page](https://github.com/gkoogz/ComfyBridge/releases/tag/v0.1.0-beta.12)** · [Download the Android APK](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.12/ComfyBridge-0.1.0-beta.12.apk) · [All releases](https://github.com/gkoogz/ComfyBridge/releases)
+**[Open the beta 13 release page](https://github.com/gkoogz/ComfyBridge/releases/tag/v0.1.0-beta.13)** · [Download the Android APK](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.13/ComfyBridge-0.1.0-beta.13.apk) · [All releases](https://github.com/gkoogz/ComfyBridge/releases)
 
 <img src="artwork/comfybridge.png" width="128" alt="ComfyBridge white cube and play icon on black">
 
 An Android remote for an existing Windows ComfyUI installation. The phone edits generation settings, uploads images and masks, and views results; the PC does the GPU work. A small Windows tray application wakes its Python worker on demand.
 
-**0.1.0-beta.12 is a personal-workflow beta**, adapted specifically to `Image gen.json` and `Video gen.json` in `E:\ComfyUI-Zluda\user\default\workflows`. It is not a general ComfyUI workflow importer. Models, LoRAs, workflow files, prompts, generated media, pairing credentials, and signing keys are not included in this repository or release.
+**0.1.0-beta.13 is a personal-workflow beta**, adapted specifically to `Image gen.json` and `Video gen.json` in `E:\ComfyUI-Zluda\user\default\workflows`. It is not a general ComfyUI workflow importer. Models, LoRAs, workflow files, prompts, generated media, pairing credentials, and signing keys are not included in this repository or release.
 
 The phone shows **PC connected** as soon as the bridge answers. Loading models and unavailable telemetry have their own messages. If the server or VPN drops, leave the phone app open: it retries automatically using the saved pairing. **Disconnect** or **Cancel reconnect** stops those retries.
 
@@ -36,7 +36,7 @@ The percentage is an estimate for the current image or video, alongside its posi
 
 **Generation notifications** opens Android notification settings or requests permission. With notifications enabled, your phone watches batches it submits, including when you leave the app. The progress notification displays batch progress and the current item/stage. Completion, cancellation and failure are reported per batch. If the PC becomes unreachable, updates wait for connectivity; Android can defer background updates under its power and foreground-service limits. The other phone's jobs remain visible in the shared queue without sending duplicate alerts to both devices.
 
-PC Queue on either generator shows active jobs and the past 24 hours of results. It scrolls after ten entries. Each generation has its own timer. Finished rows show **Success**, **Aborted** or **Fail** and the final elapsed time. A thumbnail opens the result in Library. Tap **↗** to load that job’s settings, actual seed, starting image and mask into the editor. Tap Generate when ready. The built-in MiniMax turbo LoRA uses the strength from the saved workflow.
+PC Queue on either generator shows active jobs and the past 24 hours of results. It scrolls after five entries. On Bridge, the progress bar sits below the existing panes and the expanded queue fills the remaining height. Swipe vertically inside the queue to scroll it, or swipe right from a row to open the sidebar. **Skip** advances past the current image or video. **Stop batch** stops that batch. Both controls are available to the submitting phone. Each generation has its own timer. Finished rows show **Success**, **Aborted** or **Fail** and the final elapsed time. A thumbnail opens the result in Library. Tap **↗** to load that job’s settings, actual seed, starting image and mask into the editor. Tap Generate when ready. The built-in MiniMax turbo LoRA uses the strength from the saved workflow.
 
 Older jobs may have no recorded start. A ≥ time counts from when the upgrade first observed a running job. An ≈ time comes from a unique match between a ComfyUI log entry and an output file. The app shows **Time unavailable** when it cannot recover a duration.
 

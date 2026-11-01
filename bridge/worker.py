@@ -21,7 +21,7 @@ from aiohttp import web
 from PIL import Image, ImageOps
 
 from queue_progress import LIVE_JOBS, positions, prepare
-from studio import prepare as prepare_studio
+from studio import prepare as prepare_studio, mark_skipping
 from workflows import Workflows
 from progress import Progress
 
@@ -400,7 +400,7 @@ async def api(request):
                 j['queuePosition'], j['queueTotal'] = counts[j['id']]
             if j['id']==ACTIVE and TRACKER and j['status'] not in ('complete','cancelled','error'):
                 j['progress'],j['current_node']=TRACKER.sample()
-        return web.json_response(dict(protocol=7,jobs=jobs, active=ACTIVE, preview=bool(PREVIEW), previewRevision=PREVIEW_REV,ownedComfy=bool(OWNED)))
+        return web.json_response(dict(protocol=8,jobs=jobs, active=ACTIVE, preview=bool(PREVIEW), previewRevision=PREVIEW_REV,ownedComfy=bool(OWNED)))
     if path.startswith('preview/'):
         job=str(uuid.UUID(path[8:]))
         after=int(request.query.get('after','-1'))
@@ -489,15 +489,14 @@ async def api(request):
         return web.json_response(dict(batch=batch, ids=ids))
     if path=='skip' and request.method=='POST':
         job=str(uuid.UUID((await request.json())['id']))
-        target=DB.execute('SELECT kind,owner,status FROM jobs WHERE id=?',(job,)).fetchone()
-        if not target or target['owner']!=device or device=='legacy':
+        try:
+            interrupt=mark_skipping(DB,job,device,ACTIVE)
+        except PermissionError:
             raise web.HTTPForbidden()
-        if target['status']=='cancelled':
-            return web.json_response({'ok':True})
-        if job!=ACTIVE or target['kind']!='image' or target['status'] not in ('running','cancelling'):
-            return web.json_response({'error':'That image is no longer running.'},status=409)
-        update(job,status='cancelling')
-        await cancel_ids({job})
+        except ValueError as error:
+            return web.json_response({'error':str(error)},status=409)
+        if interrupt:
+            await cancel_ids({job})
         return web.json_response({'ok':True})
     if path == 'stop' and request.method == 'POST':
         d = await request.json(); batch = str(uuid.UUID(d['batch']))

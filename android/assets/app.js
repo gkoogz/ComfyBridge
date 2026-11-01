@@ -68,6 +68,7 @@ let editPair=false,pairAddress=null,bridgeError="";
 let wanted=false,epoch=0,probing=false,nextProbe=0,misses=0,catalogLoading=false,serviceNote='',pollNote='';
 function notice(){const el=$('#linkNotice'),n=library.filter(j=>['missing','changed'].includes(j.warning)).length;const review=n?n+' PC file(s) changed or disappeared. Open Library to review your protected phone copies.':'';el.textContent=[wanted&&!connected?'Reconnecting to your PC. '+bridgeError+' Accepted jobs continue on the PC.':connected?[serviceNote,pollNote].filter(Boolean).join(' '):'',page==='library'?'':review].filter(Boolean).join(' ');el.hidden=!el.textContent;}
 function clearSession(){leaveLiveImage();imagePreviewProtocol=false;
+ queueProtocol=0;rollingSkip=false;jobs=[];active=null;queueHistory=[];historyFailure='';
  ++epoch;profileReady=false;clearTimeout(profileTimer);wanted=false;misses=0;nextProbe=0;catalogLoading=false;serviceNote=pollNote=bridgeError='';connection(false);notice();
 }
 async function loadCatalog(){
@@ -85,6 +86,7 @@ function reached(){const cameBack=!connected;misses=0;nextProbe=0;bridgeError=''
  syncShelf(cameBack);notice();poll();
 }
 function unreachable(e){
+ queueProtocol=0;
  bridgeError=e.message;
  if(/HTTP 40[13]|verify the PC.s identity/i.test(bridgeError)){
   const reason=bridgeError;clearSession();editPair=true;bridgeError=reason;if(page==='bridge')renderBridge();else toast(reason);return;
@@ -98,6 +100,7 @@ async function heartbeat(){
  try{await api('ping');if(id===epoch)reached();}catch(e){if(id===epoch)unreachable(e);}finally{probing=false;}
 }
 function renderBridge(){
+ const queueScroll=$('.queueRows')?.scrollTop||0;
  const cfg=window.Native?JSON.parse(Native.configuration()):{host:'',paired:false};
  const enroll=!wanted&&!connected&&(!cfg.paired||editPair), host=pairAddress??cfg.host;
  const fields=enroll?`<div class="pairFields"><p>On your PC, click the ComfyBridge cube by the Windows clock. Keep its panel open while you pair.</p><label for="host">1 · PC address</label><input id="host" type="url" value="${esc(host)}" placeholder="Address shown in the PC panel" autocapitalize="off" spellcheck="false"><label for="code">2 · Six-digit pairing code</label><input id="code" type="text" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="off" placeholder="000000"><small>After pairing, this phone remembers your PC.</small></div>`:`<p class="pairHost">${esc(cfg.host)}</p>`;
@@ -122,7 +125,7 @@ function renderBridge(){
    if(id!==epoch)return;wanted=true;await api('ping');if(id===epoch)reached();
   }catch(e){if(id!==epoch)return;if(wanted)unreachable(e);else{bridgeError='Pairing: '+e.message;if(page==='bridge')renderBridge();}}finally{connecting=false;}
  };
- profileControls();$$('[data-open]').forEach(b=>b.onclick=()=>navigate(b.dataset.open));
+ profileControls();addBridgeActivity(queueScroll);$$('[data-open]').forEach(b=>b.onclick=()=>navigate(b.dataset.open));
 }
 function slider(key,label,min,max,step=1,disabled=false){let s=state.settings[page];return `<div class="field"><label>${label}</label><div class="controlrow"><input type="range" data-setting="${key}" min="${min}" max="${max}" step="${step}" value="${s[key]}" ${disabled?'disabled':''}><input type="number" data-setting="${key}" min="${min}" max="${max}" step="${step}" value="${s[key]}" ${disabled?'disabled':''}></div></div>`;}
 function renderGenerator(){
@@ -237,28 +240,32 @@ async function generate(){
 async function poll(){
  if(!connected||pollBusy||document.hidden)return;const id=epoch,view=page;pollBusy=true;
  const current=()=>id===epoch&&connected&&page===view;
+ let metricsError='';
+ const metrics=view==='bridge'?api('metrics').then(m=>{if(current())showMetrics(m);}).catch(e=>{metricsError='PC telemetry unavailable: '+e.message;}):null;
  try{
-  if(view==='bridge'){const m=await api('metrics');if(current())showMetrics(m);}
-  else if(view!=='notepad'){const status=view==='library'?null:await api('status');const latest=await api('library');if(!current())return;
-   if(status){await refreshHistory();if(!current())return;jobs=status.jobs;active=status.active;previewAvailable=status.preview;imagePreviewProtocol=status.protocol>=7;}
-   if(signature(latest)!==inventory&&(!shelfError||Date.now()>=nextSync))syncShelf(true);
-   if(view!=='library'&&$('#play'))updateProgress();
+  if(view!=='notepad'){const [status,latest]=await Promise.all([view==='library'?null:api('status'),view==='bridge'?null:api('library')]);if(!current())return;
+   if(status){
+    jobs=status.jobs;active=status.active;previewAvailable=status.preview;queueProtocol=status.protocol;imagePreviewProtocol=queueProtocol>=7;
+    if(view==='bridge')updateBridgeActivity();
+    await refreshHistory();if(!current())return;
+   }
+   if(latest&&signature(latest)!==inventory&&(!shelfError||Date.now()>=nextSync))syncShelf(true);
+   if(view==='bridge')updateBridgeActivity();else if($('#play'))updateProgress();
   }
   if(current())pollNote='';
- }catch(e){if(current())pollNote=(view==='bridge'?'PC telemetry unavailable: ':'Generation or library status unavailable: ')+e.message;}
- finally{pollBusy=false;notice();}
+ }catch(e){if(current()){pollNote='Generation or library status unavailable: '+e.message;if(view==='bridge'){queueProtocol=0;updateBridgeActivity(true);}}}
+ finally{await metrics;if(current()&&metricsError)pollNote=[pollNote,metricsError].filter(Boolean).join(' ');pollBusy=false;notice();}
 }
 function showMetrics(m){const gb=v=>(v/1073741824).toFixed(1);let vals=[[m.cpu==null?'—':m.cpu.toFixed(0)+'%',m.cpuWatts==null?'Power unavailable':m.cpuWatts.toFixed(1)+' W',m.cpu],[m.gpu==null?'—':m.gpu.toFixed(0)+'%',m.gpuWatts==null?'HWiNFO unavailable':m.gpuWatts.toFixed(0)+' W',m.gpu],[gb(m.ramUsed)+' GB','of '+gb(m.ramTotal)+' GB',m.ramUsed/m.ramTotal*100],[m.vramUsed==null?'—':gb(m.vramUsed)+' GB','of '+gb(m.vramTotal)+' GB',m.vramUsed/m.vramTotal*100],[gb(m.commitUsed)+' GB','of '+gb(m.commitTotal)+' GB committed',m.commitUsed/m.commitTotal*100]];vals.forEach((v,i)=>{if($('#m'+i)){$('#m'+i).textContent=v[0];$('#ms'+i).textContent=v[1];$('#mb'+i).style.width=Math.max(0,Math.min(100,v[2]||0))+'%';}});}
-function updateProgress(){if(!$('#play'))return;const me=info().device,pendingJobs=jobs.filter(j=>['pending','running','submitting','cancelling'].includes(j.status)).sort((a,b)=>(a.queuePosition??0)-(b.queuePosition??0)||a.created-b.created||a.ordinal-b.ordinal);
- const same=pendingJobs.filter(j=>j.kind===page),j=pendingJobs.find(j=>j.id===active)||pendingJobs[0],mine=same.find(j=>j.owner===me);
+function updateProgress(){if(!$('#play'))return;
+ const {pending:pendingJobs,job:j,running,pct,label}=queueProgress();
+ const mine=pendingJobs.find(job=>job.kind===page&&job.owner===info().device);
  $('#play').textContent=pendingJobs.length?'▶ Add to queue':'▶ Generate';$('#play').disabled=submitting;$('#batchButton').disabled=submitting;$('#stopBatch').hidden=!mine;$('#stopBatch').onclick=()=>mine&&stopBatch(mine.batch);
  $('#runSpinner').hidden=!j;$('#progressRow').hidden=!j;
  renderQueue();
  if(j){
-  const running=j.id===active;
-  const pct=Math.min(99,Math.round(j.progress*100));
   $('#progressFill').style.width=pct+'%';
-  $('#progressText').textContent='Queue '+(j.queuePosition??j.ordinal)+'/'+(j.queueTotal??j.total)+' · '+(running?pct+'%':'Queued');
+  $('#progressText').textContent=label;
   $('#jobMessage').textContent=(j.kind===page?'':j.kind+' · ')+(j.current_node||(running?'Preparing workflow':'Waiting in PC queue'));
   const timer=document.createElement('span');timer.id='activeTimer';
   timer.textContent=elapsed(queueHistory.find(row=>row.id===j.id));$('#jobMessage').append(' ',timer);

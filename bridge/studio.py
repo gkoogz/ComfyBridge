@@ -15,6 +15,19 @@ NOW_SQL = "(julianday('now')-2440587.5)*86400"
 LIVE = "('pending','running','submitting','cancelling')"
 
 
+def mark_skipping(db, job, device, active):
+    target=db.execute("SELECT owner,status FROM jobs WHERE id=?",(job,)).fetchone()
+    if not target or target['owner']!=device or device=='legacy':
+        raise PermissionError('This generation belongs to another phone.')
+    if target['status']=='cancelled':
+        return False
+    with db:
+        if job==active and db.execute("""UPDATE jobs SET status='cancelling'
+            WHERE id=? AND owner=? AND status IN ('running','cancelling')""",(job,device)).rowcount:
+            return True
+    raise ValueError('That generation is no longer running.')
+
+
 def prepare(db):
     db.executescript("""
         CREATE TABLE IF NOT EXISTS workspace(section TEXT PRIMARY KEY, stamp INTEGER, device TEXT, payload TEXT);
@@ -205,6 +218,18 @@ def serve():
                         recover_log_estimates(db,Path(config['comfyRoot']))
                         recovered=True
                 result=history_rows(db) if recovered else dict(now=time.time(),jobs=[])
+                result['supportsRollingSkip']=True
+            elif route=='rolling-skip':
+                # The beta 11 worker already reconciles durable per-job cancellations.
+                # Use its active ID so an upgrade never has to restart a live render.
+                probe=urllib.request.Request('http://127.0.0.1:18766/api/monitor',headers={
+                    'Authorization':'Bearer '+(data/'token.txt').read_text().strip()})
+                with urllib.request.urlopen(probe,timeout=4) as response:
+                    monitor=json.load(response)
+                if monitor.get('protocol',0)<7:
+                    raise ValueError('The previous worker cannot skip individual jobs.')
+                mark_skipping(db,str(uuid.UUID(body['id'])),device,monitor.get('active'))
+                result=dict(ok=True)
             elif route.startswith('clock/'):
                 row=db.execute("SELECT started,observed FROM job_times WHERE job=?",(route[6:],)).fetchone()
                 seconds=max(0,int(time.time()-row['started'])) if row and row['started'] else None

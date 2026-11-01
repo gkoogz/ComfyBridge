@@ -2,6 +2,12 @@
 
 Validation performed on November 1, 2026, on Windows with the existing ComfyUI-ZLUDA installation and a connected Moto g stylus 2025.
 
+## Beta 13 Bridge queue and gestures
+
+On the Moto, Image and Video each showed five 52-pixel rows before scrolling. Bridge showed a real running video, its elapsed time and shared queue position, with 25 history entries in the area below. A vertical touch drag inside the queue scrolled the rows and kept the page stationary. A rightward drag starting on the thumbnail area followed the finger into the drawer on all three screens. Closing the drawer kept the same queue position.
+
+Isolated UI checks covered the Stop and Skip request targets, disabled actions for another phone’s job, the rolling-update skip path, and portrait and landscape layouts. Worker integration tests skipped the first job and completed the second job of an image batch and of a video batch. The live video belonging to the other phone was monitored only.
+
 ## Beta 12 generator controls
 
 On the paired Moto, the image and video editors had eight and seven folding panels respectively. The aspect lock updated the opposite dimension in both directions and kept its original ratio across rounded edits. A typed LoRA strength of 0.12 stayed exact; the next slider tick selected 0.2. Android recorded low-strength touch ticks. Old 100-step drafts opened at 20, and typing 85 was capped at 20. The video controls showed the rounded output resolution, ratio, and a duration of 4.67 seconds for 56 actual frames at 12 FPS. The device checks use temporary local settings and submit no jobs.
