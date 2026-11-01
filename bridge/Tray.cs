@@ -21,8 +21,8 @@ using Microsoft.Win32;
 [assembly: System.Reflection.AssemblyTitle("Comfy Bridge")]
 [assembly: System.Reflection.AssemblyDescription("Phone to ComfyUI bridge")]
 [assembly: System.Reflection.AssemblyVersion("0.1.0.0")]
-[assembly: System.Reflection.AssemblyFileVersion("0.1.0.6")]
-[assembly: System.Reflection.AssemblyInformationalVersion("0.1.0-beta.3")]
+[assembly: System.Reflection.AssemblyFileVersion("0.1.0.7")]
+[assembly: System.Reflection.AssemblyInformationalVersion("0.1.0-beta.4")]
 
 partial class Bridge : ApplicationContext {
     static readonly string Home = AppDomain.CurrentDomain.BaseDirectory;
@@ -204,7 +204,16 @@ partial class Bridge : ApplicationContext {
             HttpWebResponse upstream;
             try {upstream=(HttpWebResponse)await req.GetResponseAsync();}
             catch(WebException ex){if(ex.Response==null)throw;upstream=(HttpWebResponse)ex.Response;}
-            using(upstream){await Headers(stream,(int)upstream.StatusCode,upstream.ContentType,upstream.ContentLength,upstream.Headers);
+            using(upstream){
+                if(path=="/api/media-index" && first[0]=="GET" && upstream.StatusCode==HttpStatusCode.NotFound){
+                    // A prior worker may still be rendering. Leave it running; read its index separately.
+                    using(var p=Process.Start(new ProcessStartInfo(python,"\""+Path.Combine(Home,"media_index.py")+"\""){WorkingDirectory=Home,UseShellExecute=false,CreateNoWindow=true,RedirectStandardOutput=true})){
+                        string index=await p.StandardOutput.ReadToEndAsync();p.WaitForExit();
+                        if(p.ExitCode!=0)throw new IOException("Could not read the PC media index.");
+                        await Reply(stream,200,index);return;
+                    }
+                }
+                await Headers(stream,(int)upstream.StatusCode,upstream.ContentType,upstream.ContentLength,upstream.Headers);
                 using(var input=upstream.GetResponseStream())await input.CopyToAsync(stream);
             }
         }catch(Exception ex){try{Reply(stream,503,Json.Serialize(new {error=ex.Message})).GetAwaiter().GetResult();}catch{}}

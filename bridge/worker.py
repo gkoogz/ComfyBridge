@@ -1,5 +1,6 @@
 import asyncio
 import base64
+from media_index import media_manifest
 import io
 import json
 import logging
@@ -54,6 +55,8 @@ STOPPING = set()
 
 def rows(sql, args=()):
     return [dict(r) for r in DB.execute(sql, args).fetchall()]
+
+
 
 
 def update(id, **values):
@@ -281,6 +284,9 @@ async def api(request):
     if path == 'library':
         items = rows('SELECT id,job,kind,duration,created,archived FROM media ORDER BY created DESC')
         return web.json_response(items)
+    if path == 'media-index':
+        items = rows('SELECT id,job,kind,duration,created,archived,path FROM media ORDER BY created DESC,id DESC')
+        return web.json_response(await asyncio.to_thread(media_manifest, items, ROOT, DATA))
     if path.startswith('media/') or path.startswith('thumb/'):
         parts = path.split('/')
         item = rows('SELECT * FROM media WHERE id=?', (parts[1],))

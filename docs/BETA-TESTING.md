@@ -2,6 +2,12 @@
 
 Validation performed on November 1, 2026, on Windows with the existing ComfyUI-ZLUDA installation and a connected Moto g stylus 2025.
 
+## Beta 4 local media
+
+- Transferred a real generated H.264 MP4 from the existing PC library over the paired Windscribe address. The Android private file matched the PC SHA-256. After disconnecting the bridge, tapping the video in Library started native Android playback; the media service reported decoded frames.
+- The on-device isolated storage test (**tests/Test-MediaShelf.ps1**) checks a 101-item mixed image/video manifest, archive inclusion, complete older-item transfer, rejection of a truncated replacement, changed/deleted/missing-row protection, persistence after reopening the database, explicit removal, and a camera-roll export whose bytes match the protected original.
+- Eleven worker integration tests passed, including edit, delete, archive and authentication checks against the media index. The old generation worker can continue rendering during installation.
+
 ## Beta 3 connection repair
 
 - The previous tray reproduced Winsock error 10048 when restarting its listeners on the same ports with a child process alive. The new panel test runs 20 restarts with an active client and a surviving child, and makes an authenticated HTTP request after every cycle. A separate listener occupying the TLS port produces an inline error; releasing it lets the next click start both listeners.
@@ -35,6 +41,6 @@ Also exercise cold PC startup, an owned ComfyUI startup/shutdown cycle, overnigh
 - HWiNFO sensor indices and VRAM total are specific to the target PC.
 - Windows pairing and monitoring use a native panel. Phone presence times out after about 20 seconds without requests.
 - There is no automatic public IP discovery, port renewal, Wake-on-LAN, multi-user isolation, or remote update service.
-- Presets stay on the phone; media stays on the PC unless explicitly saved locally.
+- Private phone originals follow the recent-100 and conflict-review rules in the README. The sync runs while the paired app is open. Camera-roll export is separate.
 - Both ephemeral forwarding and the owner's permanent Windscribe static-IP rule were tested from the phone with pinned TLS and a live catalog fetch. Static access requires the PC to remain connected to the purchased static-IP location.
 - Windows executable is unsigned; APK uses the project's private local release signing identity.

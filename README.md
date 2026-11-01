@@ -1,12 +1,12 @@
 # ComfyBridge
 
-[Download the Android APK](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.3/ComfyBridge-0.1.0-beta.3.apk) | [Windows package and beta release notes](https://github.com/gkoogz/ComfyBridge/releases/tag/v0.1.0-beta.3)
+[Download the Android APK](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.4/ComfyBridge-0.1.0-beta.4.apk) | [Windows package and beta release notes](https://github.com/gkoogz/ComfyBridge/releases/tag/v0.1.0-beta.4)
 
 <img src="artwork/comfybridge.png" width="128" alt="ComfyBridge white cube and play icon on black">
 
 An Android remote for an existing Windows ComfyUI installation. The phone edits generation settings, uploads images and masks, and views results; the PC does the GPU work. A small Windows tray application wakes its Python worker on demand.
 
-**0.1.0-beta.3 is a personal-workflow beta**, adapted specifically to `Image gen.json` and `Video gen.json` in `E:\ComfyUI-Zluda\user\default\workflows`. It is not a general ComfyUI workflow importer. Models, LoRAs, workflow files, prompts, generated media, pairing credentials, and signing keys are not included in this repository or release.
+**0.1.0-beta.4 is a personal-workflow beta**, adapted specifically to `Image gen.json` and `Video gen.json` in `E:\ComfyUI-Zluda\user\default\workflows`. It is not a general ComfyUI workflow importer. Models, LoRAs, workflow files, prompts, generated media, pairing credentials, and signing keys are not included in this repository or release.
 
 The phone shows **PC connected** as soon as the bridge answers. Loading models and unavailable telemetry have their own messages. If the server or VPN drops, leave the phone app open: it retries automatically using the saved pairing. **Disconnect** or **Cancel reconnect** stops those retries.
 
@@ -16,9 +16,15 @@ The phone shows **PC connected** as soon as the bridge answers. Loading models a
 - Image generation: text-to-image, image-to-image, and finger-painted inpainting masks; model and LoRA controls; prompts, seeds, batches of 2/4/8/16, progress, previews, and recent results.
 - MiniMax H3 image-to-video: required input image, proportional scale controls, frame/FPS duration, fixed model, and mandatory first turbo LoRA.
 - Separate image/video settings presets, prompt library, and persistent phone state.
-- A phone-only generation library with image/video viewing, native Save dialog, archive, and unarchive.
+- A phone-only generation library with image/video viewing, verified offline playback and camera-roll export, archive, and unarchive.
 - Silent Windows sign-in startup, tray monitoring/pairing, authenticated HTTPS with certificate pinning, durable job queue, and worker sleep after inactivity.
 - Matching Android launcher, Windows executable/taskbar, and notification-area icons.
+
+## Phone media and offline playback
+
+**Library** downloads the newest 100 generated images and videos combined, including archived items, while the paired app is open and connected. The count shows how many recent originals are ready. Open an older item while connected to fetch it on demand. Android plays videos from a complete private file after its size and SHA-256 match the PC; you can then play it or view an image offline, even after relaunching the app. A failed transfer or low storage leaves existing copies intact.
+
+The phone checks the PC on connection, about every five minutes while open, and when you tap **Check now**. **Phone copies to review** lists files that changed or disappeared, plus older copies that have left the recent 100. They stay available until you decide. Tap one, choose **Save to camera roll** to export the existing bytes to **DCIM/ComfyBridge**, and optionally confirm replacement or removal. Keeping the private copy requires no action; protected or on-demand copies can temporarily take the total above 100. Archiving only changes where an item is displayed.
 
 ## Install the beta
 
@@ -69,9 +75,9 @@ Disconnecting the phone does not cancel accepted work. The worker finishes queue
 | `%LOCALAPPDATA%\ComfyBridge\signing` | Local APK signing key and password; never upload |
 | `COMFY_ROOT\input\ComfyBridge` | Phone uploads and masks |
 | `COMFY_ROOT\output\ComfyBridge` | Phone-generated images and videos |
-| Android application storage | Connection settings, prompts, presets, input images, current state |
+| Android application storage | Connection settings, prompts, presets, input images, verified private media copies |
 
-Archive changes library visibility; it does not move or delete the original file. Clearing Android app data deletes phone presets and pairing settings. `Uninstall.ps1` removes current-user startup and the firewall rule (administrator rights required for firewall removal); it retains the library, credentials, uploads, and generated files.
+Archive changes library visibility; it does not move or delete the original file. Clearing Android app data removes private media copies as well as presets and pairing; camera-roll exports remain. `Uninstall.ps1` removes current-user startup and the firewall rule (administrator rights required for firewall removal); it retains the library, credentials, uploads, and generated files.
 
 ## Security and telemetry
 
@@ -96,6 +102,6 @@ Install Java JDK 17 on PATH, Android SDK platform 35 and build-tools 35.0.1 unde
 E:\ComfyUI-Zluda\venv\Scripts\python.exe .\bridge\test_bridge.py
 ```
 
-The build creates a local APK signing key on first use. Release builds disable Android debugging. Windows binaries are not Authenticode signed. The installer must be packaged alongside `worker.py`, `workflows.py`, `config.json`, `Install.ps1`, `AllowNetwork.ps1`, and `Uninstall.ps1`. Icon source and its resizing utility are in `artwork/`.
+The build creates a local APK signing key on first use. Release builds disable Android debugging. Windows binaries are not Authenticode signed. The installer must be packaged alongside `worker.py`, `media_index.py`, `workflows.py`, `config.json`, `Install.ps1`, `AllowNetwork.ps1`, and `Uninstall.ps1`. Icon source and its resizing utility are in `artwork/`.
 
 See [beta verification and remaining device tests](docs/BETA-TESTING.md). APK signing and automated tests do not establish that every GPU workflow has rendered successfully on a device.

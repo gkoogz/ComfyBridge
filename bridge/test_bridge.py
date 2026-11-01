@@ -2,6 +2,7 @@
 import asyncio
 import base64
 import copy
+import hashlib
 import io
 import logging
 import json
@@ -93,6 +94,20 @@ class BridgeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(w.LAST_REQUEST, last_phone_request)
         r,_ = await self.request('monitor', headers={})
         self.assertEqual(r.status, 401)
+
+    async def test_media_manifest_tracks_replacement_deletion_and_archive(self):
+        await self.submit();self.runner=asyncio.create_task(w.run_jobs());await self.wait_done(1)
+        r,data=await self.request('media-index');self.assertEqual(r.status,200)
+        item=data['items'][0];file=Path(w.rows('SELECT path FROM media')[0]['path'])
+        self.assertEqual(item['sha256'], hashlib.sha256(file.read_bytes()).hexdigest())
+        self.assertNotIn('path',item)
+        file.write_bytes(b'different video');await self.request('archive',dict(id=item['id'],archived=True))
+        _,data=await self.request('media-index');new=data['items'][0]
+        self.assertEqual(new['archived'],1);self.assertEqual(new['size'],15)
+        self.assertNotEqual(new['sha256'],item['sha256'])
+        file.unlink();_,data=await self.request('media-index')
+        self.assertEqual(data['items'][0]['source'],'missing')
+        r,_=await self.request('media-index',headers={});self.assertEqual(r.status,401)
 
     async def test_batch_survives_disconnect_and_increments_seeds(self):
         r,d=await self.submit(4);self.assertEqual(r.status,200)

@@ -8,7 +8,29 @@ async function api(path,body){
  if(window.Native)return new Promise((resolve,reject)=>{let id=++rpcId;pending.set(id,{resolve,reject});Native.request(id,path,body===undefined?'GET':'POST',body===undefined?'':JSON.stringify(body));});
  const r=await fetch('/api/'+path,{method:body===undefined?'GET':'POST',headers:{'Content-Type':'application/json'},body:body===undefined?undefined:JSON.stringify(body)});const d=await r.json();if(!r.ok)throw new Error('HTTP '+r.status+': '+(d.error||r.statusText));return d;
 }
-const media=(id,thumb=false)=>'/'+(thumb?'thumb/':'media/')+id;
+const media=(id,thumb=false)=>{const j=library.find(x=>x.id===id);return j?.local?'/local/'+(thumb?'thumb/':'image/')+id+'/'+j.local:thumb&&connected?'/thumb/'+id:'';};
+let syncing=false,filling=false,nextSync=0,inventory='',shelfError='';
+function local(op,args={}){return new Promise((resolve,reject)=>{const id=++rpcId;pending.set(id,{resolve,reject});Native.localMedia(id,op,JSON.stringify(args));});}
+const signature=items=>items.map(j=>j.id+':'+j.archived).sort().join(',');
+function showShelf(){if(page==='library')renderLibrary();else if($('#result'))renderResults();}
+function setShelf(items){library=items.filter(j=>j.source!=='missing'||j.local).sort((a,b)=>b.created-a.created||b.id.localeCompare(a.id));showShelf();notice();}
+function updateItem(j){setShelf(library.filter(x=>x.id!==j.id).concat(j));}
+async function syncShelf(force=false){
+ if(!connected||syncing||(!force&&Date.now()<nextSync))return;
+ const session=epoch;syncing=true;nextSync=Date.now()+300000;
+ try{const index=await api('media-index');if(epoch!==session||!connected)return;const rows=await local('sync',index);if(epoch!==session)return;
+  inventory=signature(index.items);shelfError='';setShelf(rows);fillShelf();
+ }catch(e){if(epoch===session){shelfError='Could not check phone copies: '+e.message+(e.message.includes('404')?' Update the Windows bridge to beta 4.':'');nextSync=Date.now()+30000;showShelf();}}
+ finally{syncing=false;}
+}
+async function fillShelf(){
+ if(filling)return;filling=true;const session=epoch;let firstError='';
+ try{for(const j of library.filter(j=>j.recent&&!j.local&&j.source==='available')){
+  if(!connected||epoch!==session||document.hidden)break;
+  try{const saved=await local('fetch',{id:j.id});if(epoch!==session)break;updateItem(saved);}
+  catch(e){firstError=e.message;if(/storage|space/i.test(firstError))break;}
+ }}finally{filling=false;if(firstError&&epoch===session){shelfError='Some phone copies are pending: '+firstError;nextSync=Math.min(nextSync,Date.now()+30000);showShelf();}}
+}
 function toast(text){$('#toast').textContent=text;$('#toast').classList.add('show');clearTimeout(toast.timer);toast.timer=setTimeout(()=>$('#toast').classList.remove('show'),3800);}
 function persist(){clearTimeout(saveTimer);saveTimer=setTimeout(()=>{if(db){let t=db.transaction('data','readwrite');t.objectStore('data').put(state,'state');t.onerror=()=>toast('Phone storage is full; settings could not be saved.');}},120);}
 async function init(){
@@ -18,7 +40,8 @@ async function init(){
  $('#presetButton').onclick=()=>{let m=$('#presetMenu');if(m.hidden){renderPresets();m.hidden=false;}else m.hidden=true;};
  $('#modalClose').onclick=closeModal;$('#modal').addEventListener('cancel',()=>{if(maskSession)maskSession=null;});
  document.addEventListener('click',e=>{if(!e.target.closest('#presetButton,#presetMenu'))$('#presetMenu').hidden=true;});
- render();setInterval(heartbeat,2500);document.addEventListener('visibilitychange',()=>{if(!document.hidden){nextProbe=0;heartbeat();}});
+ if(window.Native&&JSON.parse(Native.configuration()).paired){try{setShelf(await local('list'));}catch(e){shelfError=e.message;}}
+ render();setInterval(heartbeat,2500);document.addEventListener('visibilitychange',()=>{if(!document.hidden){nextProbe=0;nextSync=0;heartbeat();}});
 }
 function drawer(open){$('#drawer').classList.toggle('open',open);$('#shade').hidden=!open;}
 function navigate(to){page=to;archived=false;presetName='';drawer(false);render();window.scrollTo(0,0);if(connected)poll();}
@@ -31,7 +54,7 @@ function render(){
 const pcIcon='<svg viewBox="0 0 64 64"><rect x="7" y="10" width="50" height="34" rx="5"/><path d="M23 54h18M32 44v10M17 34l8-9 8 6 13-13"/></svg>';
 let editPair=false,pairAddress=null,bridgeError="";
 let wanted=false,epoch=0,probing=false,nextProbe=0,misses=0,catalogLoading=false,serviceNote='',pollNote='';
-function notice(){const el=$('#linkNotice');el.textContent=wanted&&!connected?'Reconnecting to your PC. '+bridgeError+' Accepted jobs continue on the PC.':connected?[serviceNote,pollNote].filter(Boolean).join(' '):'';el.hidden=!el.textContent;}
+function notice(){const el=$('#linkNotice'),n=library.filter(j=>['missing','changed'].includes(j.warning)).length;const review=n?n+' PC file(s) changed or disappeared. Open Library to review your protected phone copies.':'';el.textContent=[wanted&&!connected?'Reconnecting to your PC. '+bridgeError+' Accepted jobs continue on the PC.':connected?[serviceNote,pollNote].filter(Boolean).join(' '):'',review].filter(Boolean).join(' ');el.hidden=!el.textContent;}
 function clearSession(){
  ++epoch;wanted=false;misses=0;nextProbe=0;catalogLoading=false;serviceNote=pollNote=bridgeError='';connection(false);notice();
 }
@@ -45,7 +68,7 @@ async function loadCatalog(){
  finally{if(id===epoch){catalogLoading=false;if(!catalog&&page==='bridge')renderBridge();notice();}}
 }
 function reached(){const cameBack=!connected;misses=0;nextProbe=0;bridgeError='';connection(true);
- if(cameBack){if(page==='bridge')renderBridge();if(!catalog)loadCatalog();}notice();poll();
+ if(cameBack){if(page==='bridge')renderBridge();if(!catalog)loadCatalog();}syncShelf(cameBack);notice();poll();
 }
 function unreachable(e){
  bridgeError=e.message;
@@ -165,8 +188,8 @@ async function poll(){
   if(view==='bridge'){const m=await api('metrics');if(current())showMetrics(m);}
   else{const status=view==='library'?null:await api('status');const latest=await api('library');if(!current())return;
    if(status){jobs=status.jobs;active=status.active;previewAvailable=status.preview;}
-   const changed=JSON.stringify(latest)!==JSON.stringify(library);library=latest;
-   if(view==='library'){if(changed)renderLibrary();}else if($('#play')){updateProgress();if(changed)renderResults();}
+   if(signature(latest)!==inventory&&(!shelfError||Date.now()>=nextSync))syncShelf(true);
+   if(view!=='library'&&$('#play'))updateProgress();
   }
   if(current())pollNote='';
  }catch(e){if(current())pollNote=(view==='bridge'?'PC telemetry unavailable: ':'Generation or library status unavailable: ')+e.message;}
@@ -178,10 +201,34 @@ function updateProgress(){if(!$('#play'))return;let pendingJobs=jobs.filter(j=>j
  else{const last=jobs.find(j=>j.kind===page);$('#jobMessage').textContent=last?.status==='complete'?'Generation complete':last?.status==='error'?'Generation failed — details below':'';if(last?.status==='error')$('#genError').innerHTML='<div class="errorbox">'+esc(last.error)+'</div>';}
  renderCarousel();
 }
-function renderResults(){let items=library.filter(x=>x.kind===page&&!x.archived);$('#result').innerHTML=items.length?(items[0].kind==='image'?`<img id="latestImage" src="${media(items[0].id)}" alt="Latest generated image">`:`<video src="${media(items[0].id)}" poster="${media(items[0].id,true)}" controls playsinline></video>`):'<div><p style="font-size:30px;margin:0">✧</p><small>Your next idea will appear here.</small></div>';if($('#latestImage'))$('#latestImage').onclick=()=>openMedia(items[0]);renderCarousel();}
+function renderResults(){const items=library.filter(x=>x.kind===page&&!x.archived),j=items[0],box=$('#result');if(!box)return;
+ if(j){box.innerHTML='<button id="latestOpen" class="mediaPoster"><img alt="Latest result" src="'+media(j.id,j.kind==='video'||!j.local)+'">'+(j.kind==='video'?'<span>▶ Play video</span>':'')+'</button>';$('#latestOpen').onclick=()=>openMedia(j);}
+ else box.innerHTML='<div><p>✧</p><small>Your next idea will appear here.</small></div>';renderCarousel();
+}
 function renderCarousel(){if(!$('#carousel'))return;let items=library.filter(x=>x.kind===page&&!x.archived).slice(0,20);let running=jobs.some(j=>j.kind===page&&['running','pending','submitting'].includes(j.status));$('#carousel').innerHTML=(running?'<div class="thumb">'+(previewAvailable?'<img src="/preview?t='+Date.now()+'" alt="Generating">':'')+'<i class="spinner"></i></div>':'')+items.map(x=>`<button class="thumb" data-media="${x.id}"><img src="${media(x.id,true)}" alt="Generated ${x.kind}">${x.kind==='video'?'<span>▶ '+duration(x.duration)+'</span>':''}</button>`).join('');wireMedia($('#carousel'));}
 function duration(n){return Math.floor(n/60)+':'+String(Math.floor(n%60)).padStart(2,'0');}
-function renderLibrary(){const items=library.filter(x=>!!x.archived===archived);$('#main').innerHTML=`<button id="archiveLink" class="textbutton">${archived?'‹ Library':'Archive ›'}</button><div class="sectionline" style="margin-top:8px"><div><p class="eyebrow">YOUR PRIVATE COLLECTION</p><h1 style="font-size:30px">${archived?'Archive':'Made by you.'}</h1></div><small>${items.length} items</small></div>${!connected?'<p class="warning">Connect to view media stored on your PC.</p>':''}${items.length?'<div class="librarygrid">'+items.map(x=>`<button class="libraryitem" data-media="${x.id}"><img src="${media(x.id,true)}" alt="Generated ${x.kind}" loading="lazy">${x.kind==='video'?'<span class="videoBadge">▶ '+duration(x.duration)+'</span>':''}</button>`).join('')+'</div>':'<div class="empty"><div class="symbol">▦</div><h2>'+ (archived?'A little room for later.':'Your collection starts here.')+'</h2><p>Only generations made through your phone appear here.</p></div>'}`;$('#archiveLink').onclick=()=>{archived=!archived;renderLibrary();};wireMedia($('#main'));}
-function wireMedia(root){$$('[data-media]',root).forEach(b=>b.onclick=()=>openMedia(library.find(i=>i.id===b.dataset.media)));}
-function openMedia(item){if(!item)return;openModal(item.kind==='video'?'Video · '+duration(item.duration):'Image',item.kind==='video'?`<video class="fullmedia" src="${media(item.id)}" controls autoplay playsinline></video>`:`<img class="fullmedia" src="${media(item.id)}" alt="Generated image">`,'<button id="saveMedia">↓ Save</button><button id="archiveMedia">▣ '+(item.archived?'Unarchive':'Archive')+'</button>');$('#saveMedia').onclick=()=>{if(window.Native)Native.saveMedia(item.id,item.kind);else toast('Saving to your phone is available in the Android app.');};$('#archiveMedia').onclick=async()=>{try{await api('archive',{id:item.id,archived:!item.archived});item.archived=!item.archived;closeModal();if(page==='library')renderLibrary();else renderResults();toast(item.archived?'Moved to Archive':'Returned to Library');}catch(e){toast(e.message);}};}
+const warningText={changed:'The PC file changed. Your original phone copy is protected.',missing:'The PC file was deleted. Your phone copy is still here.',older:'Outside the newest 100. You can keep this copy, save it to the camera roll, or remove it from the app.'};
+function renderLibrary(){const items=library.filter(x=>!!x.archived===archived), review=library.filter(x=>x.warning),recent=library.filter(x=>x.recent&&x.source==='available');$('#main').innerHTML=`<button id="archiveLink" class="textbutton">${archived?'‹ Library':'Archive ›'}</button><div class="sectionline"><div><p class="eyebrow">YOUR PRIVATE COLLECTION</p><h1>${archived?'Archive':'Library'}</h1></div><small>${items.length} items</small></div>
+ <section class="card"><strong>${recent.filter(j=>j.local).length} / ${recent.length} recent items on phone</strong><p>Newest 100 images and videos combined. ${connected?'Checks the PC every 5 minutes while open.':'Offline · saved items still open.'}</p>${shelfError?'<p class="warning">'+esc(shelfError)+'</p>':''}<button id="checkShelf" ${connected?'':'disabled'}>Check now</button></section>
+ ${review.length?'<section class="card"><h2>Phone copies to review</h2>'+review.map(j=>'<button class="reviewItem" data-media="'+j.id+'">'+esc(j.kind)+' · '+esc(new Date(j.created*1000).toLocaleString())+'<small>'+esc(warningText[j.warning])+'</small></button>').join('')+'</section>':''}
+ <div class="librarygrid">${items.map(j=>`<button class="libraryitem" data-media="${j.id}">${media(j.id,true)?'<img src="'+media(j.id,true)+'" loading="lazy" alt="'+esc(j.kind)+'">':'<span>On PC</span>'}${j.kind==='video'?'<span class="videoBadge">▶ '+duration(j.duration)+'</span>':''}<small class="copyBadge">${j.warning?'Review':j.local?'On phone':'PC only'}</small></button>`).join('')}</div>${items.length?'':'<p>No items here yet.</p>'}`;
+ $('#archiveLink').onclick=()=>{archived=!archived;renderLibrary();};$('#checkShelf').onclick=()=>syncShelf(true);wireMedia($('#main'));}
+function wireMedia(root){$$('[data-media]',root).forEach(b=>b.onclick=()=>openMedia(library.find(i=>i.id===b.dataset.media),!b.classList.contains('reviewItem')));}
+async function openMedia(item,autoPlay=true){if(!item)return;const id=item.id;
+ openModal(item.kind==='video'?'Video · '+duration(item.duration):'Image','<section class="card" id="mediaDetails"><p id="transfer">Preparing phone copy…</p></section>');
+ const body=$('#mediaDetails'),current=()=>$('#modal').open&&$('#mediaDetails')===body;
+ try{
+  if(!item.local){if(!connected)throw new Error('This item is only on the PC. Connect to download it.');$('#transfer').textContent='Downloading the complete '+item.kind+' ('+((item.size||0)/1048576).toFixed(1)+' MB)…';item=await local('fetch',{id});updateItem(item);}
+  if(!current())return;
+  const msg=item.warning?warningText[item.warning]:'';
+  body.innerHTML=(msg?'<p class="warning">'+esc(msg)+'</p>':'')+(item.kind==='video'?'<button class="mediaPoster" id="playLocal"><img src="'+media(id,true)+'"><span>▶ Play phone copy</span></button>':'<img class="fullmedia" src="'+media(id)+'">')+
+  '<div class="mediaActions"><button id="saveMedia">Save to camera roll</button><button id="archiveMedia" '+(!connected||item.source==='missing'?'disabled':'')+'>'+(item.archived?'Unarchive':'Archive')+'</button>'+
+  (item.warning==='changed'?'<button id="resolveMedia" '+(!connected?'disabled':'')+'>Replace with PC version…</button>':item.warning?'<button id="resolveMedia">Remove phone copy…</button>':'')+'</div><p id="mediaMessage" role="status"></p>';
+  const message=t=>{if(current())$('#mediaMessage').textContent=t;};
+  $('#saveMedia').onclick=async e=>{e.target.disabled=true;try{await local('export',{id});message('Saved to DCIM/ComfyBridge in your camera roll.');}catch(err){message(err.message);}finally{e.target.disabled=false;}};
+  $('#archiveMedia').onclick=async()=>{try{await api('archive',{id,archived:!item.archived});closeModal();await syncShelf(true);}catch(e){message(e.message);}};
+  if($('#resolveMedia'))$('#resolveMedia').onclick=()=>{message('Save to the camera roll first if you want a permanent copy. Only this app’s private copy will be removed.');const b=$('#resolveMedia');b.textContent=item.warning==='changed'?'Confirm replacement':'Confirm removal';b.onclick=async()=>{b.disabled=true;try{const j=await local(item.warning==='changed'?'replace':'drop',{id,local:item.local,sha256:item.sha256});updateItem(j);closeModal();}catch(e){message(e.message);b.disabled=false;}};};
+  if(item.kind==='video'){$('#playLocal').onclick=()=>local('play',{id}).catch(e=>message(e.message));if(autoPlay&&(!msg||item.warning==='older'))await local('play',{id});}
+ }catch(e){if(current()){body.textContent=e.message;const retry=document.createElement('button');retry.textContent='Try again';retry.onclick=()=>openMedia(library.find(x=>x.id===id)||item);body.appendChild(retry);}}
+}
 init().catch(e=>{$('#main').innerHTML='<div class="errorbox">Phone storage could not be opened: '+esc(e.message)+'</div>';});

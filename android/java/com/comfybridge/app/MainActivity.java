@@ -10,6 +10,9 @@ import android.webkit.*;
 import android.view.View;
 import android.widget.Toast;
 import android.widget.FrameLayout;
+import android.widget.*;
+import android.app.Dialog;
+import android.view.Gravity;
 import org.json.JSONObject;
 import java.io.*;
 import java.net.*;
@@ -27,7 +30,15 @@ public class MainActivity extends Activity {
  private final ExecutorService io=Executors.newFixedThreadPool(4);
  private final ExecutorService heartbeat=Executors.newSingleThreadExecutor();
  private ValueCallback<Uri[]> chooser;
- private String saveId,saveKind;
+ private final ExecutorService mediaIO=Executors.newSingleThreadExecutor();
+ private MediaShelf shelf;
+ private int exportRequest=-1;private String exportArgs;
+ private synchronized MediaShelf shelf()throws Exception{
+  String scope=prefs.getString("fingerprint","");if(!scope.matches("[a-fA-F0-9]{64}"))throw new IOException("Pair with the PC to set up the phone library.");
+  File dir=new File(getFilesDir(),"originals/"+scope);
+  if(shelf==null||!shelf.dir.equals(dir))shelf=new MediaShelf(dir,p->{if(!scope.equals(prefs.getString("fingerprint","")))throw new IOException("PC pairing changed.");return connection(p,"GET");});
+  return shelf;
+ }
  private static final String ORIGIN="https://appassets.androidplatform.net";
  @Override public void onCreate(Bundle b){
   super.onCreate(b);prefs=getSharedPreferences("connection",MODE_PRIVATE);
@@ -44,7 +55,13 @@ public class MainActivity extends Activity {
     Uri uri=r.getUrl();if(!"appassets.androidplatform.net".equals(uri.getHost()))return response(403,"Forbidden","text/plain",new byte[0]);
     String path=uri.getPath();
     try{
-     if(path.startsWith("/media/")||path.startsWith("/thumb/")||path.equals("/preview")){
+     if(path.startsWith("/local/")){
+      String[] parts=path.split("/");boolean thumb=parts.length==5&&parts[2].equals("thumb");
+      if(parts.length!=5||(!thumb&&!parts[2].equals("image")))return response(404,"Not Found","text/plain",new byte[0]);
+      File f=shelf().existing(parts[3],parts[4],thumb);
+      return new WebResourceResponse(thumb?"image/jpeg":"image/png",null,new FileInputStream(f));
+     }
+     if(path.startsWith("/thumb/")||path.equals("/preview")){
       HttpURLConnection c=connection("api"+path,"GET");String range=r.getRequestHeaders().get("Range");if(range!=null)c.setRequestProperty("Range",range);
       int code=c.getResponseCode();Map<String,String> headers=new HashMap<>();
       for(String h:new String[]{"Content-Length","Content-Range","Accept-Ranges","Cache-Control"})if(c.getHeaderField(h)!=null)headers.put(h,c.getHeaderField(h));
@@ -128,13 +145,40 @@ public class MainActivity extends Activity {
    final String js="window.bridgeResult("+id+","+ok+","+(ok?result:JSONObject.quote(result))+")";
    runOnUiThread(()->web.evaluateJavascript(js,null));
   });}
-  @JavascriptInterface public void saveMedia(String id,String kind){if(!id.matches("[a-f0-9]{32}"))return;runOnUiThread(()->{saveId=id;saveKind=kind;Intent i=new Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType(kind.equals("video")?"video/mp4":"image/png");i.putExtra(Intent.EXTRA_TITLE,"ComfyBridge-"+id.substring(0,8)+(kind.equals("video")?".mp4":".png"));startActivityForResult(i,101);});}
+  @JavascriptInterface public void localMedia(int request,String op,String args){
+   if(op.equals("export")&&android.os.Build.VERSION.SDK_INT<29&&checkSelfPermission(android.Manifest.permission.WRITE_EXTERNAL_STORAGE)!=android.content.pm.PackageManager.PERMISSION_GRANTED){
+    runOnUiThread(()->{exportRequest=request;exportArgs=args;requestPermissions(new String[]{android.Manifest.permission.WRITE_EXTERNAL_STORAGE},104);});return;
+   }
+   mediaIO.execute(()->{try{
+    MediaShelf m=shelf();JSONObject d=new JSONObject(args);String id=d.optString("id");Object result=new JSONObject();
+    switch(op){
+     case "list": result=m.snapshot();break;
+     case "sync":m.reconcile(d);result=m.snapshot();break;
+     case "fetch":result=m.obtain(id,false);break;
+     case "replace":{JSONObject j=m.get(id);if(!j.getString("local").equals(d.getString("local"))||!j.getString("warning").equals("changed")||!j.getString("sha256").equals(d.getString("sha256")))throw new IOException("PC copy changed again. Check the library.");result=m.obtain(id,true);break;}
+     case "drop":result=m.discard(id,d.getString("local"));break;
+     case "play":{JSONObject j=m.get(id);if(!j.getString("kind").equals("video"))throw new IOException("Not a video.");File f=m.existing(id,j.getString("local"),false);runOnUiThread(()->playVideo(f));break;}
+     case "export":m.export(MainActivity.this,id);break;
+     default:throw new IOException("Unknown media action.");
+    }callback(request,true,result.toString());
+   }catch(Exception e){callback(request,false,friendly(e));}});
+  }
  }
+ private void playVideo(File file){
+  if(isFinishing()||isDestroyed())return;
+  Dialog dialog=new Dialog(this,android.R.style.Theme_Material_NoActionBar_Fullscreen);
+  FrameLayout frame=new FrameLayout(this);frame.setBackgroundColor(Color.BLACK);VideoView video=new VideoView(this);
+  frame.addView(video,new FrameLayout.LayoutParams(-1,-1,Gravity.CENTER));Button back=new Button(this);back.setText("‹  Back");back.setOnClickListener(v->dialog.dismiss());frame.addView(back,new FrameLayout.LayoutParams(-2,-2,Gravity.TOP|Gravity.START));
+  MediaController controls=new MediaController(this);video.setMediaController(controls);controls.setAnchorView(video);
+  video.setOnPreparedListener(mp->{video.start();controls.show(2400);});
+  video.setOnErrorListener((mp,what,extra)->{dialog.dismiss();new android.app.AlertDialog.Builder(this).setMessage("Android could not decode this video. Your complete phone copy is still available to save to the camera roll.").setPositiveButton("OK",null).show();return true;});
+  dialog.setOnDismissListener(v->{controls.hide();video.stopPlayback();});dialog.setContentView(frame);dialog.show();video.setVideoPath(file.getAbsolutePath());
+ }
+ @Override public void onRequestPermissionsResult(int code,String[] names,int[] grants){super.onRequestPermissionsResult(code,names,grants);if(code==104&&exportRequest!=-1){int id=exportRequest;exportRequest=-1;if(grants.length>0&&grants[0]==android.content.pm.PackageManager.PERMISSION_GRANTED)new NativeApi().localMedia(id,"export",exportArgs);else new NativeApi().callback(id,false,"Camera roll access denied. Your private copy was kept.");}}
  private static String read(InputStream input)throws IOException{if(input==null)return "";try(InputStream in=input;ByteArrayOutputStream out=new ByteArrayOutputStream()){byte[] b=new byte[8192];int n;while((n=in.read(b))!=-1)out.write(b,0,n);return out.toString("UTF-8");}}
  @Override protected void onActivityResult(int request,int result,Intent data){super.onActivityResult(request,result,data);
   if(request==100 && chooser!=null){chooser.onReceiveValue(result==RESULT_OK&&data!=null?new Uri[]{data.getData()}:null);chooser=null;}
-  if(request==101 && result==RESULT_OK && data!=null){Uri uri=data.getData();String id=saveId;io.execute(()->{try{HttpURLConnection c=connection("api/media/"+id,"GET");try{if(c.getResponseCode()!=200)throw new IOException("Download failed.");try(InputStream in=c.getInputStream();OutputStream out=getContentResolver().openOutputStream(uri)){byte[] bytes=new byte[65536];int n;while((n=in.read(bytes))!=-1)out.write(bytes,0,n);}}finally{c.disconnect();}runOnUiThread(()->Toast.makeText(this,"Saved to your phone",Toast.LENGTH_LONG).show());}catch(Exception e){runOnUiThread(()->Toast.makeText(this,e.getMessage(),Toast.LENGTH_LONG).show());}});}
  }
  @Override public void onBackPressed(){web.evaluateJavascript("(()=>{if(document.querySelector('#modal').open){closeModal();return;}if(document.querySelector('#drawer').classList.contains('open')){drawer(false);return;}navigate('bridge');})()",null);}
- @Override protected void onDestroy(){heartbeat.shutdownNow();io.shutdownNow();super.onDestroy();}
+ @Override protected void onDestroy(){heartbeat.shutdownNow();io.shutdownNow();mediaIO.shutdownNow();super.onDestroy();}
 }
