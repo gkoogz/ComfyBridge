@@ -1,12 +1,12 @@
 # ComfyBridge
 
-**[Open the beta 9 release page](https://github.com/gkoogz/ComfyBridge/releases/tag/v0.1.0-beta.9)** · [Download the Android APK](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.9/ComfyBridge-0.1.0-beta.9.apk) · [All releases](https://github.com/gkoogz/ComfyBridge/releases)
+**[Open the beta 10 release page](https://github.com/gkoogz/ComfyBridge/releases/tag/v0.1.0-beta.10)** · [Download the Android APK](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.10/ComfyBridge-0.1.0-beta.10.apk) · [All releases](https://github.com/gkoogz/ComfyBridge/releases)
 
 <img src="artwork/comfybridge.png" width="128" alt="ComfyBridge white cube and play icon on black">
 
 An Android remote for an existing Windows ComfyUI installation. The phone edits generation settings, uploads images and masks, and views results; the PC does the GPU work. A small Windows tray application wakes its Python worker on demand.
 
-**0.1.0-beta.9 is a personal-workflow beta**, adapted specifically to `Image gen.json` and `Video gen.json` in `E:\ComfyUI-Zluda\user\default\workflows`. It is not a general ComfyUI workflow importer. Models, LoRAs, workflow files, prompts, generated media, pairing credentials, and signing keys are not included in this repository or release.
+**0.1.0-beta.10 is a personal-workflow beta**, adapted specifically to `Image gen.json` and `Video gen.json` in `E:\ComfyUI-Zluda\user\default\workflows`. It is not a general ComfyUI workflow importer. Models, LoRAs, workflow files, prompts, generated media, pairing credentials, and signing keys are not included in this repository or release.
 
 The phone shows **PC connected** as soon as the bridge answers. Loading models and unavailable telemetry have their own messages. If the server or VPN drops, leave the phone app open: it retries automatically using the saved pairing. **Disconnect** or **Cancel reconnect** stops those retries.
 
@@ -19,6 +19,8 @@ The phone shows **PC connected** as soon as the bridge answers. Loading models a
 - A phone-only generation library with image/video viewing, verified offline playback and camera-roll export, archive, and unarchive.
 - Silent Windows sign-in startup, tray monitoring/pairing, authenticated HTTPS with certificate pinning, durable job queue, and worker sleep after inactivity.
 - Matching Android launcher, Windows executable/taskbar, and notification-area icons.
+
+Android and the Windows tray check this public GitHub repository in the background on launch. If a newer release includes a matching APK or Windows ZIP, choose **Download** to open the package in your browser or **Later** to keep working. On Android, open the downloaded APK to install it. On Windows, extract the ZIP and run **Install.ps1**.
 
 ## Queue, progress, and two phones
 

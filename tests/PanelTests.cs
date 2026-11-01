@@ -12,6 +12,13 @@ class PanelTests {
 partial class Bridge {
     static void Check(bool ok,string what){if(!ok)throw new Exception("Failed: "+what);}
     internal static int ExercisePanel(string[] args){
+        Check(NewerRelease("0.1.0-beta.10","0.1.0-beta.9")&&NewerRelease("0.1.0","0.1.0-rc.2")&&!NewerRelease("0.1.0-beta.9","0.1.0"),"numeric release ordering");
+        var zip=new PublishedAsset{name="ComfyBridge-Windows-0.1.0-beta.10.zip",state="uploaded",size=20};
+        var releases=new[]{
+            new PublishedRelease{tag_name="v0.1.0-beta.12",draft=false,assets=new[]{zip}}, // reused companion
+            new PublishedRelease{tag_name="v0.1.0-beta.11",draft=true,assets=new[]{new PublishedAsset{name=ZipName("0.1.0-beta.11"),state="uploaded",size=20}}},
+            new PublishedRelease{tag_name="v0.1.0-beta.10",draft=false,assets=new[]{zip}}};
+        Check(SelectRelease(releases,"0.1.0-beta.9")=="0.1.0-beta.10","only offer a published Windows package for its matching version");
         Data=Path.Combine(Path.GetTempPath(),"ComfyBridge-panel-"+Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(Data);token="isolated-test";loopbackPort=0;tlsPort=0;
         Application.EnableVisualStyles();

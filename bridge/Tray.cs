@@ -21,8 +21,8 @@ using Microsoft.Win32;
 [assembly: System.Reflection.AssemblyTitle("Comfy Bridge")]
 [assembly: System.Reflection.AssemblyDescription("Phone to ComfyUI bridge")]
 [assembly: System.Reflection.AssemblyVersion("0.1.0.0")]
-[assembly: System.Reflection.AssemblyFileVersion("0.1.0.13")]
-[assembly: System.Reflection.AssemblyInformationalVersion("0.1.0-beta.9")]
+[assembly: System.Reflection.AssemblyFileVersion("0.1.0.14")]
+[assembly: System.Reflection.AssemblyInformationalVersion("0.1.0-beta.10")]
 
 partial class Bridge : ApplicationContext {
     static readonly string Home = AppDomain.CurrentDomain.BaseDirectory;
@@ -87,7 +87,7 @@ partial class Bridge : ApplicationContext {
             File.WriteAllText(Path.Combine(Data,"fingerprint.txt"),fingerprint);
             var cfg=Json.Deserialize<Dictionary<string,object>>(File.ReadAllText(Path.Combine(Home,"config.json")));
             python=Path.Combine((string)cfg["comfyRoot"],"venv\\Scripts\\python.exe");
-            var app=new Bridge();if(Array.IndexOf(args,"--panel")>=0)app.ShowMonitor();Application.Run(app);
+            var app=new Bridge();app.CheckForRelease();if(Array.IndexOf(args,"--panel")>=0)app.ShowMonitor();Application.Run(app);
         }
     }
     Bridge() {
@@ -111,7 +111,7 @@ partial class Bridge : ApplicationContext {
         };timer.Start();
         var dispatch=new Control();var handle=dispatch.Handle;
         panelSignal=new EventWaitHandle(false,EventResetMode.AutoReset,"Local\\ComfyBridgeOpenPanel");
-        ThreadPool.RegisterWaitForSingleObject(panelSignal,(s,t)=>{if(!dispatch.IsDisposed)dispatch.BeginInvoke((Action)ShowMonitor);},null,Timeout.Infinite,false);
+        ThreadPool.RegisterWaitForSingleObject(panelSignal,(s,t)=>{if(!dispatch.IsDisposed)dispatch.BeginInvoke((Action)(()=>{ShowMonitor();CheckForRelease();}));},null,Timeout.Infinite,false);
     }
     static async Task Listen(System.Net.Sockets.TcpListener listener,bool encrypted) {
         while(true) {

@@ -29,6 +29,7 @@ public class MainActivity extends Activity {
  private final java.util.concurrent.atomic.AtomicReference<String> noticeRoute=new java.util.concurrent.atomic.AtomicReference<>("");
  private SharedPreferences prefs;
  private final ExecutorService io=Executors.newFixedThreadPool(4);
+ private final ReleaseUpdates updates=new ReleaseUpdates();
  private final ExecutorService heartbeat=Executors.newSingleThreadExecutor();
  private ValueCallback<Uri[]> chooser;
  private final ExecutorService mediaIO=Executors.newSingleThreadExecutor();
@@ -187,7 +188,8 @@ public class MainActivity extends Activity {
   JobWatch.resume(this);
   if(explicit){Intent i=new Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(android.provider.Settings.EXTRA_APP_PACKAGE,getPackageName());startActivity(i);}
  }
- @Override protected void onResume(){super.onResume();if(prefs!=null)JobWatch.resume(this);}
+ @Override protected void onResume(){super.onResume();if(prefs!=null)JobWatch.resume(this);updates.foreground(this,io);}
+ @Override protected void onPause(){updates.background();super.onPause();}
  @Override protected void onActivityResult(int request,int result,Intent data){super.onActivityResult(request,result,data);
   if(request==100 && chooser!=null){chooser.onReceiveValue(result==RESULT_OK&&data!=null?new Uri[]{data.getData()}:null);chooser=null;}
  }
