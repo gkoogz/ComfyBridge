@@ -117,7 +117,8 @@ partial class Bridge {
         percent=Math.Max(0,Math.Min(99,(int)Math.Round(Convert.ToDouble(j["progress"])*100)));
         string stage=Convert.ToString(j["current_node"]);
         return String.Format("{0}  ·  Queue {1}/{2}  ·  {3}%   {4}\n{5}{6}",j["kind"],
-            j.ContainsKey("queuePosition")?j["queuePosition"]:j["ordinal"],j.ContainsKey("queueTotal")?j["queueTotal"]:j["total"],percent,j["status"],
+            j.ContainsKey("queuePosition")?j["queuePosition"]:j["ordinal"],j.ContainsKey("queueTotal")?j["queueTotal"]:j["total"],percent,
+            Convert.ToString(j["status"])+(status.ContainsKey("elapsed")?"  "+status["elapsed"]:""),
             stage==""?"Preparing workflow":stage,jobs.Count>1?"  ·  "+(jobs.Count-1)+" waiting":"");
     }
     // During an in-place upgrade the old worker still owns the running jobs.
@@ -171,7 +172,18 @@ partial class Bridge {
         string caption;int progress=0;
         try{
             string json=await QueueResponse(await MonitorJson().ConfigureAwait(false),false).ConfigureAwait(false);
-            caption=JobSummary(new System.Web.Script.Serialization.JavaScriptSerializer().Deserialize<Dictionary<string,object>>(json),out progress);
+            var serializer=new System.Web.Script.Serialization.JavaScriptSerializer();
+            var status=serializer.Deserialize<Dictionary<string,object>>(json);
+            string active=Convert.ToString(status["active"]);
+            if(active!=""){
+                var reply=serializer.Deserialize<Dictionary<string,object>>(await StudioRequest("clock/"+active,"panel","").ConfigureAwait(false));
+                var clock=(Dictionary<string,object>)reply["data"];
+                if(clock.ContainsKey("seconds")&&clock["seconds"]!=null){
+                    var span=TimeSpan.FromSeconds(Convert.ToInt64(clock["seconds"]));
+                    status["elapsed"]=(Convert.ToBoolean(clock["observed"])?"≥ ":"")+((int)span.TotalHours>0?((int)span.TotalHours)+":"+span.Minutes.ToString("00"):span.Minutes.ToString())+":"+span.Seconds.ToString("00");
+                }
+            }
+            caption=JobSummary(status,out progress);
         }
         catch(WebException ex){caption=ex.Status==WebExceptionStatus.ConnectFailure?"No active generation":"Generation status unavailable";}
         catch(Exception){caption="Generation status unavailable";}

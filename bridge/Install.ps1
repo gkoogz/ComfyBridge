@@ -4,8 +4,11 @@ New-Item -ItemType Directory -Force $target | Out-Null
 $exe = Join-Path $target 'ComfyBridge.exe'
 # Only replace this installation; the Python worker and queued Comfy jobs keep running.
 Get-Process ComfyBridge -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $exe } | ForEach-Object { Stop-Process -Id $_.Id; $_.WaitForExit() }
-Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'ComfyBridge.exe'),(Join-Path $PSScriptRoot 'worker.py'),(Join-Path $PSScriptRoot 'workflows.py'),(Join-Path $PSScriptRoot 'media_index.py'),(Join-Path $PSScriptRoot 'progress.py'),(Join-Path $PSScriptRoot 'queue_progress.py') -Destination $target -Force
+Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'ComfyBridge.exe'),(Join-Path $PSScriptRoot 'worker.py'),(Join-Path $PSScriptRoot 'workflows.py'),(Join-Path $PSScriptRoot 'media_index.py'),(Join-Path $PSScriptRoot 'progress.py'),(Join-Path $PSScriptRoot 'queue_progress.py'),(Join-Path $PSScriptRoot 'studio.py') -Destination $target -Force
 if (-not (Test-Path (Join-Path $target 'config.json'))) { Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'config.json') -Destination $target }
+$studioRoot=(Get-Content -Raw -LiteralPath (Join-Path $target 'config.json')|ConvertFrom-Json).comfyRoot
+& (Join-Path $studioRoot 'venv\Scripts\python.exe') (Join-Path $target 'studio.py') --init
+if($LASTEXITCODE){throw 'Could not initialize queue timers and workspace storage.'}
 $admin=([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 if($admin){ & (Join-Path $PSScriptRoot 'AllowNetwork.ps1') }
 else { Write-Warning 'Run AllowNetwork.ps1 as administrator once to allow phone connections through Windows Firewall.' }

@@ -21,8 +21,8 @@ using Microsoft.Win32;
 [assembly: System.Reflection.AssemblyTitle("Comfy Bridge")]
 [assembly: System.Reflection.AssemblyDescription("Phone to ComfyUI bridge")]
 [assembly: System.Reflection.AssemblyVersion("0.1.0.0")]
-[assembly: System.Reflection.AssemblyFileVersion("0.1.0.12")]
-[assembly: System.Reflection.AssemblyInformationalVersion("0.1.0-beta.8")]
+[assembly: System.Reflection.AssemblyFileVersion("0.1.0.13")]
+[assembly: System.Reflection.AssemblyInformationalVersion("0.1.0-beta.9")]
 
 partial class Bridge : ApplicationContext {
     static readonly string Home = AppDomain.CurrentDomain.BaseDirectory;
@@ -199,6 +199,10 @@ partial class Bridge : ApplicationContext {
             if(path=="/api/metrics"){await Reply(stream,200,Metrics());return;}
             string lengthText;long length=0;
             if(headers.ContainsKey("Transfer-Encoding") || (headers.TryGetValue("Content-Length",out lengthText) && (!long.TryParse(lengthText,out length) || length<0 || length>55L*1024*1024))){await Reply(stream,413,"{\"error\":\"Invalid upload length\"}");return;}
+            if(path.StartsWith("/api/studio/")){
+                if(!identified){await Reply(stream,403,"{\"error\":\"A paired phone is required.\"}");return;}
+                await ReplyStudio(stream,path.Substring(12),device,length);return;
+            }
             await Wake();
             var req=(HttpWebRequest)WebRequest.Create("http://127.0.0.1:18766"+raw);
             req.Method=first[0];req.Headers["Authorization"]="Bearer "+token;req.Timeout=240000;req.ReadWriteTimeout=240000;req.Proxy=null;

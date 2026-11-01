@@ -39,7 +39,7 @@ class Workflows:
                 'notices': ['Video gen.json has an invalid numeric scheduler (4) and steps=1. The bridge uses simple / 4 steps for the saved turbo LoRA. The original file is unchanged.',
                             'MiniMax H3 rounds frame count up to 17k+5. Duration uses the actual frame count / FPS.']}
 
-    def build(self, kind, s, prefix):
+    def build(self, kind, s, prefix, *, recorded_video_strength=None):
         g = {}
         def node(id, class_type, **inputs):
             g[str(id)] = {'class_type': class_type, 'inputs': inputs}
@@ -109,7 +109,9 @@ class Workflows:
                 raise ValueError('The MiniMax turbo LoRA is required in the first slot.')
             for i, l in enumerate(loras):
                 if l.get('enabled', True):
-                    model = node(100+i, 'LoraLoaderModelOnly', model=model, lora_name=l['name'], strength_model=float(l['strength']))
+                    fixed = mandatory[1] if recorded_video_strength is None else recorded_video_strength
+                    strength = fixed if i == 0 else l['strength']
+                    model = node(100+i, 'LoraLoaderModelOnly', model=model, lora_name=l['name'], strength_model=float(strength))
             cond = node(6, 'MiniMaxH3ImageToVideo', clip=clip, vae=vae, first_frame=image, prompt=s.get('positive', ''), width=width, height=height, length=frames)
             guider = node(9, 'BasicGuider', model=model, conditioning=cond)
             sampler = node(10, 'KSamplerSelect', sampler_name=self.widgets('video', 10)[0])

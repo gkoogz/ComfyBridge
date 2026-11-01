@@ -149,6 +149,18 @@ class BridgeTests(unittest.IsolatedAsyncioTestCase):
         _, fresh = await self.submit()
         await place('monitor', fresh['ids'][0], (1,1))
 
+    def test_mandatory_video_strength_uses_workflow_value(self):
+        video=copy.deepcopy(w.CATALOG['defaults']['video'])
+        fixed=video['loras'][0]['strength']
+        video['upload']='ComfyBridge/source.png'
+        video['loras'][0]['strength']=fixed+.5
+        video['loras'].append(dict(name='extra',strength=.25,enabled=True))
+        graph=w.WF.build('video',video,'ComfyBridge/test')
+        self.assertEqual(graph['100']['inputs']['strength_model'],fixed)
+        self.assertEqual(graph['101']['inputs']['strength_model'],.25)
+        replay=w.WF.build('video',video,'ComfyBridge/test',recorded_video_strength=.8)
+        self.assertEqual(replay['100']['inputs']['strength_model'],.8)
+
     async def test_profiles_remain_separate_and_restorable(self):
         owners=[str(uuid.uuid4()) for _ in range(3)]
         def headers(i):return {'Authorization':'Bearer integration-test-key','X-Bridge-Device':owners[i]}

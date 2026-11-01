@@ -1,12 +1,12 @@
 # ComfyBridge
 
-**[Open the beta 8 release page](https://github.com/gkoogz/ComfyBridge/releases/tag/v0.1.0-beta.8)** · [Download the Android APK](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.8/ComfyBridge-0.1.0-beta.8.apk) · [All releases](https://github.com/gkoogz/ComfyBridge/releases)
+**[Open the beta 9 release page](https://github.com/gkoogz/ComfyBridge/releases/tag/v0.1.0-beta.9)** · [Download the Android APK](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.9/ComfyBridge-0.1.0-beta.9.apk) · [All releases](https://github.com/gkoogz/ComfyBridge/releases)
 
 <img src="artwork/comfybridge.png" width="128" alt="ComfyBridge white cube and play icon on black">
 
 An Android remote for an existing Windows ComfyUI installation. The phone edits generation settings, uploads images and masks, and views results; the PC does the GPU work. A small Windows tray application wakes its Python worker on demand.
 
-**0.1.0-beta.8 is a personal-workflow beta**, adapted specifically to `Image gen.json` and `Video gen.json` in `E:\ComfyUI-Zluda\user\default\workflows`. It is not a general ComfyUI workflow importer. Models, LoRAs, workflow files, prompts, generated media, pairing credentials, and signing keys are not included in this repository or release.
+**0.1.0-beta.9 is a personal-workflow beta**, adapted specifically to `Image gen.json` and `Video gen.json` in `E:\ComfyUI-Zluda\user\default\workflows`. It is not a general ComfyUI workflow importer. Models, LoRAs, workflow files, prompts, generated media, pairing credentials, and signing keys are not included in this repository or release.
 
 The phone shows **PC connected** as soon as the bridge answers. Loading models and unavailable telemetry have their own messages. If the server or VPN drops, leave the phone app open: it retries automatically using the saved pairing. **Disconnect** or **Cancel reconnect** stops those retries.
 
@@ -26,9 +26,17 @@ Both paired phones can watch the PC queue. **Generate / Add to queue** captures 
 
 The percentage is an estimate for the current image or video, alongside its position in the shared PC queue. Adding another generation changes 1/1 to 1/2. The next job shows 2/2, and the counter starts over once the queue empties. It follows the submitted nodes: loading and LoRAs, prompt/source/mask encoding, sampling, VAE decoding, then saving. Video also includes frame assembly and MP4 encoding. Cached nodes have little weight. Between reported steps the estimate advances conservatively, and the PC learns relative stage costs from successful runs. Only indexing a finished result sets a job to 100%.
 
-**Bridge → Backups & notifications → PC settings backup** saves this phone’s settings, prompt library, presets, and starting images/masks to the PC. Check for **Saved on PC** before uninstalling. A fresh installation pairs again and restores the most recently updated profile; **Restore from a phone…** lets you pick another by model, ID and date. Each installation writes to its own profile, so two phones can edit independently. Private offline media is repopulated from the PC; a camera-roll export is separate.
+**Bridge → Backups & notifications → PC settings backup** saves this phone’s settings, prompt library, presets, and starting images/masks to the PC. Check for **Saved on PC** before uninstalling. A fresh installation pairs again and restores the most recently updated profile; **Restore from a phone…** lets you pick another by model, ID and date. Each installation has its own backup. The image editor, video editor and prompt library also sync across paired phones. The latest edit in each section wins. The app checks when an editor opens and every ten minutes while connected and open. Private offline media is repopulated from the PC; a camera-roll export is separate.
 
 **Generation notifications** opens Android notification settings or requests permission. With notifications enabled, your phone watches batches it submits, including when you leave the app. The progress notification displays batch progress and the current item/stage. Completion, cancellation and failure are reported per batch. If the PC becomes unreachable, updates wait for connectivity; Android can defer background updates under its power and foreground-service limits. The other phone's jobs remain visible in the shared queue without sending duplicate alerts to both devices.
+
+PC Queue on either generator shows active jobs and the past 24 hours of results. It scrolls after ten entries. Each generation has its own timer. Finished rows show **Success**, **Aborted** or **Fail** and the final elapsed time. A thumbnail opens the result in Library. Tap **↗** to load that job’s settings, actual seed, starting image and mask into the editor. Tap Generate when ready. The built-in MiniMax turbo LoRA uses the strength from the saved workflow.
+
+Older jobs may have no recorded start. A ≥ time counts from when the upgrade first observed a running job. An ≈ time comes from a unique match between a ComfyUI log entry and an output file. The app shows **Time unavailable** when it cannot recover a duration.
+
+## Notepad
+
+Open **Notepad** from the sidebar to write wrapped text anywhere on the page. An empty pad has 80 writable lines. Once you type, it keeps 30 blank lines beneath your text. **Add sticky** colors the cursor’s row or the rows in a selection. Enter inside a sticky expands it. Backspace at the start of the following row removes its color and keeps the text. Five colors cycle and stay with the note when it syncs. Notes save on the phone as you type and sync through the paired PC. If two phones edit offline at the same time, both drafts are kept in the shared text.
 
 ## Gallery and inline playback
 

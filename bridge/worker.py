@@ -21,6 +21,7 @@ from aiohttp import web
 from PIL import Image, ImageOps
 
 from queue_progress import LIVE_JOBS, positions, prepare
+from studio import prepare as prepare_studio
 from workflows import Workflows
 from progress import Progress
 
@@ -48,6 +49,7 @@ CREATE TABLE IF NOT EXISTS stage_cost(kind TEXT, node TEXT, factor REAL, PRIMARY
 if 'owner' not in {r[1] for r in DB.execute('PRAGMA table_info(jobs)')}:
     DB.execute("ALTER TABLE jobs ADD COLUMN owner TEXT NOT NULL DEFAULT 'legacy'");DB.commit()
 prepare(DB)
+prepare_studio(DB)
 TRACKER = None
 LAST_REQUEST = time.monotonic()
 IN_FLIGHT = 0
@@ -205,7 +207,8 @@ async def run_jobs():
         j = jobs[0]; PREVIEW = None
         try:
             settings = json.loads(j['settings'])
-            graph = WF.build(j['kind'], settings, 'ComfyBridge/'+j['id'])
+            locked=settings['loras'][0]['strength'] if j['kind']=='video' and settings.get('loras') else None
+            graph = WF.build(j['kind'], settings, 'ComfyBridge/'+j['id'], recorded_video_strength=locked)
             if ACTIVE!=j['id'] or not TRACKER:
                 learned=dict(DB.execute('SELECT node,factor FROM stage_cost WHERE kind=?',(j['kind'],)))
                 TRACKER=Progress(j['kind'],graph,settings,learned=learned)
@@ -415,6 +418,16 @@ async def api(request):
             raise ValueError('The bridge queue is full (64 jobs).')
         if kind == 'image' and s['model'] not in cat['models']:
             raise ValueError('The selected checkpoint is not available.')
+        locked=None
+        if kind == 'video' and s.get('loras'):
+            required,locked=WF.widgets('video',8)[:2]
+            if s.get('replayOf'):
+                original=DB.execute("SELECT settings FROM jobs WHERE id=? AND kind='video'",(str(uuid.UUID(s['replayOf'])),)).fetchone()
+                original_loras=json.loads(original[0]).get('loras',[]) if original else []
+                if not original_loras or original_loras[0]['name']!=required:
+                    raise ValueError('The original video workflow LoRA is unavailable.')
+                locked=original_loras[0]['strength']
+            s['loras'][0]['strength']=locked
         for l in s.get('loras', []):
             if l.get('enabled', True) and l['name'] not in cat['loras']:
                 raise ValueError('A selected LoRA is not available: '+l['name'])
@@ -422,7 +435,7 @@ async def api(request):
         prepared = []
         for i in range(count):
             settings = dict(s); settings['seed'] = str((int(s['seed'])+(i if s.get('increment') else 0)) % (2**64))
-            id = str(uuid.uuid4()); WF.build(kind, settings, 'ComfyBridge/'+id)
+            id = str(uuid.uuid4()); WF.build(kind, settings, 'ComfyBridge/'+id, recorded_video_strength=locked)
             prepared.append((id,batch,kind,json.dumps(settings),'pending',created,i+1,count,device)); ids.append(id)
         with DB:
             DB.executemany('INSERT INTO jobs(id,batch,kind,settings,status,created,ordinal,total,owner) '

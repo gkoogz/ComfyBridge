@@ -2,6 +2,12 @@
 
 Validation performed on November 1, 2026, on Windows with the existing ComfyUI-ZLUDA installation and a connected Moto g stylus 2025.
 
+## Beta 9 queue history and shared workspace
+
+The paired Moto loaded 19 queue records and the ten-row scrolling area. Eight older jobs had a uniquely matched ComfyUI log duration, displayed as an estimate. A thumbnail opened its corresponding Library item. Recalling a completed video restored its actual seed, positive prompt, upload and source dimensions. The mandatory MiniMax strength controls were disabled. On the physical phone, a temporary note verified the initial 80 lines, the 30-line trailing area, selection across rows, Enter inside a sticky, and removal from the line below without changing any text.
+
+Two independent app sessions used an isolated instance of the PC storage code. Each loaded the latest generator edit from the other, including through the periodic refresh path. A note and its sticky arrived on the second client and survived an offline reload. Only one physical Android device was used. Isolated worker/storage tests also cover timestamps, the 24-hour cutoff, pending cancellation, mask replay, missing input files and simultaneous offline drafts.
+
 ## Beta 8 shared queue count
 
 The running video on the paired Moto showed **Queue 1/6 · 76%** with five more jobs queued across image and video. The running job ID matched before and after updating Windows. The worker tests covered extending a running queue from a second phone, retrying the same submission, cancelling a waiting job, advancing after completion and starting a new count after idle. The tray panel test used a single-item batch at shared queue position 2/4.

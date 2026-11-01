@@ -1,0 +1,21 @@
+.historyCard{padding:10px 12px;margin:8px 0 14px}
+.historyCard>.row{margin-bottom:4px}
+.queueRows{max-height:520px;overflow:auto;overscroll-behavior:contain}
+.queueJob{height:52px;display:flex;align-items:center;gap:7px;border-top:1px solid var(--line)}
+.jobThumb{width:34px;height:36px;flex:none;display:grid;place-items:center;padding:0;border:0;background:var(--bg);border-radius:5px;overflow:hidden;color:var(--muted)}
+.jobThumb img{width:100%;height:100%;object-fit:cover}
+.jobInfo{min-width:0;flex:1;line-height:1.25}.jobInfo b{font-size:13px;text-transform:capitalize}.jobInfo small{font-size:10px;font-weight:400}.jobInfo>small{display:block}
+.jobElapsed,#activeTimer{font-variant-numeric:tabular-nums}
+.queueJob button[data-cancel]{padding:4px 6px;font-size:11px}
+.outcome{font-size:11px}.outcome.complete{color:var(--mint)}.outcome.error{color:var(--red)}
+.jobRecall{width:36px;height:42px;background:none;color:var(--mint);padding:0;font-size:21px;border:0}
+body[data-page=notepad] main{max-width:none;padding:0 12px 64px}
+#noteStatus{display:block;font-size:11px;color:var(--muted);padding:6px 2px}
+.noteCanvas{position:relative;width:100%}
+#noteText,#notePaper{box-sizing:border-box;width:100%;margin:0;border:none;padding:0;font:16px/26px system-ui,sans-serif;letter-spacing:normal;tab-size:4;white-space:pre-wrap;overflow-wrap:break-word;word-break:normal}
+#noteText{position:absolute;inset:0;height:100%;min-height:0;resize:none;background:transparent;overflow:hidden;color:var(--text);outline:none;box-shadow:none;border-radius:0}
+#notePaper{pointer-events:none;color:transparent;user-select:none}
+#notePaper>div{min-height:26px}
+#notePaper .stickyBlock{width:max-content;min-width:3ch;max-width:100%;border-radius:4px}
+.pastel0{background:#eed57638}.pastel1{background:#8fbff43a}.pastel2{background:#9ad99c38}.pastel3{background:#eaa5c738}.pastel4{background:#edb18338}
+#addSticky{position:fixed;right:15px;bottom:15px;border-radius:24px;padding:11px 18px;z-index:11;box-shadow:0 3px 14px #0005}
