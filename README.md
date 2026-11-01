@@ -1,5 +1,7 @@
 # ComfyBridge
 
+[Download the Android APK](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.1/ComfyBridge-0.1.0-beta.1.apk) | [Windows package and beta release notes](https://github.com/gkoogz/ComfyBridge/releases/tag/v0.1.0-beta.1)
+
 <img src="artwork/comfybridge.png" width="128" alt="ComfyBridge white cube and play icon on black">
 
 An Android remote for an existing Windows ComfyUI installation. The phone edits generation settings, uploads images and masks, and views results; the PC does the GPU work. A small Windows tray application wakes its Python worker on demand.
