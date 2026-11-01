@@ -15,7 +15,7 @@ Validation performed on November 1, 2026, on Windows with the existing ComfyUI-Z
 
 No full diffusion image or MiniMax video was rendered through the phone during staging because an existing desktop generation was running. Before considering this stable, complete a neutral prompt render through each of t2i, i2i, masked i2i, and i2v. Observe live sampler previews and progress, disconnect/reconnect during a render, and verify the completed output in the phone library. Play a completed video, seek, save both media types through Android's document picker, and archive/unarchive them.
 
-Also exercise cold PC startup, an owned ComfyUI startup/shutdown cycle, overnight idle behavior, and Windscribe port renewal. No fixed GPU or RAM usage cap is enforced. A preexisting ComfyUI process retains its own memory policy.
+Also exercise cold PC startup, an owned ComfyUI startup/shutdown cycle, overnight idle behavior, and Windscribe reconnection to the configured static IP. No fixed GPU or RAM usage cap is enforced. A preexisting ComfyUI process retains its own memory policy.
 
 ## Known boundaries
 
@@ -24,5 +24,5 @@ Also exercise cold PC startup, an owned ComfyUI startup/shutdown cycle, overnigh
 - The Windows monitor is a functional text status window; phone UI is the primary generation interface.
 - There is no automatic public IP discovery, port renewal, Wake-on-LAN, multi-user isolation, or remote update service.
 - Presets stay on the phone; media stays on the PC unless explicitly saved locally.
-- Remote access currently uses a seven-day Windscribe ephemeral rule, not a permanent endpoint.
+- Both ephemeral forwarding and the owner's permanent Windscribe static-IP rule were tested from the phone with pinned TLS and a live catalog fetch. Static access requires the PC to remain connected to the purchased static-IP location.
 - Windows executable is unsigned; APK uses the project's private local release signing identity.

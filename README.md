@@ -28,11 +28,11 @@ Use the same Windows account for installation and daily use. Installing over an 
 
 ## Windscribe access away from home
 
-Windscribe on both devices does not by itself put them on a shared private network. This beta was tested with a Windscribe Pro **ephemeral port forward**: an assigned public TCP port forwards to the PC's bridge on TCP 18764. The phone uses `https://PC_VPN_PUBLIC_IP:ASSIGNED_PORT` with the pairing key and exact certificate fingerprint. Reconnect the PC VPN after creating/changing its forwarding rule.
+Windscribe on both devices does not by itself put them on a shared private network. This beta was tested with both ephemeral forwarding and a **permanent static-IP port forward**. The static rule forwards an assigned public TCP port to the PC bridge on TCP 18764. The phone uses `https://STATIC_IP:ASSIGNED_PORT` with the pairing key and exact certificate fingerprint. Select the Windows device in the forwarding rule and connect the PC to that exact static-IP location. The phone can use its own VPN location.
 
 Normal gaming and other traffic continue using your existing Windscribe configuration; ComfyBridge does not install another VPN or change your default route. No domain is required for this pinned-certificate connection.
 
-**Ephemeral forwarding expires after seven days**, and a VPN reconnect/location change may change the address. Renew the rule and update the phone address as needed. A stable unattended setup needs permanent forwarding with a suitable Windscribe static IP, or a separately configured HTTPS tunnel. Neither a static IP purchase nor a permanent tunnel is included in this beta. See [Windscribe port forwarding](https://windscribe.com/knowledge-base/articles/do-you-support-port-forwarding/) and [static IP options](https://windscribe.com/staticips/).
+**Ephemeral forwarding expires after seven days**, and a VPN reconnect/location change may change the address. Renew the rule and update the phone address as needed. A stable unattended setup needs permanent forwarding with a suitable Windscribe static IP, or a separately configured HTTPS tunnel. A static IP is purchased separately from Windscribe. The owner's installation now uses its configured static IP; account credentials and endpoint configuration are not bundled in the beta. See [Windscribe port forwarding](https://windscribe.com/knowledge-base/articles/do-you-support-port-forwarding/) and [static IP options](https://windscribe.com/staticips/).
 
 The PC must be awake, its user signed in, Windscribe connected to the appropriate server, and the tray application running. This release does not wake a sleeping or powered-off PC.
 
