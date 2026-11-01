@@ -1,0 +1,14 @@
+build/
+dist/
+__pycache__/
+*.pyc
+*.exe
+*.apk
+*.jks
+*.pfx
+*.sqlite*
+token.txt
+fingerprint.txt
+password.txt
+*.log
+.env*
