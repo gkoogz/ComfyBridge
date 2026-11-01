@@ -49,6 +49,34 @@ function wireMedia(root){$$('[data-media]',root).forEach(b=>b.onclick=()=>{
  if($('#modal').open)closeModal();originTile=b;openMedia(item);
 });}
 
+function makeVideoButton(item){
+ const button=document.createElement('button');
+ button.type='button';button.className='makeVideo';button.textContent='Make video';
+ button.onclick=async()=>{
+  const session=epoch;
+  button.disabled=true;button.textContent='Loading image…';
+  try{
+   if(!state.settings.video)throw Error('Connect to the PC to load your video settings first.');
+   let original=library.find(entry=>entry.id===item.id)||item;
+   if(!original.local){
+    if(!connected)throw Error('Connect to the PC to download this image.');
+    original=await fetchOriginal(item.id);
+   }
+   const response=await fetch('/local/image/'+original.id+'/'+original.local);
+   if(!response.ok)throw Error('Could not read the original image from the phone.');
+   const input=await readStartingImage(await response.blob());
+   if(session!==epoch||!button.isConnected||viewerClosing)return;
+   setStartingImage('video',input);
+   navigate('video');
+   const panel=$('#upload')?.closest('.foldPanel');
+   if(panel?.classList.contains('folded'))$('.foldToggle',panel).click();
+   panel?.scrollIntoView({block:'nearest'});
+  }catch(e){if(button.isConnected)toast(e.message);}
+  finally{button.disabled=false;button.textContent='Make video';}
+ };
+ return button;
+}
+
 // Both surfaces use the same player. Only verified, complete originals are playable.
 function mountAsset(host,item,isViewer){
  const id=item.id;host.className='asset'+(isViewer?' galleryAsset':'');host.replaceChildren();
@@ -71,7 +99,10 @@ function mountAsset(host,item,isViewer){
    if(item.kind==='image'){
     const original=new Image();original.className='original';original.alt='Generated image';original.src=media(id);
     await original.decode();
-    if(host.isConnected){host.replaceChildren(original);original.onclick=toggleChrome;}
+    if(host.isConnected){
+     host.replaceChildren(original);original.onclick=toggleChrome;
+     if(!isViewer)host.after(makeVideoButton(item));
+    }
     return;
    }
    host.innerHTML='<video playsinline preload="metadata" poster="'+media(id,true)+'" aria-label="Generated video"></video><button class="bigPlay" aria-label="Play video">▶</button><div class="transport"><button class="transportPlay" aria-label="Play">▶</button><input type="range" min="0" max="1" step="any" value="0" aria-label="Video position"><small></small></div>';
@@ -143,6 +174,7 @@ function openMedia(item){
  const archive=$('#archiveMedia');archive.disabled=!connected||item.source==='missing';
  archive.onclick=async()=>{archive.disabled=true;try{await api('archive',{id:item.id,archived:!item.archived});updateItem({...current(),archived:!item.archived});if(stillHere())closeViewer();await syncShelf(true);}catch(e){msg(e.message);archive.disabled=false;}};
  $('#saveMedia').onclick=async e=>{const b=e.currentTarget;b.disabled=true;try{if(!current().local)throw Error('Wait for the phone copy to finish downloading.');await local('export',{id:item.id});msg('Saved to DCIM/ComfyBridge in your camera roll.');}catch(err){msg(err.message);}finally{b.disabled=false;}};
+ if(item.kind==='image')$('#saveMedia').after(makeVideoButton(item));
  if(item.warning){const w=$('#mediaWarning');w.textContent=warningText[item.warning]+' ';const b=document.createElement('button');w.append(b);const replace=item.warning==='changed';b.textContent=replace?'Replace…':'Remove copy…';b.disabled=replace&&!connected;b.onclick=()=>{msg('Save to the camera roll first if you want to keep this version.');b.textContent=replace?'Confirm replacement':'Confirm removal';b.onclick=async()=>{b.disabled=true;try{const j=await local(replace?'replace':'drop',{id:item.id,local:item.local,sha256:item.sha256});updateItem(j);if(stillHere())closeViewer();}catch(e){msg(e.message);b.disabled=false;}};};}
  mountAsset($('.asset',view),item,true);
 }

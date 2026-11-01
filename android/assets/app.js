@@ -179,7 +179,36 @@ function renderLoras(){
 }
 async function loadImage(file){
  if(!file)return;const kind=page;
- try{const data=await new Promise((resolve,reject)=>{let r=new FileReader();r.onload=()=>resolve(r.result);r.onerror=()=>reject(r.error);r.readAsDataURL(file);});const img=await loadImg(data);if(img.naturalWidth*img.naturalHeight>40000000)throw new Error('Please choose an image under 40 megapixels.');state.inputs[kind]={data,width:img.naturalWidth,height:img.naturalHeight};let s=state.settings[kind];s.upload=null;s.mask=null;s.width=img.naturalWidth;s.height=img.naturalHeight;s.scale=0;if(kind==='video'){s.width=Math.max(32,Math.round(s.width/32)*32);s.height=Math.max(32,Math.round(s.height/32)*32);}if(kind==='image'){s.denoise=.75;if(s.aspectLock)s.aspectLock=[s.width,s.height];}persist(kind);renderGenerator();}catch(e){toast(e.message);}
+ try{
+  const input=await readStartingImage(file);
+  if(page!==kind)return;
+  setStartingImage(kind,input);
+  renderGenerator();
+ }catch(e){toast(e.message);}
+}
+async function readStartingImage(blob){
+ const data=await new Promise((resolve,reject)=>{
+  const reader=new FileReader();
+  reader.onload=()=>resolve(reader.result);
+  reader.onerror=()=>reject(reader.error);
+  reader.readAsDataURL(blob);
+ });
+ const img=await loadImg(data);
+ const width=img.naturalWidth,height=img.naturalHeight;
+ if(width*height>40000000)throw new Error('Please choose an image under 40 megapixels.');
+ return {data,width,height};
+}
+function setStartingImage(kind,input){
+ const s=state.settings[kind];
+ state.inputs[kind]=input;
+ s.upload=null;s.mask=null;s.scale=0;
+ s.width=input.width;s.height=input.height;
+ if(kind==='video')[s.width,s.height]=videoSize(input,0);
+ else{
+  s.denoise=.75;
+  if(s.aspectLock)s.aspectLock=[s.width,s.height];
+ }
+ persist(kind);
 }
 function loadImg(data){return new Promise((resolve,reject)=>{let i=new Image();i.onload=()=>resolve(i);i.onerror=()=>reject(new Error('That image could not be opened.'));i.src=data;});}
 function updateVideo(rescale){

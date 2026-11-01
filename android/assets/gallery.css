@@ -30,7 +30,7 @@ body[data-page=library] #linkNotice:not([hidden]){margin:0;padding:4px 12px;font
 .viewerTop button{font-size:28px;width:44px;height:44px;line-height:1;border-radius:50%;padding:0}
 .viewerTop small{display:block;color:#e0e3e4;font-size:11px}
 .viewerFoot{bottom:0;display:block;background:linear-gradient(transparent,#000c);padding:24px 12px 12px}
-.viewerActions{display:flex;justify-content:center;gap:8px}
+.viewerActions{display:flex;flex-wrap:wrap;justify-content:center;gap:8px}
 .viewerActions button{font-size:14px;border-radius:24px;padding:10px 16px}
 #mediaMessage:not(:empty),#mediaWarning:not(:empty){font-size:13px;text-align:center;background:#141d22e8;padding:8px;border-radius:10px}
 #mediaWarning:not(:empty){margin-bottom:8px}
@@ -49,6 +49,7 @@ body[data-page=library] #linkNotice:not([hidden]){margin:0;padding:4px 12px;font
 .fetchPoster span{width:auto;height:auto;border-radius:26px;padding:12px;font-size:15px;white-space:nowrap}
 .resultbox{width:100vw;margin-left:calc(50% - 50vw);border:0;border-radius:0;min-height:80px;display:block;align-content:center;background:#10171c}
 .resultbox video,.resultbox img{max-height:none;border-radius:0}
+.resultbox>.makeVideo{margin:6px auto;color:var(--mint)}
 .recentStrip{display:contents}
 .watchImage{min-height:160px}
 .watchPixels{image-rendering:pixelated}

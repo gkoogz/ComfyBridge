@@ -108,7 +108,7 @@ async function finishLiveImage(view,item){
   if(liveSelection!==view||page!=='image'||session!==epoch)return;
   const box=$('#result');if(!box)return;
   const host=document.createElement('div');host.className='asset';host.dataset.id=item.id;host.dataset.hash=item.local;
-  host.append(img);box.replaceChildren(host);delete box.dataset.live;
+  host.append(img);box.replaceChildren(host,makeVideoButton(item));delete box.dataset.live;
   box.dataset.latest=library.find(j=>j.kind==='image'&&!j.archived)?.id||item.id;
   if(lastCaptured===item.job)lastCaptured=null;
   liveSelection=null;pruneFrames();renderCarousel();
