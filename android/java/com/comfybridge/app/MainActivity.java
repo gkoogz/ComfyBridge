@@ -25,6 +25,7 @@ public class MainActivity extends Activity {
  private WebView web;
  private SharedPreferences prefs;
  private final ExecutorService io=Executors.newFixedThreadPool(4);
+ private final ExecutorService heartbeat=Executors.newSingleThreadExecutor();
  private ValueCallback<Uri[]> chooser;
  private String saveId,saveKind;
  private static final String ORIGIN="https://appassets.androidplatform.net";
@@ -105,12 +106,16 @@ public class MainActivity extends Activity {
   private String friendly(Exception e){
    if(e instanceof UnknownHostException)return "Address not found. Copy the PC address from the Windows panel, including its port.";
    if(e instanceof SocketTimeoutException)return "The PC did not respond. Check Server on, the address and port, and your PC’s VPN connection.";
-   if(e instanceof SSLException)return "Could not verify the PC’s identity. Check the address. If this is your PC, choose Pair again and use a new code.";
+   if(e instanceof SSLException){
+    for(Throwable cause=e;cause!=null;cause=cause.getCause())
+     if(cause instanceof CertificateException||cause instanceof SSLPeerUnverifiedException)return "Could not verify the PC’s identity. Check the address. If this is your PC, choose Pair again and use a new code.";
+    return "The encrypted connection was interrupted. Check Server on and your VPN connection.";
+   }
    if(e instanceof ConnectException||e instanceof NoRouteToHostException)return "Cannot reach the PC. Check Server on, the address and port, and the PC’s VPN or firewall.";
    return e.getMessage()==null?"Connection failed. Check the PC panel and try again.":e.getMessage();
   }
   private void callback(int id,boolean ok,String value){String js="window.bridgeResult("+id+","+ok+","+(ok?value:JSONObject.quote(value))+")";runOnUiThread(()->web.evaluateJavascript(js,null));}
-  @JavascriptInterface public void request(int id,String path,String method,String body){io.execute(()->{
+  @JavascriptInterface public void request(int id,String path,String method,String body){("ping".equals(path)||"disconnect".equals(path)?heartbeat:io).execute(()->{
    boolean ok=false;String result;
    try{
     if(!path.matches("[a-zA-Z0-9_/-]+")||path.contains("..")||!Arrays.asList("GET","POST").contains(method))throw new IOException("Invalid request.");
@@ -131,4 +136,5 @@ public class MainActivity extends Activity {
   if(request==101 && result==RESULT_OK && data!=null){Uri uri=data.getData();String id=saveId;io.execute(()->{try{HttpURLConnection c=connection("api/media/"+id,"GET");try{if(c.getResponseCode()!=200)throw new IOException("Download failed.");try(InputStream in=c.getInputStream();OutputStream out=getContentResolver().openOutputStream(uri)){byte[] bytes=new byte[65536];int n;while((n=in.read(bytes))!=-1)out.write(bytes,0,n);}}finally{c.disconnect();}runOnUiThread(()->Toast.makeText(this,"Saved to your phone",Toast.LENGTH_LONG).show());}catch(Exception e){runOnUiThread(()->Toast.makeText(this,e.getMessage(),Toast.LENGTH_LONG).show());}});}
  }
  @Override public void onBackPressed(){web.evaluateJavascript("(()=>{if(document.querySelector('#modal').open){closeModal();return;}if(document.querySelector('#drawer').classList.contains('open')){drawer(false);return;}navigate('bridge');})()",null);}
+ @Override protected void onDestroy(){heartbeat.shutdownNow();io.shutdownNow();super.onDestroy();}
 }

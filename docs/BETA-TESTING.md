@@ -2,6 +2,12 @@
 
 Validation performed on November 1, 2026, on Windows with the existing ComfyUI-ZLUDA installation and a connected Moto g stylus 2025.
 
+## Beta 3 connection repair
+
+- The previous tray reproduced Winsock error 10048 when restarting its listeners on the same ports with a child process alive. The new panel test runs 20 restarts with an active client and a surviving child, and makes an authenticated HTTP request after every cycle. A separate listener occupying the TLS port produces an inline error; releasing it lets the next click start both listeners.
+- The signed release APK on the Moto connected through the saved Windscribe address. While testing a tray outage, the phone displayed a red dot, “Reconnecting…” and a cancel button. Both tray ports were released while the worker remained alive. After restarting the tray, the same phone showed “PC connected” automatically without a code or another tap (about five seconds in that run).
+- Model loading did not hide the successful connection. Live CPU/GPU telemetry and the model loading message were observed together on the phone. No new generation was required for this connection test.
+
 ## Beta 2 pairing and panel
 
 - On the physical Android phone over the configured Windscribe static forward: missing address and missing code produced separate inline errors; an incorrect code was rejected; the correct six-digit code paired and loaded the real catalog. A consumed code was rejected, and the saved pairing reconnected without re-entry.

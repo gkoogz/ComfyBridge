@@ -17,6 +17,7 @@ partial class Bridge {
     static readonly HashSet<TcpClient> sockets=new HashSet<TcpClient>();
     readonly string remoteFile=Path.Combine(Data,"remote-address.txt"), offFile=Path.Combine(Data,"server-off");
     Label badge,phone,codeLabel,codeHint,jobText; Button power,newCode;
+    string powerError;
     ComboBox addressBox; ProgressBar bar; bool reading;
     static Label L(string s,float pt,Color color,bool bold=false){return new Label{Text=s,UseMnemonic=false,ForeColor=color,Font=new Font("Segoe UI",pt,bold?FontStyle.Bold:FontStyle.Regular),Dock=DockStyle.Fill,TextAlign=ContentAlignment.MiddleLeft,AutoEllipsis=true};}
     static Image PowerIcon(){var bmp=new Bitmap(20,20);using(var g=Graphics.FromImage(bmp))using(var pen=new Pen(Mint,2.2f)){g.SmoothingMode=System.Drawing.Drawing2D.SmoothingMode.AntiAlias;g.DrawArc(pen,3,4,14,14,-55,290);g.DrawLine(pen,10,1,10,10);}return bmp;}
@@ -24,12 +25,20 @@ partial class Bridge {
     static FlowLayoutPanel Row(params Control[] cs){var row=new FlowLayoutPanel{Dock=DockStyle.Fill,WrapContents=false,Margin=Padding.Empty};foreach(var c in cs)row.Controls.Add(c);return row;}
     static void Add(TableLayoutPanel t,Control c,int height){int i=t.RowCount++;t.RowStyles.Add(new RowStyle(SizeType.Absolute,height));t.Controls.Add(c,0,i);}
     void Server(bool on,bool remember){
+        powerError=null;
         if(!on){online=false;Pairing.Close("Server is off.");seen=DateTime.MinValue;
             if(server!=null)server.Stop();if(tlsServer!=null)tlsServer.Stop();
             lock(sockets){foreach(var c in sockets)c.Close();}
         }else if(!online){
             var local=new TcpListener(IPAddress.Loopback,loopbackPort);var tls=new TcpListener(IPAddress.Any,tlsPort);
-            try{local.Start();tls.Start();}catch{local.Stop();tls.Stop();throw;}
+            int binding=loopbackPort;
+            try{PrivateSocket(local.Server);PrivateSocket(tls.Server);local.Start();binding=tlsPort;tls.Start();}
+            catch(SocketException e){local.Stop();tls.Stop();
+                powerError=e.SocketErrorCode==SocketError.AddressAlreadyInUse?
+                    "Port "+binding+" is already in use. Close the program using that port, then click Turn server on.":
+                    "Cannot listen on TCP "+binding+": "+e.Message;
+                RefreshState();return;
+            }catch{local.Stop();tls.Stop();throw;}
             server=local;tlsServer=tls;online=true;
             Task.Run(()=>Listen(local,false));Task.Run(()=>Listen(tls,true));
             if(monitor!=null&&monitor.Visible)Pairing.Issue();
@@ -43,7 +52,7 @@ partial class Bridge {
         badge.Text=online?"●  Server on":"●  Server off";badge.ForeColor=online?Mint:Red;
         phone.Text=live?"●  Phone connected":"●  Phone disconnected";phone.ForeColor=live?Mint:Red;
         power.Text=online?"Turn server off":"Turn server on";
-        string hint;codeLabel.Text=Pairing.Display(out hint);codeLabel.AccessibleName="Pairing code "+codeLabel.Text;codeHint.Text=online?hint:"Turn the server on to pair.";newCode.Enabled=online;
+        string hint;codeLabel.Text=Pairing.Display(out hint);codeLabel.AccessibleName="Pairing code "+codeLabel.Text;codeHint.Text=online?hint:powerError??"Turn the server on to pair.";codeHint.ForeColor=powerError!=null?Red:Muted;newCode.Enabled=online;
     }
     static bool ValidAddress(string s,out string clean){Uri u;clean=null;
         if(!Uri.TryCreate(s,UriKind.Absolute,out u)||u.Scheme!="https"||u.Host==""||u.AbsolutePath!="/"||u.UserInfo!=""||u.Query!=""||u.Fragment!="")return false;

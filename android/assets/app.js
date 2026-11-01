@@ -18,7 +18,7 @@ async function init(){
  $('#presetButton').onclick=()=>{let m=$('#presetMenu');if(m.hidden){renderPresets();m.hidden=false;}else m.hidden=true;};
  $('#modalClose').onclick=closeModal;$('#modal').addEventListener('cancel',()=>{if(maskSession)maskSession=null;});
  document.addEventListener('click',e=>{if(!e.target.closest('#presetButton,#presetMenu'))$('#presetMenu').hidden=true;});
- render();setInterval(poll,2500);document.addEventListener('visibilitychange',()=>{if(!document.hidden&&connected)poll();});
+ render();setInterval(heartbeat,2500);document.addEventListener('visibilitychange',()=>{if(!document.hidden){nextProbe=0;heartbeat();}});
 }
 function drawer(open){$('#drawer').classList.toggle('open',open);$('#shade').hidden=!open;}
 function navigate(to){page=to;archived=false;presetName='';drawer(false);render();window.scrollTo(0,0);if(connected)poll();}
@@ -30,37 +30,66 @@ function render(){
 }
 const pcIcon='<svg viewBox="0 0 64 64"><rect x="7" y="10" width="50" height="34" rx="5"/><path d="M23 54h18M32 44v10M17 34l8-9 8 6 13-13"/></svg>';
 let editPair=false,pairAddress=null,bridgeError="";
+let wanted=false,epoch=0,probing=false,nextProbe=0,misses=0,catalogLoading=false,serviceNote='',pollNote='';
+function notice(){const el=$('#linkNotice');el.textContent=wanted&&!connected?'Reconnecting to your PC. '+bridgeError+' Accepted jobs continue on the PC.':connected?[serviceNote,pollNote].filter(Boolean).join(' '):'';el.hidden=!el.textContent;}
+function clearSession(){
+ ++epoch;wanted=false;misses=0;nextProbe=0;catalogLoading=false;serviceNote=pollNote=bridgeError='';connection(false);notice();
+}
+async function loadCatalog(){
+ if(catalogLoading||catalog||!connected)return;
+ const id=epoch;catalogLoading=true;serviceNote='PC connected. Loading ComfyUI models…';notice();
+ try{const data=await api('catalog');if(id!==epoch)return;
+  for(const kind of ['image','video'])if(!state.settings[kind])state.settings[kind]=structuredClone(data.defaults[kind]);
+  catalog=data;persist();serviceNote='';if(page==='bridge'||!$('#play')&&['image','video'].includes(page))render();
+ }catch(e){if(id!==epoch)return;serviceNote='Model list unavailable: '+e.message;}
+ finally{if(id===epoch){catalogLoading=false;if(!catalog&&page==='bridge')renderBridge();notice();}}
+}
+function reached(){const cameBack=!connected;misses=0;nextProbe=0;bridgeError='';connection(true);
+ if(cameBack){if(page==='bridge')renderBridge();if(!catalog)loadCatalog();}notice();poll();
+}
+function unreachable(e){
+ bridgeError=e.message;
+ if(/HTTP 40[13]|verify the PC.s identity/i.test(bridgeError)){
+  const reason=bridgeError;clearSession();editPair=true;bridgeError=reason;if(page==='bridge')renderBridge();else toast(reason);return;
+ }
+ connection(false);nextProbe=Date.now()+Math.min(20000,2500*2**Math.min(misses++,3));
+ if(page==='bridge')renderBridge();notice();
+}
+async function heartbeat(){
+ if(!wanted||probing||connecting||document.hidden||Date.now()<nextProbe)return;const id=epoch;probing=true;
+ try{await api('ping');if(id===epoch)reached();}catch(e){if(id===epoch)unreachable(e);}finally{probing=false;}
+}
 function renderBridge(){
  const cfg=window.Native?JSON.parse(Native.configuration()):{host:'',paired:false};
- const enroll=!connected&&(!cfg.paired||editPair), host=pairAddress??cfg.host;
+ const enroll=!wanted&&!connected&&(!cfg.paired||editPair), host=pairAddress??cfg.host;
  const fields=enroll?`<div class="pairFields"><p>On your PC, click the ComfyBridge cube by the Windows clock. Keep its panel open while you pair.</p><label for="host">1 · PC address</label><input id="host" type="url" value="${esc(host)}" placeholder="Address shown in the PC panel" autocapitalize="off" spellcheck="false"><label for="code">2 · Six-digit pairing code</label><input id="code" type="text" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="off" placeholder="000000"><small>After pairing, this phone remembers your PC.</small></div>`:`<p class="pairHost">${esc(cfg.host)}</p>`;
  $('#main').innerHTML=`<section class="pairCard"><div class="orb ${connected?'connected':''}" id="orb">${connected?'<span class="pairCheck">✓</span>':pcIcon}</div><h1 id="connectTitle">${connected?'PC connected':enroll?'Pair your phone':'Connect to your PC'}</h1>${fields}<div id="pairError" role="alert" ${bridgeError?'':'hidden'}>${esc(bridgeError)}</div><button class="green connectbutton" id="connect">${connected?'Disconnect':enroll?'Pair & connect':'Connect to bridge'}</button>${!connected&&cfg.paired?`<button class="textbutton" id="changePair">${editPair?'Use saved pairing':'Pair again or change PC address'}</button>`:''}</section><div id="destinations" class="grid2 pathcards" ${connected?'':'hidden'}><button data-open="image"><span class="largeicon">▧</span><strong>Create an image ↗</strong><small>Text, image or mask</small></button><button data-open="video"><span class="largeicon">▷</span><strong>Create a video ↗</strong><small>Bring an image to life</small></button></div><div class="sectionline"><h2>Machine pulse</h2><span class="pill" id="liveLabel">${connected?'LIVE':'OFFLINE'}</span></div><div class="telemetry">${['CPU','GPU','RAM','VRAM','SYSTEM COMMIT'].map((m,i)=>`<div class="metric" ${i===4?'style="grid-column:1/-1"':''}><label>${m}</label><strong id="m${i}">—</strong><small id="ms${i}">Waiting for bridge</small><div class="meter"><i id="mb${i}"></i></div></div>`).join('')}</div>`;
  const error=(msg,field)=>{bridgeError=msg;$('#pairError').hidden=false;$('#pairError').textContent=msg;if(field){field.setAttribute('aria-invalid','true');field.focus();}};
  if($('#host'))$('#host').oninput=()=>{pairAddress=$('#host').value;};
- if($('#changePair'))$('#changePair').onclick=()=>{editPair=!editPair;bridgeError='';pairAddress=null;renderBridge();};
+ if(wanted&&!connected){$('#connectTitle').textContent='Reconnecting…';$('#connect').textContent='Cancel reconnect';$('#orb').classList.add('connecting');$('#pairError').hidden=true;}
+ if(connected&&!catalog&&!catalogLoading&&serviceNote){const retry=document.createElement('button');retry.textContent='Retry loading models';retry.onclick=()=>loadCatalog();$('#connect').after(retry);}
+ if($('#changePair'))$('#changePair').onclick=()=>{clearSession();editPair=!editPair;pairAddress=null;renderBridge();};
  $('#connect').onclick=async()=>{
   if(connecting)return;
-  if(connected){connection(false);bridgeError='';renderBridge();api('disconnect').catch(()=>{});return;}
+  if(connected||wanted){const wasConnected=connected;clearSession();renderBridge();if(wasConnected)api('disconnect').catch(()=>{});return;}
   let url,code;
   if(enroll){url=$('#host').value.trim();code=$('#code').value.trim();pairAddress=url;
    if(!url)return error('Enter the PC address shown in the Windows ComfyBridge panel.',$('#host'));
    if(!/^[0-9]{6}$/.test(code))return error('Enter the six-digit pairing code from the PC panel.',$('#code'));
   }
   connecting=true;bridgeError='';$('#pairError').hidden=true;$('#connect').disabled=true;$('#orb').classList.add('connecting');$('#connect').textContent=enroll?'Pairing…':'Connecting…';
-  let stage=enroll?'Pairing':'Connecting';
+  let id=++epoch;catalog=null;
   try{
-   if(enroll){await new Promise((resolve,reject)=>{const id=++rpcId;pending.set(id,{resolve,reject});Native.pair(id,url,code);});editPair=false;pairAddress=null;}
-   stage='Connecting';await api('ping');stage='Loading ComfyUI';$('#connectTitle').textContent='Loading your models…';catalog=await api('catalog');
-   for(const kind of ['image','video'])if(!state.settings[kind])state.settings[kind]=structuredClone(catalog.defaults[kind]);
-   persist();library=await api('library');connection(true);render();poll();
-  }catch(e){connection(false);bridgeError=stage+': '+e.message;renderBridge();}finally{connecting=false;}
+   if(enroll){await new Promise((resolve,reject)=>{const id=++rpcId;pending.set(id,{resolve,reject});Native.pair(id,url,code);});if(id!==epoch)return;editPair=false;pairAddress=null;catalog=null;}
+   if(id!==epoch)return;wanted=true;await api('ping');if(id===epoch)reached();
+  }catch(e){if(id!==epoch)return;if(wanted)unreachable(e);else{bridgeError='Pairing: '+e.message;if(page==='bridge')renderBridge();}}finally{connecting=false;}
  };
  $$('[data-open]').forEach(b=>b.onclick=()=>navigate(b.dataset.open));
 }
 function slider(key,label,min,max,step=1,disabled=false){let s=state.settings[page];return `<div class="field"><label>${label}</label><div class="controlrow"><input type="range" data-setting="${key}" min="${min}" max="${max}" step="${step}" value="${s[key]}" ${disabled?'disabled':''}><input type="number" data-setting="${key}" min="${min}" max="${max}" step="${step}" value="${s[key]}" ${disabled?'disabled':''}></div></div>`;}
 function renderGenerator(){
  const kind=page,s=state.settings[kind],inp=state.inputs[kind];
- if(!s){$('#main').innerHTML='<div class="empty"><div class="symbol">◉</div><h2>Connect your studio first</h2><p>Workflow defaults and your model library will load from the PC.</p><button class="green" id="goBridge">Open Bridge</button></div>';$('#goBridge').onclick=()=>navigate('bridge');return;}
+ if(!s){$('#main').innerHTML='<div class="empty"><div class="symbol">◉</div><h2>'+(connected?'Waiting for workflow settings':'Connect your studio first')+'</h2><p>'+(connected?'The PC is connected. Check Bridge for model loading status.':'Workflow defaults and your model library will load from the PC.')+'</p><button class="green" id="goBridge">Open Bridge</button></div>';$('#goBridge').onclick=()=>navigate('bridge');return;}
  if(!inp.data)s.denoise=1;
  $('#main').innerHTML=`<div class="gentoolbar"><div class="row spread"><div class="row"><span id="runSpinner" class="spinner" hidden></span><div class="playwrap"><button id="play" class="green">▶ Generate</button><button id="batchButton" class="green" aria-label="Choose batch">⌄</button><div class="pop" id="batchMenu" hidden>${[2,4,8,16].map(n=>`<button data-batch="${n}" style="display:block;width:100%">Batch of ${n}</button>`).join('')}</div></div></div><span class="batchlabel" id="batchLabel">${s.batch>1?s.batch+' in batch':'Single generation'}</span></div><div class="progressrow" id="progressRow" hidden><img class="preview" id="livePreview" alt="Generation preview"><div class="progress"><i id="progressFill"></i><span id="progressText"></span></div></div><div class="statusmessage" id="jobMessage"></div></div><div id="genError"></div><div class="row spread" style="margin-bottom:17px"><p class="eyebrow">${kind==='image'?'A STILL, A STORY':'FROM STILL TO MOTION'}</p><span class="pill" id="mode">${kind==='video'?'IMAGE → VIDEO':inp.mask?'INPAINT':inp.data?'IMAGE → IMAGE':'TEXT → IMAGE'}</span></div><section class="card"><div class="row spread"><h2>Starting image</h2><small>${kind==='video'?'Required':'Optional'}</small></div><div class="upload">${inp.data?`<img src="${inp.data}" alt="Starting image">`:'<div><strong>＋</strong><span>Choose an image</span><br><small>Tap to browse your phone</small></div>'}<input type="file" id="upload" accept="image/*" aria-label="Choose starting image"></div><div class="uploadtools"><small>${inp.data?inp.width+' × '+inp.height:kind==='image'?'Leave empty for text to image':'The first frame of your video'}</small><div>${kind==='image'?'<button id="maskButton" '+(!inp.data?'disabled':'')+'>'+(inp.mask?'Edit mask':'◌ Apply mask')+'</button>':''} <button id="clearUpload" class="danger" ${!inp.data?'disabled':''}>Clear ×</button></div></div>${inp.mask?'<button id="clearMask" class="textbutton danger">Reset mask</button>':''}${kind==='image'&&inp.data&&(inp.width>1256||inp.height>1256)?'<div class="warning">ⓘ Large source image · above 1256 × 1256.</div>':''}</section><section class="card"><h2>Canvas & model</h2>${kind==='image'?`<div class="grid2 field"><div><label>Width</label><input type="number" data-setting="width" value="${s.width}" min="32" max="8192" step="8"></div><div><label>Height</label><input type="number" data-setting="height" value="${s.height}" min="32" max="8192" step="8"></div></div>`:`<div class="field"><div class="row spread"><label>Scale from source</label><strong id="scaleValue">${s.scale>0?'+':''}${s.scale}%</strong></div><input class="scaleRange" type="range" data-setting="scale" min="-90" max="100" step="1" value="${s.scale}"><div class="row spread"><small>−90%</small><small>Original · 0</small><small>+100%</small></div><p id="resolutionInfo" class="footnote"></p></div><div class="grid2 field"><div><label>Length · frames</label><input type="number" data-setting="frames" min="5" max="3592" value="${s.frames}"></div><div><label>FPS</label><input type="number" data-setting="fps" min="1" max="120" value="${s.fps}"></div></div><div id="durationInfo" class="footnote"></div>`}<div class="field"><label>${kind==='video'?'Model · locked to workflow':'Checkpoint'}</label>${kind==='video'?`<input readonly value="${esc(s.model)}">`:`<select data-setting="model">${(catalog?.models||[s.model]).map(m=>`<option ${m===s.model?'selected':''}>${esc(m)}</option>`).join('')}</select>`}</div></section><section class="card"><div class="row spread"><h2>LoRAs</h2><button id="addLora" class="textbutton">＋ Add</button></div><div id="loras"></div></section>${promptField('positive','Positive prompt')}${kind==='image'?promptField('negative','Negative prompt'):''}<section class="card"><h2>Generation settings</h2>${slider('steps','Steps',1,100)}${kind==='image'?slider('cfg','CFG',0,20,.1)+slider('denoise','Denoise'+(!inp.data?' · locked for text to image':''),0,1,.01,!inp.data):''}<div class="field"><label>Seed</label><input type="text" inputmode="numeric" data-setting="seed" value="${esc(s.seed)}"></div><label class="togglelabel"><input type="checkbox" id="increment" ${s.increment?'checked':''}>Increment seed after each generation</label></section><div class="sectionline"><h2>Latest result</h2><button id="toLibrary" class="textbutton">Library ↗</button></div><div class="resultbox" id="result"></div><div class="carousel" id="carousel"></div>`;
  $('#upload').onchange=e=>loadImage(e.target.files[0]);$('#clearUpload').onclick=()=>{state.inputs[kind]={};s.upload=null;s.mask=null;if(kind==='image'){s.width=1024;s.height=1536;s.denoise=1;}persist();renderGenerator();};
@@ -130,11 +159,18 @@ async function generate(){
  }catch(e){if(/^HTTP (400|401|413)/.test(e.message)){delete state.pendingRequest;persist();}$('#genError').innerHTML='<div class="errorbox">'+esc(e.message)+'</div>';toast('Generation could not be submitted.');}finally{if($('#play'))$('#play').disabled=false;}
 }
 async function poll(){
- if(!connected||pollBusy||document.hidden)return;pollBusy=true;
- try{const status=await api('status');jobs=status.jobs;active=status.active;previewAvailable=status.preview;
-  const latest=await api('library');const changed=JSON.stringify(latest)!==JSON.stringify(library);library=latest;
-  if(page==='bridge')showMetrics(await api('metrics'));else if(page==='library'&&changed)renderLibrary();else if(['image','video'].includes(page)){updateProgress();if(changed)renderResults();}
- }catch(e){connection(false);bridgeError="Connection lost: "+e.message+" Accepted jobs continue on the PC.";if(page==='bridge')renderBridge();else toast(bridgeError);}finally{pollBusy=false;}
+ if(!connected||pollBusy||document.hidden)return;const id=epoch,view=page;pollBusy=true;
+ const current=()=>id===epoch&&connected&&page===view;
+ try{
+  if(view==='bridge'){const m=await api('metrics');if(current())showMetrics(m);}
+  else{const status=view==='library'?null:await api('status');const latest=await api('library');if(!current())return;
+   if(status){jobs=status.jobs;active=status.active;previewAvailable=status.preview;}
+   const changed=JSON.stringify(latest)!==JSON.stringify(library);library=latest;
+   if(view==='library'){if(changed)renderLibrary();}else if($('#play')){updateProgress();if(changed)renderResults();}
+  }
+  if(current())pollNote='';
+ }catch(e){if(current())pollNote=(view==='bridge'?'PC telemetry unavailable: ':'Generation or library status unavailable: ')+e.message;}
+ finally{pollBusy=false;notice();}
 }
 function showMetrics(m){const gb=v=>(v/1073741824).toFixed(1);let vals=[[m.cpu==null?'—':m.cpu.toFixed(0)+'%',m.cpuWatts==null?'Power unavailable':m.cpuWatts.toFixed(1)+' W',m.cpu],[m.gpu==null?'—':m.gpu.toFixed(0)+'%',m.gpuWatts==null?'HWiNFO unavailable':m.gpuWatts.toFixed(0)+' W',m.gpu],[gb(m.ramUsed)+' GB','of '+gb(m.ramTotal)+' GB',m.ramUsed/m.ramTotal*100],[m.vramUsed==null?'—':gb(m.vramUsed)+' GB','of '+gb(m.vramTotal)+' GB',m.vramUsed/m.vramTotal*100],[gb(m.commitUsed)+' GB','of '+gb(m.commitTotal)+' GB committed',m.commitUsed/m.commitTotal*100]];vals.forEach((v,i)=>{if($('#m'+i)){$('#m'+i).textContent=v[0];$('#ms'+i).textContent=v[1];$('#mb'+i).style.width=Math.max(0,Math.min(100,v[2]||0))+'%';}});}
 function updateProgress(){if(!$('#play'))return;let pendingJobs=jobs.filter(j=>j.kind===page&&['pending','running','submitting','cancelling'].includes(j.status));let j=pendingJobs.find(j=>j.id===active)||pendingJobs.sort((a,b)=>a.created-b.created||a.ordinal-b.ordinal)[0];$('#play').className=j?'stop':'green';$('#play').textContent=j?'■ Stop':'▶ Generate';$('#batchButton').disabled=!!j;$('#runSpinner').hidden=!j;$('#progressRow').hidden=!j;

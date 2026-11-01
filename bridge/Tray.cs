@@ -21,8 +21,8 @@ using Microsoft.Win32;
 [assembly: System.Reflection.AssemblyTitle("Comfy Bridge")]
 [assembly: System.Reflection.AssemblyDescription("Phone to ComfyUI bridge")]
 [assembly: System.Reflection.AssemblyVersion("0.1.0.0")]
-[assembly: System.Reflection.AssemblyFileVersion("0.1.0.5")]
-[assembly: System.Reflection.AssemblyInformationalVersion("0.1.0-beta.2")]
+[assembly: System.Reflection.AssemblyFileVersion("0.1.0.6")]
+[assembly: System.Reflection.AssemblyInformationalVersion("0.1.0-beta.3")]
 
 partial class Bridge : ApplicationContext {
     static readonly string Home = AppDomain.CurrentDomain.BaseDirectory;
@@ -53,12 +53,19 @@ partial class Bridge : ApplicationContext {
     }
     [DllImport("kernel32.dll")] static extern bool GlobalMemoryStatusEx([In,Out] MemoryStatus m);
     [DllImport("psapi.dll")] static extern bool EmptyWorkingSet(IntPtr h);
+    [DllImport("kernel32.dll",SetLastError=true)] static extern bool SetHandleInformation(IntPtr h,uint mask,uint flags);
+    static void PrivateSocket(System.Net.Sockets.Socket s){
+        // A worker can outlive this tray. An inherited handle keeps the Windows port
+        // bound even after TcpListener.Stop() closes the tray's copy.
+        if(!SetHandleInformation(s.Handle,1,0))throw new System.ComponentModel.Win32Exception();
+    }
 
     [STAThread] static void Main(string[] args) {
         bool fresh;
         using(var mutex = new Mutex(true,"Local\\ComfyBridgeTray",out fresh)) {
             if(!fresh){try{using(var signal=EventWaitHandle.OpenExisting("Local\\ComfyBridgeOpenPanel"))signal.Set();}catch(WaitHandleCannotBeOpenedException){}return;}
             Application.EnableVisualStyles();
+            ServicePointManager.DefaultConnectionLimit=24;
             Directory.CreateDirectory(Data);
             var key = Path.Combine(Data,"token.txt");
             if(!File.Exists(key)) { byte[] b=new byte[32]; using(var r=RandomNumberGenerator.Create()) r.GetBytes(b); File.WriteAllText(key,Convert.ToBase64String(b)); }
@@ -105,8 +112,9 @@ partial class Bridge : ApplicationContext {
     }
     static async Task Listen(System.Net.Sockets.TcpListener listener,bool encrypted) {
         while(true) {
-            try {var client=await listener.AcceptTcpClientAsync();if(!connections.Wait(0)){client.Close();continue;}lock(sockets){if(!online || (listener!=server && listener!=tlsServer)){client.Close();connections.Release();continue;}sockets.Add(client);}var ignored=Task.Run(async ()=>{try{await Handle(client,encrypted);}finally{lock(sockets)sockets.Remove(client);connections.Release();}});}
-            catch(System.Net.Sockets.SocketException){break;}catch(ObjectDisposedException){break;}
+            try {var client=await listener.AcceptTcpClientAsync();try{PrivateSocket(client.Client);}catch{client.Close();continue;}if(!connections.Wait(0)){client.Close();continue;}lock(sockets){if(!online || (listener!=server && listener!=tlsServer)){client.Close();connections.Release();continue;}sockets.Add(client);}var ignored=Task.Run(async ()=>{try{await Handle(client,encrypted);}finally{lock(sockets)sockets.Remove(client);connections.Release();}});}
+            catch(System.Net.Sockets.SocketException){if(!online||(listener!=server && listener!=tlsServer))break;Thread.Sleep(200);}
+            catch(ObjectDisposedException){break;}catch(InvalidOperationException){break;}
         }
     }
     static bool Equal(string a,string b) {

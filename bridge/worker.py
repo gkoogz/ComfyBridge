@@ -39,6 +39,7 @@ CREATE TABLE IF NOT EXISTS media(id TEXT PRIMARY KEY, job TEXT, kind TEXT, path 
  thumbnail TEXT, duration REAL, created REAL, archived INTEGER DEFAULT 0);
 ''')
 LAST_REQUEST = time.monotonic()
+IN_FLIGHT = 0
 ACTIVE = None
 PREVIEW = None
 SESSION = None
@@ -232,7 +233,7 @@ async def idle_watch():
     while True:
         await asyncio.sleep(10)
         pending = rows("SELECT id FROM jobs WHERE status IN ('pending','running','submitting','cancelling')")
-        if pending or time.monotonic()-LAST_REQUEST < 90:
+        if pending or IN_FLIGHT or time.monotonic()-LAST_REQUEST < 90:
             continue
         if OWNED and OWNED.poll() is None:
             q = await comfy('/queue')
@@ -246,17 +247,23 @@ async def idle_watch():
 
 @web.middleware
 async def guard(request, handler):
-    global LAST_REQUEST
+    global LAST_REQUEST, IN_FLIGHT
     if not secrets.compare_digest(request.headers.get('Authorization', ''), 'Bearer '+TOKEN):
         return web.json_response({'error': 'Pairing key required.'}, status=401)
-    if request.path != "/api/monitor":
+    activity = request.path != "/api/monitor"
+    if activity:
         LAST_REQUEST = time.monotonic()
+        IN_FLIGHT += 1
     try:
         return await handler(request)
     except (ValueError, KeyError, TypeError, json.JSONDecodeError) as e:
         return web.json_response({'error': str(e)}, status=400)
     except (aiohttp.ClientError, asyncio.TimeoutError, OSError) as e:
         return web.json_response({'error': str(e)}, status=503)
+    finally:
+        if activity:
+            IN_FLIGHT -= 1
+            LAST_REQUEST = time.monotonic()
 
 
 async def api(request):

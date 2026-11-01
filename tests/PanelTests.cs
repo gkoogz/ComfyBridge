@@ -22,12 +22,33 @@ partial class Bridge {
             Check(app.monitor.Visible && online && app.codeLabel.Text.Length==6,"pairing panel opened");
             Check(app.addressBox.Text=="https://203.0.113.10:15294","remote address shown first");
             int port=((System.Net.IPEndPoint)tlsServer.LocalEndpoint).Port;
+            tlsPort=port;loopbackPort=((System.Net.IPEndPoint)server.LocalEndpoint).Port;
+            // Launch a long-lived child the way Wake starts the worker, with both ports bound.
+            using(var child=System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(
+                "ping.exe","-n 60 127.0.0.1"){UseShellExecute=false,CreateNoWindow=true})){
+            try{
+            for(int i=0;i<20;i++){
+                using(var peer=new TcpClient("127.0.0.1",tlsPort)){
+                    app.Server(false,true);
+                    app.Server(true,true);
+                }
+                using(var http=new System.Net.WebClient()){
+                    http.Proxy=null;http.Headers["Authorization"]="Bearer "+token;
+                    Check(http.DownloadString("http://127.0.0.1:"+loopbackPort+"/api/ping").Contains("true"),"fixed port works after restart");
+                }
+            }
+            }finally{if(!child.HasExited)child.Kill();child.WaitForExit();}}
             app.power.PerformClick();
             Check(!online && File.Exists(app.offFile),"off persisted");
             string hint;Check(Pairing.Display(out hint)=="—","off invalidates code");
             bool refused=false;try{using(var c=new TcpClient("127.0.0.1",port)){}}catch(SocketException){refused=true;}
             Check(refused,"off closes the actual TLS port");
             app.power.PerformClick();Check(online&&!File.Exists(app.offFile),"on restarts listeners");
+            app.Server(false,true);
+            var conflict=new TcpListener(System.Net.IPAddress.Any,tlsPort);conflict.ExclusiveAddressUse=true;conflict.Start();
+            try{app.power.PerformClick();Check(!online && File.Exists(app.offFile) && app.codeHint.Text.Contains(tlsPort.ToString()),"occupied port explained");}
+            finally{conflict.Stop();}
+            app.power.PerformClick();Check(online,"recovers after port conflict clears");
             app.monitor.Close();Check(online&&!app.monitor.Visible,"X hides panel and keeps server on");
             app.ShowMonitor();Check(app.monitor.Visible,"reopen panel");
             seen=DateTime.UtcNow;app.RefreshState();Check(app.phone.Text.Contains("Phone connected"),"connected indicator");
@@ -43,7 +64,7 @@ partial class Bridge {
             for(int i=0;i<5;i++){try{Pairing.Exchange("begin",bad,"test","test");throw new Exception("Accepted invalid public value.");}catch(ArgumentException){}}
             try{Pairing.Exchange("begin",bad,"test","test");throw new Exception("Attempt limit missing.");}catch(InvalidOperationException){}
             Check(Pairing.Display(out hint)=="—","attempt limit invalidates code");
-            Console.WriteLine("Passed: panel, remote address, power off/on, closed sockets, X to tray, connected indicator, 1/4 progress, code expiry and attempt limit.");
+            Console.WriteLine("Passed: 20 fixed-port restarts with live clients and child process, occupied port recovery, power switch, panel, X to tray, connected status, 1/4 progress and pairing limits.");
             return 0;
         }finally{app.timer.Stop();app.Server(false,false);app.tray.Dispose();app.monitor.Dispose();app.Dispose();Application.DoEvents();}
     }
