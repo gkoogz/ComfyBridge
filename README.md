@@ -1,12 +1,12 @@
 # ComfyBridge
 
-**[Open the beta 6 release page](https://github.com/gkoogz/ComfyBridge/releases/tag/v0.1.0-beta.6)** · [Download the Android APK](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.6/ComfyBridge-0.1.0-beta.6.apk) · [All releases](https://github.com/gkoogz/ComfyBridge/releases)
+**[Open the beta 7 release page](https://github.com/gkoogz/ComfyBridge/releases/tag/v0.1.0-beta.7)** · [Download the Android APK](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.7/ComfyBridge-0.1.0-beta.7.apk) · [All releases](https://github.com/gkoogz/ComfyBridge/releases)
 
 <img src="artwork/comfybridge.png" width="128" alt="ComfyBridge white cube and play icon on black">
 
 An Android remote for an existing Windows ComfyUI installation. The phone edits generation settings, uploads images and masks, and views results; the PC does the GPU work. A small Windows tray application wakes its Python worker on demand.
 
-**0.1.0-beta.6 is a personal-workflow beta**, adapted specifically to `Image gen.json` and `Video gen.json` in `E:\ComfyUI-Zluda\user\default\workflows`. It is not a general ComfyUI workflow importer. Models, LoRAs, workflow files, prompts, generated media, pairing credentials, and signing keys are not included in this repository or release.
+**0.1.0-beta.7 is a personal-workflow beta**, adapted specifically to `Image gen.json` and `Video gen.json` in `E:\ComfyUI-Zluda\user\default\workflows`. It is not a general ComfyUI workflow importer. Models, LoRAs, workflow files, prompts, generated media, pairing credentials, and signing keys are not included in this repository or release.
 
 The phone shows **PC connected** as soon as the bridge answers. Loading models and unavailable telemetry have their own messages. If the server or VPN drops, leave the phone app open: it retries automatically using the saved pairing. **Disconnect** or **Cancel reconnect** stops those retries.
 
@@ -32,7 +32,7 @@ The percentage is an estimate for the current image or video, alongside its batc
 
 ## Gallery and inline playback
 
-Tap a Library tile to open its original at the largest size that fits without cropping. Videos play and seek in the same view. Tap the media to hide or show the bottom **Save to camera roll** and **Archive / Unarchive** controls. Swipe right to bring the grid back under your finger; at a main screen the same gesture opens the menu. Generator **Latest result** spans the screen and plays videos in place. Tap a recent thumbnail to change the result shown there.
+Tap a Library tile to open its original at the largest size that fits without cropping. Videos play and seek in the same view. Tap the media to hide or show the bottom **Save to camera roll** and **Archive / Unarchive** controls. Swipe right to bring the grid back under your finger; at a main screen the same gesture opens the menu. Swipe left to tuck the menu away. Generator **Latest result** spans the screen and plays videos in place. Tap a recent thumbnail to change the result shown there.
 
 **Library** downloads the newest 100 generated images and videos combined, including archived items, while the paired app is open and connected. The count shows how many recent originals are ready. Open an older item while connected to fetch it on demand. Android plays videos from a complete private file after its size and SHA-256 match the PC; you can then play it or view an image offline, even after relaunching the app. A failed transfer or low storage leaves existing copies intact.
 

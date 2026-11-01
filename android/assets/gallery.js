@@ -164,22 +164,34 @@ function enterGenerator(old){
 let drag=null,swallowUntil=0;
 document.addEventListener('pointerdown',e=>{
  swallowUntil=0;
- if(!e.isPrimary||e.button!==0||viewerClosing||e.target.closest('input,textarea,select,canvas,#carousel,[contenteditable],#drawer'))return;
- const type=$('#modal').open?'modal':viewerOpen()?'viewer':$('#drawer').classList.contains('open')?null:page==='library'&&archived?'archive':'drawer';
+ if(!e.isPrimary||e.button!==0||viewerClosing||e.target.closest('input,textarea,select,canvas,#carousel,[contenteditable]'))return;
+ const type=$('#modal').open?'modal':viewerOpen()?'viewer':$('#drawer').classList.contains('open')?'closeDrawer':page==='library'&&archived?'archive':'drawer';
  if(type)drag={id:e.pointerId,type,x:e.clientX,y:e.clientY,t:performance.now(),dx:0,active:false};
 });
 document.addEventListener('pointermove',e=>{
- if(!drag||drag.id!==e.pointerId)return;const d=drag,dx=e.clientX-d.x,dy=e.clientY-d.y;
+ if(!drag||drag.id!==e.pointerId)return;
+ const d=drag,closingDrawer=d.type==='closeDrawer';
+ const dx=closingDrawer?d.x-e.clientX:e.clientX-d.x,dy=e.clientY-d.y;
  if(!d.active){if(Math.abs(dx)<8&&Math.abs(dy)<8)return;if(dx<0||dx<Math.abs(dy)*1.3){drag=null;return;}d.active=true;document.body.classList.add('dragging');}
  d.dx=Math.max(0,Math.min(dx,innerWidth));if(d.type==='viewer'){$('#viewer').style.transform='translateX('+d.dx+'px)';$('#workspace').style.transform='translateX('+(-1+d.dx/innerWidth)*100+'%)';}
- if(d.type==='drawer'){const w=$('#drawer').offsetWidth,offset=Math.min(w,d.dx);$('#drawer').style.transform='translateX('+(offset-w)+'px)';$('#shade').hidden=false;$('#shade').style.opacity=offset/w;}
+ if(d.type==='drawer'||closingDrawer){
+  const panel=$('#drawer'),width=panel.offsetWidth,travel=Math.min(width,d.dx);
+  const visible=closingDrawer?width-travel:travel;
+  panel.style.transform='translateX('+(visible-width)+'px)';
+  $('#shade').hidden=false;
+  $('#shade').style.opacity=visible/width;
+ }
 });
 function endDrag(e){
  if(!drag||drag.id!==e.pointerId)return;const d=drag;drag=null;if(!d.active)return;
  swallowUntil=performance.now()+320;
  const commit=e.type!=='pointercancel'&&(d.dx>Math.min(125,innerWidth*.30)||(d.dx>35&&d.dx/Math.max(1,performance.now()-d.t)>.42));
  document.body.classList.remove('dragging');
- if(d.type==='drawer'){$('#drawer').style.transform='';$('#shade').style.opacity='';drawer(commit);}
+ if(d.type==='drawer'||d.type==='closeDrawer'){
+  $('#drawer').style.transform='';
+  $('#shade').style.opacity='';
+  drawer(d.type==='closeDrawer'?!commit:commit);
+ }
  else if(d.type==='viewer'){if(commit)closeViewer();else{$('#viewer').style.transform='';$('#workspace').style.transform='';}}
  else if(commit)bridgeBack();
 }

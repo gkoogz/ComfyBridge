@@ -49,6 +49,7 @@ body[data-page=library] #linkNotice:not([hidden]){margin:0;padding:4px 12px;font
 .resultbox .asset:not(:has(video,img)){padding:22px}
 .departing{position:fixed;left:0;right:0;z-index:11;background:var(--bg);pointer-events:none}
 #drawer{width:min(285px,82vw)}
+#drawer,#shade{touch-action:pan-y}
 .dragging #drawer,.dragging #workspace,.dragging #viewer{transition:none}
 #modal{touch-action:pan-y}
 .carousel{touch-action:pan-x pan-y}

@@ -32,7 +32,14 @@ const assert=require('node:assert/strict');
  await ev(()=>bridgeBack());await wait(360);
  await ev(()=>{archived=false;renderLibrary()});await drag(40,260,330);
  check('swipe opens root drawer',await ev(()=>$('#drawer').classList.contains('open')));
- await ev(()=>{drawer(false);navigate('video');});await wait(220);
+ const menuRow=await ev(()=>{const r=$('#drawer [data-nav="image"]').getBoundingClientRect();return r.y+r.height/2;});
+ await drag(210,190,menuRow);
+ check('short left drag keeps sidebar open',await ev(()=>$('#drawer').classList.contains('open')));
+ await drag(230,40,menuRow,async()=>{
+  check('sidebar follows left drag',await ev(()=>{const right=$('#drawer').getBoundingClientRect().right;return right>0&&right<$('#drawer').offsetWidth;}));
+ });
+ check('swiping across a menu item stows sidebar without navigating',await ev(()=>$('#drawer').inert&&$('#shade').hidden&&page==='library'));
+ await ev(()=>navigate('video'));await wait(220);
  const z=await ev(()=>{const r=$('#result').getBoundingClientRect();return {x:r.x,right:r.right,width:innerWidth,video:!!$('#result video')}});
  console.log('latest video',z);check('edge-to-edge Latest',Math.abs(z.x)<0.51&&Math.abs(z.right-z.width)<0.51);
  if(z.video){await ev(()=>$('#result').scrollIntoView());await p.locator('#result .bigPlay').click();await p.waitForFunction(()=>$('#result video')?.currentTime>.1);check('Latest plays across refresh',await ev(()=>{const v=$('#result video');renderResults();return $('#result video')===v&&v.currentTime>0&&!viewerOpen();}));}
