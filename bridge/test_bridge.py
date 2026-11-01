@@ -11,6 +11,7 @@ from pathlib import Path
 import tempfile
 import unittest
 import uuid
+import atexit
 
 from aiohttp import web, ClientSession
 from aiohttp.test_utils import TestClient, TestServer
@@ -20,6 +21,8 @@ TEMP = tempfile.TemporaryDirectory()
 os.environ['COMFYBRIDGE_DATA'] = TEMP.name
 Path(TEMP.name, 'token.txt').write_text('integration-test-key')
 import worker as w
+atexit.register(w.DB.close)
+atexit.register(logging.shutdown)
 
 
 class BridgeTests(unittest.IsolatedAsyncioTestCase):
@@ -84,6 +87,58 @@ class BridgeTests(unittest.IsolatedAsyncioTestCase):
     async def test_auth_and_private_library(self):
         r,d=await self.request('library',headers={});self.assertEqual(r.status,401)
         r,d=await self.request('library');self.assertEqual(d,[])
+
+    async def test_extend_video_end_to_end(self):
+        import av
+        import numpy as np
+        def make_clip(path, colors):
+            with av.open(str(path),'w') as out:
+                stream=out.add_stream('libx264',rate=18)
+                stream.width,stream.height,stream.pix_fmt=64,96,'yuv420p'
+                for color in colors:
+                    frame=av.VideoFrame.from_ndarray(np.full((96,64,3),color,dtype=np.uint8),format='rgb24')
+                    for packet in stream.encode(frame):out.mux(packet)
+                for packet in stream.encode():out.mux(packet)
+        src=w.ROOT/'output/ComfyBridge/initial.mp4'
+        make_clip(src,[(i*10,0,0) for i in range(12)])
+        original=src.read_bytes()
+        w.DB.execute("INSERT INTO media VALUES('original','old','video',?,'',1,0,0)",(str(src),));w.DB.commit()
+        response,source=await self.request('extension/original')
+        self.assertEqual((response.status,source['frames'],source['width'],source['fps']),(200,12,64,18))
+        s=copy.deepcopy(w.WF.defaults()['video']);s.update(extension=source,frames=7)
+        w.CATALOG['loras'] += [s['loras'][0]['name']]
+        fake=w.comfy
+        async def render(path,data=None):
+            if path!='/prompt':return await fake(path,data)
+            job=data['prompt_id'];graph=data['prompt']
+            self.assertEqual(graph['50']['inputs']['image'],['2',0])
+            self.assertEqual(graph['9']['inputs']['conditioning'],['50',0])
+            self.assertEqual(graph['6']['inputs']['length'],22)
+            self.assertEqual(graph['51']['inputs'],dict(image=['14',0],batch_index=5,length=7))
+            for i,name in enumerate(w.extension.guide_names(job)):
+                with Image.open(w.ROOT/'input'/name) as guide:
+                    self.assertAlmostEqual(guide.getpixel((0,0))[0],(i+7)*10,delta=5)
+            filename=job+'.mp4'
+            make_clip(w.ROOT/'output/ComfyBridge'/filename,[(0,160,0)]*7)
+            self.history[job]={'outputs':{'16':{'images':[dict(type='output',subfolder='ComfyBridge',filename=filename)]}}}
+            return {}
+        w.comfy=render
+        response,batch=await self.request('generate',dict(kind='video',count=1,settings=s,requestId=str(uuid.uuid4())))
+        self.assertEqual(response.status,200,batch)
+        self.runner=asyncio.create_task(w.run_jobs());await self.wait_done(1)
+        row=w.DB.execute('SELECT * FROM media WHERE job=?',(batch['ids'][0],)).fetchone()
+        self.assertEqual(src.read_bytes(),original)
+        self.assertAlmostEqual(row['duration'],19/18)
+        with av.open(row['path']) as clip:
+            pixels=[frame.to_image().getpixel((0,0)) for frame in clip.decode(video=0)]
+        self.assertEqual(len(pixels),19)
+        self.assertAlmostEqual(pixels[11][0],110,delta=5)
+        self.assertGreater(pixels[12][1],150)
+        response,next_source=await self.request('extension/'+row['id'])
+        self.assertEqual(next_source['frames'],19)
+        s['extension']={**source,'revision':'stale'}
+        response,_=await self.request('generate',dict(kind='video',count=1,settings=s,requestId=str(uuid.uuid4())))
+        self.assertEqual(response.status,400)
 
     async def test_panel_monitor_does_not_keep_worker_awake(self):
         await self.submit(4)

@@ -236,6 +236,11 @@ def serve():
                 result=dict(seconds=seconds,observed=bool(row and row['observed']))
             elif route.startswith('replay/'):
                 result=replay(db,Path(config['comfyRoot']),route[7:])
+            elif route.startswith('extension/'):
+                # Let the editor open while an older worker finishes its queue.
+                import extension
+                media_id=route.split('/',1)[1]
+                result=extension.describe(extension.source_path(db,Path(config['comfyRoot']),media_id),media_id)
             elif route=='settings':
                 result=settings_sync(db,body,device)
             elif route=='notes':

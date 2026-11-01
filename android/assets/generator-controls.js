@@ -93,6 +93,7 @@ function videoScaleStops(inp,selected){
 }
 function bindVideoScale(s,inp){
  const slider=$('[data-setting="scale"]'),reset=$('#originalScale');
+ if(s.extension){slider.disabled=true;reset.disabled=true;$('#scaleBounds').textContent='Resolution and FPS match the source clip.';return;}
  if(!inp.data){slider.disabled=true;reset.disabled=true;$('#scaleBounds').textContent='Choose a starting image to scale.';return;}
  const stops=videoScaleStops(inp,s.scale),index=stops.indexOf(s.scale);
  if(!stops.length){slider.disabled=true;reset.disabled=true;$('#scaleBounds').textContent='Choose a smaller source to fit the model’s maximum dimensions.';return;}

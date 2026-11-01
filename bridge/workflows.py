@@ -2,6 +2,7 @@
 import json
 import math
 from pathlib import Path
+from extension import GUIDE_FRAMES, guide_names
 
 
 class Workflows:
@@ -91,13 +92,25 @@ class Workflows:
             image = node(8, 'VAEDecode', samples=latent, vae=vae)
             node(9, 'SaveImage', images=image, filename_prefix=prefix)
         elif kind == 'video':
-            if not s.get('upload'):
+            extension = s.get('extension')
+            if not extension and not s.get('upload'):
                 raise ValueError('Choose a starting image for video.')
             frames = 5 + 17 * max(0, math.ceil((int(s['frames']) - 5)/17))
             fps = float(s['fps'])
             if not 5 <= frames <= 3600 or not 1 <= fps <= 120:
                 raise ValueError('Frames must be 5–3592; FPS must be 1–120.')
-            image = node(1, 'LoadImage', image=s['upload'])
+            if extension:
+                extra = int(s['frames'])
+                if not 1 <= extra <= 3570:
+                    raise ValueError('Choose 1–3570 additional frames.')
+                frames = GUIDE_FRAMES + 17 * math.ceil(extra/17)
+                names = guide_names(prefix.rsplit('/',1)[-1])
+                image = node(1, 'LoadImage', image=names[0])
+                for i, name in enumerate(names[1:]):
+                    frame = node(30+i, 'LoadImage', image=name)
+                    image = node(40+i, 'ImageBatch', image1=image, image2=frame)
+            else:
+                image = node(1, 'LoadImage', image=s['upload'])
             image = node(2, 'CUDNNToggleAMD', any_input=image, enable_cudnn=False)
             c = self.widgets('video', 3)
             clip = node(3, 'CLIPLoader', clip_name=c[0], type=c[1], device=c[2])
@@ -112,13 +125,18 @@ class Workflows:
                     fixed = mandatory[1] if recorded_video_strength is None else recorded_video_strength
                     strength = fixed if i == 0 else l['strength']
                     model = node(100+i, 'LoraLoaderModelOnly', model=model, lora_name=l['name'], strength_model=float(strength))
-            cond = node(6, 'MiniMaxH3ImageToVideo', clip=clip, vae=vae, first_frame=image, prompt=s.get('positive', ''), width=width, height=height, length=frames)
+            first_frame = {} if extension else {'first_frame':image}
+            cond = node(6, 'MiniMaxH3ImageToVideo', clip=clip, vae=vae, prompt=s.get('positive', ''), width=width, height=height, length=frames, **first_frame)
+            if extension:
+                cond = node(50, 'MiniMaxH3AddGuide', positive=cond, latent=['6',1], vae=vae, image=image, frame_idx=0)
             guider = node(9, 'BasicGuider', model=model, conditioning=cond)
             sampler = node(10, 'KSamplerSelect', sampler_name=self.widgets('video', 10)[0])
             noise = node(11, 'RandomNoise', noise_seed=seed)
             sigmas = node(12, 'BasicScheduler', model=model, scheduler='simple', steps=steps, denoise=1.)
             latent = node(13, 'SamplerCustomAdvanced', noise=noise, guider=guider, sampler=sampler, sigmas=sigmas, latent_image=['6', 1])
             images = node(14, 'VAEDecode', samples=latent, vae=vae)
+            if extension:
+                images = node(51, 'ImageFromBatch', image=images, batch_index=GUIDE_FRAMES, length=extra)
             video = node(15, 'CreateVideo', images=images, fps=fps, bit_depth='auto', color_space='sRGB', codec='none')
             node(16, 'SaveVideo', video=video, filename_prefix=prefix, format='mp4', **{'format.codec': 'h264', 'format.codec.encoding': 'auto'})
         else:

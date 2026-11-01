@@ -36,3 +36,5 @@ body:is([data-page=image],[data-page=video]) .modeRow{margin:2px 0 7px}
 #durationInfo strong{font-size:clamp(26px,7vw,32px);color:var(--mint)}
 #durationInfo span{font-size:13px;color:var(--muted)}
 #durationInfo.overBudget span,#resolutionInfo.overBudget small{color:var(--red)}
+#extensionSource{display:grid;justify-items:center;gap:4px}
+#extensionSource img{max-height:130px;object-fit:contain}

@@ -21,6 +21,8 @@ class Progress:
             'SaveImage': ('Save image', 1), 'LoraLoader': ('Apply image LoRA', 1),
             'LoraLoaderModelOnly': ('Apply video LoRA', 2), 'LoadImage': ('Read source', .8),
             'ImageScale': ('Scale source', .7), 'ImageToMask': ('Prepare mask', .6),
+            'MiniMaxH3AddGuide': ('Encode motion guide', 4*pixels),
+            'ImageFromBatch': ('Trim guide and excess frames', .3),
         }
         self.nodes = {str(n):specs.get(v['class_type'],('Prepare inputs', .4)) for n,v in graph.items()}
         self.base=dict(self.nodes)

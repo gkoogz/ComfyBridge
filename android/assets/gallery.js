@@ -77,6 +77,35 @@ function makeVideoButton(item){
  return button;
 }
 
+function extendVideoButton(item){
+ const button=document.createElement('button');
+ button.type='button';button.className='makeVideo';button.textContent='Extend video';
+ button.onclick=async()=>{
+  const session=epoch;
+  button.disabled=true;button.textContent='Reading clip…';
+  try{
+   if(!connected)throw Error('Connect to the PC to extend this video.');
+   if(state.pendingByKind?.video||state.pendingRequest?.kind==='video')throw Error('Resolve the pending video submission before starting an extension.');
+   if(item.warning==='changed'||item.source==='missing')throw Error('Resolve the source file warning before extending this clip.');
+   let source;
+   try{source=await api((queueProtocol>=9?'':'studio/')+'extension/'+item.id);}
+   catch(error){if(/Unknown workspace request|HTTP 404/.test(error.message))throw Error('Install Windows beta 18 to extend videos.');throw error;}
+   if(session!==epoch||!button.isConnected||viewerClosing)return;
+   const settings=state.settings.video;
+   if(!settings)throw Error('Wait for the PC to load your video settings.');
+   Object.assign(settings,{extension:source,upload:null,mask:null,scale:0,width:source.width,height:source.height,
+    fps:source.fps,frames:Math.min(3570,Math.max(1,Math.round(source.fps*3)))});
+   state.inputs.video={};
+   persist('video');navigate('video');
+   const panel=$('#extensionSource').closest('.foldPanel');
+   if(panel.classList.contains('folded'))$('.foldToggle',panel).click();
+   panel.scrollIntoView({block:'nearest'});
+  }catch(e){if(button.isConnected)toast(e.message);}
+  finally{button.disabled=false;button.textContent='Extend video';}
+ };
+ return button;
+}
+
 // Both surfaces use the same player. Only verified, complete originals are playable.
 function mountAsset(host,item,isViewer){
  const id=item.id;host.className='asset'+(isViewer?' galleryAsset':'');host.replaceChildren();
@@ -142,6 +171,7 @@ function mountResult(j){
  let host=$('.asset',box);
  if(host&&host.dataset.id===j.id&&host.dataset.hash===(j.local||''))return;
  box.replaceChildren();host=document.createElement('div');host.dataset.id=j.id;host.dataset.hash=j.local||'';box.append(host);mountAsset(host,j,false);
+ if(j.kind==='video')host.after(extendVideoButton(j));
 }
 function renderResults(){
  const box=$('#result');if(!box)return;
@@ -174,7 +204,7 @@ function openMedia(item){
  const archive=$('#archiveMedia');archive.disabled=!connected||item.source==='missing';
  archive.onclick=async()=>{archive.disabled=true;try{await api('archive',{id:item.id,archived:!item.archived});updateItem({...current(),archived:!item.archived});if(stillHere())closeViewer();await syncShelf(true);}catch(e){msg(e.message);archive.disabled=false;}};
  $('#saveMedia').onclick=async e=>{const b=e.currentTarget;b.disabled=true;try{if(!current().local)throw Error('Wait for the phone copy to finish downloading.');await local('export',{id:item.id});msg('Saved to DCIM/ComfyBridge in your camera roll.');}catch(err){msg(err.message);}finally{b.disabled=false;}};
- if(item.kind==='image')$('#saveMedia').after(makeVideoButton(item));
+ $('#saveMedia').after(item.kind==='image'?makeVideoButton(item):extendVideoButton(item));
  if(item.warning){const w=$('#mediaWarning');w.textContent=warningText[item.warning]+' ';const b=document.createElement('button');w.append(b);const replace=item.warning==='changed';b.textContent=replace?'Replace…':'Remove copy…';b.disabled=replace&&!connected;b.onclick=()=>{msg('Save to the camera roll first if you want to keep this version.');b.textContent=replace?'Confirm replacement':'Confirm removal';b.onclick=async()=>{b.disabled=true;try{const j=await local(replace?'replace':'drop',{id:item.id,local:item.local,sha256:item.sha256});updateItem(j);if(stillHere())closeViewer();}catch(e){msg(e.message);b.disabled=false;}};};}
  mountAsset($('.asset',view),item,true);
 }

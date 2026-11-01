@@ -14,7 +14,9 @@ import subprocess
 import sys
 import time
 import uuid
+import threading
 from pathlib import Path
+import extension
 
 import aiohttp
 from aiohttp import web
@@ -185,8 +187,10 @@ async def websocket():
             await asyncio.sleep(3)
 
 
-def collect(job, entry):
+async def collect(job, entry):
     settings = json.loads(job['settings'])
+    ext = settings.get('extension')
+    collected = False
     for output in entry.get('outputs', {}).values():
         for key in ('images', 'gifs', 'videos'):
             for item in output.get(key, []):
@@ -201,6 +205,20 @@ def collect(job, entry):
                 if job['kind'] == 'image':
                     with Image.open(path) as img:
                         img.thumbnail((400, 400)); img.convert('RGB').save(thumb, quality=80)
+                elif ext:
+                    src = extension.source_path(DB, ROOT, ext['id'])
+                    update(job['id'], current_node='Joining continuation', progress=.99)
+                    stop = threading.Event()
+                    joining = asyncio.create_task(asyncio.to_thread(extension.join,src,path,ext,int(settings['frames']),thumb,stop.is_set))
+                    try:
+                        while not joining.done():
+                            await asyncio.wait({joining}, timeout=.4)
+                            status = DB.execute('SELECT status FROM jobs WHERE id=?',(job['id'],)).fetchone()[0]
+                            if status in ('cancelling','cancelled') or job['batch'] in STOPPING:stop.set()
+                        duration = await joining
+                        if stop.is_set():raise InterruptedError('Extension cancelled.')
+                    finally:
+                        stop.set()
                 else:
                     duration = (5+17*max(0, math.ceil((int(settings['frames'])-5)/17)))/float(settings['fps'])
                     # The submitted first frame is a reliable cover even without ffmpeg installed.
@@ -208,6 +226,9 @@ def collect(job, entry):
                         img.thumbnail((400, 400)); img.convert('RGB').save(thumb, quality=80)
                 DB.execute('INSERT OR IGNORE INTO media VALUES(?,?,?,?,?,?,?,0)',
                            (id, job['id'], job['kind'], str(path), str(thumb), duration, time.time()))
+                collected = True
+    if ext and not collected:
+        raise ValueError('ComfyUI returned no continuation video.')
     DB.commit()
 
 
@@ -235,6 +256,13 @@ async def run_jobs():
             if j['status'] == 'pending':
                 if j['batch'] in STOPPING:
                     update(j['id'], status='cancelled'); continue
+                ext = settings.get('extension')
+                if ext:
+                    update(j['id'],current_node='Reading last five frames')
+                    src = extension.source_path(DB,ROOT,ext['id'])
+                    await asyncio.to_thread(extension.prepare_guide,ROOT,src,ext,j['id'])
+                    if DB.execute('SELECT status FROM jobs WHERE id=?',(j['id'],)).fetchone()[0]!='pending':
+                        continue
                 update(j['id'], status='submitting')
                 await comfy('/prompt', dict(prompt=graph, client_id=CLIENT, prompt_id=j['id']))
                 update(j['id'], status='running')
@@ -251,12 +279,12 @@ async def run_jobs():
                     stopping = stopping or DB.execute("SELECT status IN ('cancelling','cancelled') FROM jobs WHERE id=?", (j['id'],)).fetchone()[0]
                     entry = history[j['id']]
                     status = entry.get('status', {})
-                    if stopping and not entry.get('outputs'):
+                    if stopping and (settings.get('extension') or not entry.get('outputs')):
                         update(j['id'], status='cancelled')
                     elif status.get('status_str') == 'error':
                         update(j['id'], status='cancelled' if stopping else 'error', error=json.dumps(status.get('messages', []))[-3000:])
                     else:
-                        collect(j, entry)
+                        await collect(j, entry)
                         DB.executemany('INSERT INTO stage_cost VALUES(?,?,?) ON CONFLICT(kind,node) DO UPDATE SET factor=0.65*stage_cost.factor+0.35*excluded.factor',
                                        ((j['kind'],node,factor) for node,factor in TRACKER.observed.items()))
                         update(j['id'], status='complete', progress=1, current_node='Saved to library')
@@ -269,10 +297,24 @@ async def run_jobs():
                 known = any(x[1] == j['id'] for x in q['queue_running']+q['queue_pending'])
                 missing = 0 if known else missing+1
                 if missing >= 3:
-                    update(j['id'], status='cancelled' if stopping else 'error',
-                           error='Job is absent from ComfyUI queue/history. It was not resubmitted to avoid duplicates.')
+                    # A retiring ComfyUI instance can lose history just after SaveVideo closes the MP4.
+                    # Recover only a unique output of this job; join verifies its frame count and decodes it.
+                    outputs = []
+                    if settings.get('extension') and not stopping:
+                        folder = ROOT/'output/ComfyBridge'
+                        outputs = [p for p in folder.glob(j['id']+'_*.mp4')
+                                   if re.fullmatch(re.escape(j['id'])+r'_\d+_\.mp4',p.name)]
+                    if len(outputs)==1:
+                        item=dict(type='output',subfolder='ComfyBridge',filename=outputs[0].name)
+                        await collect(j,{'outputs':{'16':{'images':[item]}}})
+                        update(j['id'],status='complete',progress=1,current_node='Saved to library')
+                    else:
+                        update(j['id'], status='cancelled' if stopping else 'error',
+                               error='Job is absent from ComfyUI queue/history. It was not resubmitted to avoid duplicates.')
                     break
                 await asyncio.sleep(2)
+        except InterruptedError:
+            update(j['id'],status='cancelled')
         except (ValueError, OSError, sqlite3.Error, aiohttp.ClientError, asyncio.TimeoutError) as e:
             logging.exception('Job %s failed', j['id'])
             # A transport failure after submission is ambiguous: reconcile before changing state.
@@ -280,6 +322,10 @@ async def run_jobs():
                 await asyncio.sleep(5)
             else:
                 update(j['id'], status='error', error=str(e)[:5000])
+        finally:
+            if json.loads(j['settings']).get('extension') and DB.execute('SELECT status FROM jobs WHERE id=?',(j['id'],)).fetchone()[0] in ('complete','cancelled','error'):
+                for name in extension.guide_names(j['id']):
+                    (ROOT/'input'/name).unlink(missing_ok=True)
         ACTIVE = None
         publish_preview(None, None)
 
@@ -400,7 +446,7 @@ async def api(request):
                 j['queuePosition'], j['queueTotal'] = counts[j['id']]
             if j['id']==ACTIVE and TRACKER and j['status'] not in ('complete','cancelled','error'):
                 j['progress'],j['current_node']=TRACKER.sample()
-        return web.json_response(dict(protocol=8,jobs=jobs, active=ACTIVE, preview=bool(PREVIEW), previewRevision=PREVIEW_REV,ownedComfy=bool(OWNED)))
+        return web.json_response(dict(protocol=9,jobs=jobs, active=ACTIVE, preview=bool(PREVIEW), previewRevision=PREVIEW_REV,ownedComfy=bool(OWNED)))
     if path.startswith('preview/'):
         job=str(uuid.UUID(path[8:]))
         after=int(request.query.get('after','-1'))
@@ -421,6 +467,10 @@ async def api(request):
     if path == 'library':
         items = rows('SELECT id,job,kind,duration,created,archived FROM media ORDER BY created DESC')
         return web.json_response(items)
+    if path.startswith('extension/'):
+        media_id = path.split('/',1)[1]
+        source = extension.source_path(DB,ROOT,media_id)
+        return web.json_response(await asyncio.to_thread(extension.describe,source,media_id))
     if path == 'media-index':
         items = rows('SELECT id,job,kind,duration,created,archived,path FROM media ORDER BY created DESC,id DESC')
         return web.json_response(await asyncio.to_thread(media_manifest, items, ROOT, DATA))
@@ -455,6 +505,14 @@ async def api(request):
             if existing[0]['owner']!=device:raise web.HTTPForbidden()
             return web.json_response(dict(batch=batch,ids=[r['id'] for r in existing]))
         checked_upload(s.get('upload')); checked_upload(s.get('mask'))
+        if s.get('extension'):
+            if kind!='video' or s.get('upload') or s.get('mask'):
+                raise ValueError('An extension needs one source video.')
+            requested=s['extension'];source=extension.source_path(DB,ROOT,requested['id'])
+            info=await asyncio.to_thread(extension.describe,source,requested['id'])
+            if info['revision']!=requested.get('revision'):
+                raise ValueError('Source video changed. Select Extend video again.')
+            s.update(extension=info,width=info['width'],height=info['height'],fps=info['fps'],scale=0)
         cat = await catalogue()
         existing=rows('SELECT id,owner FROM jobs WHERE batch=? ORDER BY ordinal',(batch,))
         if existing:
