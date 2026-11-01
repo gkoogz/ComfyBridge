@@ -1,6 +1,6 @@
 'use strict';
 const pixelBudget=768*1152;
-const maxSteps=20;
+const stepLimit=kind=>kind==='image'?50:20;
 const limit=(n,min,max)=>Math.min(max,Math.max(min,n));
 function aspect(w,h){
  if(!Number.isInteger(w)||!Number.isInteger(h)||w<1||h<1)return '—';
@@ -107,7 +107,7 @@ function bindVideoScale(s,inp){
  reset.onclick=()=>change(stops.indexOf(0));
 }
 
-function bindSteps(s){
+function bindSteps(s,maxSteps){
  const typed=$('input[type=number][data-setting=steps]'),range=$('input[type=range][data-setting=steps]');
  typed.oninput=()=>{if(typed.value==='')return;const n=limit(Math.round(typed.valueAsNumber)||1,1,maxSteps);s.steps=n;range.value=n;if(+typed.value!==n)typed.value=n;persist();};
  typed.onblur=()=>{typed.value=s.steps;};
