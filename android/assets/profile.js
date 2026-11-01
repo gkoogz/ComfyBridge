@@ -32,7 +32,9 @@ async function startProfiles(id){if(profileLoad===id)return;profileLoad=id;profi
  if(page==='bridge')renderBridge();scheduleBackup();
  }catch(e){retryProfiles=Date.now()+15000;profileMessage('PC backup unavailable: '+e.message);}finally{if(profileLoad===id)profileLoad=0;}}
 function profileControls(){if(!connected)return;
- const card=document.createElement('section');card.className='card';card.innerHTML='<h2>PC settings backup</h2><p id="backupStatus"></p><button id="backupNow">Save now</button> <button id="restoreFrom">Restore from a phone…</button> <button id="alerts">Generation notifications</button>';document.querySelector('#destinations').after(card);
+ const settings=document.createElement('button');settings.id='bridgeOptions';settings.textContent='Backups & notifications  ›';document.querySelector('#main').append(settings);
+ settings.onclick=()=>{
+ openModal('Backups & notifications','<section class="card"><h2>PC settings backup</h2><p id="backupStatus"></p><button id="backupNow">Save now</button> <button id="restoreFrom">Restore from a phone…</button> <button id="alerts">Generation notifications</button></section>');
  profileMessage(profileStatus||'Checking PC backups…');
  document.querySelector('#backupNow').onclick=async()=>{if(!profileReady)await startProfiles(epoch);profileDirty=true;await flushProfile();};
  document.querySelector('#alerts').onclick=()=>Native.enableAlerts();
@@ -40,4 +42,5 @@ function profileControls(){if(!connected)return;
   openModal('Restore settings','<section class="card"><p>Replace settings on this phone with a saved copy. The source phone’s backup stays on the PC.</p><select id="fromProfile">'+list.map(p=>'<option value="'+esc(p.device)+'">'+esc(p.name)+' · '+p.device.slice(0,6)+' · '+esc(new Date(p.modified*1000).toLocaleString())+'</option>').join('')+'</select><button id="applyRestore">Restore selected settings</button></section>');
   document.querySelector('#applyRestore').onclick=async()=>{try{await restoreProfile(document.querySelector('#fromProfile').value);closeModal();toast('Settings restored');}catch(e){toast(e.message);}};
  }catch(e){toast(e.message);}};
+ };
 }

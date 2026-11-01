@@ -1,0 +1,82 @@
+/* Routes scroll independently of the media viewer. Android owns the system bars. */
+#workspace{position:fixed;inset:0;overflow:auto;overflow-x:clip;background:var(--bg);overscroll-behavior:contain;touch-action:pan-y pinch-zoom}
+#workspace.behind{transform:translateX(-100%);overflow:hidden;transition:transform .18s ease-out}
+header{height:52px;padding-top:4px;padding-bottom:4px}
+.gentoolbar{top:52px}
+body[data-page=library] main{padding:0;max-width:none}
+.collectionTools{min-height:42px;padding:2px 8px;display:flex;align-items:center;gap:8px}
+.collectionTools button,#bridgeOptions{background:transparent;border:0;color:var(--mint);font-weight:600}
+.collectionTools button{min-height:38px;padding:4px 8px}
+#shelfInfo{margin-left:auto}
+.librarygrid{gap:1px;grid-template-columns:repeat(3,minmax(0,1fr))}
+.libraryitem{border-radius:0;aspect-ratio:1;display:grid;place-items:center}
+.libraryitem img{display:block;position:absolute;inset:0}
+.galleryEmpty{grid-column:1/-1;margin:20px;text-align:center;color:var(--muted)}
+body[data-page=library] #linkNotice:not([hidden]){margin:0;padding:4px 12px;font-size:12px}
+#viewer{position:fixed;inset:0;z-index:32;background:#050708;overflow:hidden;touch-action:pan-y pinch-zoom;transition:transform .18s ease-out;color:white}
+#viewer[hidden]{display:none}
+.asset{position:relative;width:100%;line-height:1;background:#050708;color:white}
+.galleryAsset{height:100%;display:grid;place-items:center}
+.asset video,.asset .original{display:block;width:100%;height:auto;max-height:none;object-fit:contain}
+.galleryAsset video,.galleryAsset .original{width:100%;height:100%;position:absolute;inset:0}
+.viewerTop,.viewerFoot,.transport,.bigPlay{transition:opacity .2s ease}
+.viewerTop,.viewerFoot{position:absolute;left:0;right:0;display:flex;padding:14px;align-items:center;gap:12px;pointer-events:none}
+.viewerTop{top:0;background:linear-gradient(#000b,transparent)}
+.viewerTop button,.viewerActions button,.transport button,.bigPlay{color:white;background:#192027df;border:1px solid #ffffff2a}
+.viewerTop button,.viewerFoot button{pointer-events:auto}
+.viewerTop button{font-size:28px;width:44px;height:44px;line-height:1;border-radius:50%;padding:0}
+.viewerTop small{display:block;color:#e0e3e4;font-size:11px}
+.viewerFoot{bottom:0;display:block;background:linear-gradient(transparent,#000c);padding:24px 12px 12px}
+.viewerActions{display:flex;justify-content:center;gap:8px}
+.viewerActions button{font-size:14px;border-radius:24px;padding:10px 16px}
+#mediaMessage:not(:empty),#mediaWarning:not(:empty){font-size:13px;text-align:center;background:#141d22e8;padding:8px;border-radius:10px}
+#mediaWarning:not(:empty){margin-bottom:8px}
+#mediaMessage:not(:empty){margin-top:5px}
+.quiet .viewerTop,.quiet .viewerFoot,.quiet .transport{opacity:0;visibility:hidden;transition:opacity .2s ease,visibility 0s linear .2s}
+.quiet .viewerFoot button,.quiet .viewerTop button,.quiet .transport *{pointer-events:none}
+.asset .bigPlay,.fetchPoster span{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:#0e171ed9;color:white;border:1px solid #ffffff55;border-radius:50%;width:60px;height:60px;font-size:24px;display:grid;place-items:center;padding:0 0 0 3px}
+.bigPlay[hidden]{display:none}
+.transport{position:absolute;bottom:0;left:0;right:0;display:flex;align-items:center;gap:10px;padding:8px 12px;background:linear-gradient(transparent,#000c)}
+.galleryAsset .transport{bottom:var(--action-height,72px)}
+.transport input{min-width:0;flex:1}
+.transport small{white-space:nowrap;color:white;font-size:12px}
+.transport button{border-radius:50%;width:38px;height:38px;padding:0}
+.assetStatus,.assetRetry{margin:8px auto;text-align:center}
+.fetchPoster{border:0;padding:0;width:100%;display:block;position:relative;border-radius:0;background:transparent}
+.fetchPoster span{width:auto;height:auto;border-radius:26px;padding:12px;font-size:15px;white-space:nowrap}
+.resultbox{width:100vw;margin-left:calc(50% - 50vw);border:0;border-radius:0;min-height:80px;display:block;align-content:center;background:#10171c}
+.resultbox video,.resultbox img{max-height:none;border-radius:0}
+.resultbox .asset:not(:has(video,img)){padding:22px}
+.departing{position:fixed;left:0;right:0;z-index:11;background:var(--bg);pointer-events:none}
+#drawer{width:min(285px,82vw)}
+.dragging #drawer,.dragging #workspace,.dragging #viewer{transition:none}
+#modal{touch-action:pan-y}
+.carousel{touch-action:pan-x pan-y}
+canvas,input[type=range]{touch-action:none}
+body[data-page=bridge] main,main.departing{padding:10px 12px}
+.pairCard{display:grid;grid-template-columns:44px 1fr;align-items:center;gap:4px 10px;margin:0 0 8px;padding:10px 12px}
+.pairCard .orb{grid-column:1;grid-row:1;width:42px;height:42px;margin:0}
+.pairCard .orb:before{inset:3px}.pairCard .orb svg{width:25px;height:25px}
+.pairCard .pairCheck{font-size:22px}
+.pairCard h1{grid-column:2;grid-row:1;font-size:20px;margin:0}
+.pairCard>*:not(.orb):not(h1){grid-column:1/-1}
+.pairCard .pairHost{font-size:12px;margin:0}
+.pairCard .connectbutton{margin:3px 0 0;padding:9px;font-size:16px}
+.pairCard .textbutton{padding:4px}
+.pairFields p,.pairFields small{font-size:12px;margin:3px 0}
+.pairFields label{font-size:12px;margin:5px 0 2px}
+.pairFields input{padding:6px 10px}
+.pathcards{margin:5px 0 9px;gap:6px}
+.pathcards button{padding:9px 10px;position:relative}
+.pathcards .largeicon{display:none}
+.pathcards small{display:block}
+body[data-page=bridge] .sectionline,.departing .sectionline{margin:6px 0}
+.telemetry{gap:5px}
+.metric{padding:6px 9px;border-radius:9px}
+.metric label{font-size:9px;margin:0;color:var(--muted)}
+.metric strong{font-size:16px}
+.metric small{display:inline;font-size:10px;margin-left:5px}
+.metric .meter{margin-top:4px;height:3px}
+#bridgeOptions{padding:8px 2px;font-size:13px}
+@media(max-height:510px) and (min-width:520px){body[data-page=bridge] main{display:grid;grid-template-columns:1fr 1fr;gap:5px 12px}body[data-page=bridge] .pairCard{grid-column:1;grid-row:1/4}body[data-page=bridge] .sectionline,body[data-page=bridge] .telemetry,body[data-page=bridge] #destinations{grid-column:2}}
+@media(prefers-reduced-motion:reduce){#drawer,#workspace,#viewer,.viewerTop,.viewerFoot,.transport{transition:none!important}}

@@ -2,6 +2,16 @@
 
 Validation performed on November 1, 2026, on Windows with the existing ComfyUI-ZLUDA installation and a connected Moto g stylus 2025.
 
+## Beta 6 Android gallery
+
+- On the paired Moto, the grid touched both viewport edges and its first row began 94 CSS pixels below the app's top edge. The Bridge fit without scrolling both connected and disconnected. Image and video Latest result containers also met both viewport edges.
+- A touch drag moved the viewer and the underlying collection together. The original grid DOM and scroll position survived the return. At the Library root, the same gesture opened the drawer.
+- A generated image fit the viewer without cropping. A cached short MP4 played and sought in the viewer, with the action bar hiding on play and returning on pause. A larger portrait MP4 played in Latest result and kept its playback position when the shelf refreshed. No Android fullscreen activity or dialog was used.
+
+A separate touch pass used a scrolled grid, partial/cancelled drags, and a range control. A cached portrait clip also played and sought while the bridge was disconnected. Its temporary player handle was released after leaving the viewer.
+
+To repeat the core checks, install a debug build on a paired phone with a cached image and video, forward its WebView DevTools socket to port 9223, and run **node tests/gallery-device.cjs** with Playwright installed. This uses existing media and does not generate, archive or export anything.
+
 ## Beta 5 queue, backups and alerts
 
 - The attached Moto submitted two distinct text-to-image jobs while the first was active. Both completed and Android posted separate finished notifications. A short MiniMax image-to-video job also completed: the monitor reported conditioning, sampler steps and frame decoding. The signed APK resumed its in-flight progress notification after updating, then posted the video's finished notification while the app was in the background. All three verification outputs were archived.

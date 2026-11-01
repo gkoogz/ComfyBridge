@@ -11,8 +11,8 @@ import android.view.View;
 import android.widget.Toast;
 import android.widget.FrameLayout;
 import android.widget.*;
-import android.app.Dialog;
-import android.view.Gravity;
+
+
 import org.json.JSONObject;
 import java.io.*;
 import java.net.*;
@@ -58,8 +58,9 @@ public class MainActivity extends Activity {
     try{
      if(path.startsWith("/local/")){
       String[] parts=path.split("/");boolean thumb=parts.length==5&&parts[2].equals("thumb");
-      if(parts.length!=5||(!thumb&&!parts[2].equals("image")))return response(404,"Not Found","text/plain",new byte[0]);
+      if(parts.length!=5||(!thumb&&!parts[2].equals("image")&&!parts[2].equals("video")))return response(404,"Not Found","text/plain",new byte[0]);
       File f=shelf().existing(parts[3],parts[4],thumb);
+      if(parts[2].equals("video"))return new WebResourceResponse("video/mp4",null,200,"OK",Collections.singletonMap("Content-Length",Long.toString(f.length())),new FileInputStream(f));
       return new WebResourceResponse(thumb?"image/jpeg":"image/png",null,new FileInputStream(f));
      }
      if(path.startsWith("/thumb/")||path.equals("/preview")){
@@ -72,7 +73,7 @@ public class MainActivity extends Activity {
       return new WebResourceResponse(mime,null,code,c.getResponseMessage()==null?"Response":c.getResponseMessage(),headers,new FilterInputStream(input){@Override public void close()throws IOException{super.close();c.disconnect();}});
      }
      if(path.equals("/"))path="/index.html";
-     if(!Arrays.asList("/index.html","/style.css","/app.js","/profile.js").contains(path))return response(404,"Not Found","text/plain",new byte[0]);
+     if(!Arrays.asList("/index.html","/style.css","/app.js","/profile.js","/gallery.js","/gallery.css").contains(path))return response(404,"Not Found","text/plain",new byte[0]);
      String mime=path.endsWith("css")?"text/css":path.endsWith("js")?"application/javascript":"text/html";
      return new WebResourceResponse(mime,"UTF-8",getAssets().open(path.substring(1)));
     }catch(Exception e){return response(503,"Unavailable","text/plain",new byte[0]);}
@@ -166,7 +167,7 @@ public class MainActivity extends Activity {
      case "fetch":result=m.obtain(id,false);break;
      case "replace":{JSONObject j=m.get(id);if(!j.getString("local").equals(d.getString("local"))||!j.getString("warning").equals("changed")||!j.getString("sha256").equals(d.getString("sha256")))throw new IOException("PC copy changed again. Check the library.");result=m.obtain(id,true);break;}
      case "drop":result=m.discard(id,d.getString("local"));break;
-     case "play":{JSONObject j=m.get(id);if(!j.getString("kind").equals("video"))throw new IOException("Not a video.");File f=m.existing(id,j.getString("local"),false);runOnUiThread(()->playVideo(f));break;}
+
      case "export":m.export(MainActivity.this,id);break;
      default:throw new IOException("Unknown media action.");
     }callback(request,true,result.toString());
@@ -175,16 +176,6 @@ public class MainActivity extends Activity {
  }
  private void readRoute(Intent i){String v=i.getStringExtra("view");if("queue".equals(v)||"library".equals(v))noticeRoute.set(v);i.removeExtra("view");}
  @Override protected void onNewIntent(Intent i){super.onNewIntent(i);setIntent(i);readRoute(i);if(web!=null)web.evaluateJavascript("window.openJobAlert?.()",null);}
- private void playVideo(File file){
-  if(isFinishing()||isDestroyed())return;
-  Dialog dialog=new Dialog(this,android.R.style.Theme_Material_NoActionBar_Fullscreen);
-  FrameLayout frame=new FrameLayout(this);frame.setBackgroundColor(Color.BLACK);VideoView video=new VideoView(this);
-  frame.addView(video,new FrameLayout.LayoutParams(-1,-1,Gravity.CENTER));Button back=new Button(this);back.setText("‹  Back");back.setOnClickListener(v->dialog.dismiss());frame.addView(back,new FrameLayout.LayoutParams(-2,-2,Gravity.TOP|Gravity.START));
-  MediaController controls=new MediaController(this);video.setMediaController(controls);controls.setAnchorView(video);
-  video.setOnPreparedListener(mp->{video.start();controls.show(2400);});
-  video.setOnErrorListener((mp,what,extra)->{dialog.dismiss();new android.app.AlertDialog.Builder(this).setMessage("Android could not decode this video. Your complete phone copy is still available to save to the camera roll.").setPositiveButton("OK",null).show();return true;});
-  dialog.setOnDismissListener(v->{controls.hide();video.stopPlayback();});dialog.setContentView(frame);dialog.show();video.setVideoPath(file.getAbsolutePath());
- }
  @Override public void onRequestPermissionsResult(int code,String[] names,int[] grants){super.onRequestPermissionsResult(code,names,grants);if(code==105){JobWatch.resume(this);return;}if(code==104&&exportRequest!=-1){int id=exportRequest;exportRequest=-1;if(grants.length>0&&grants[0]==android.content.pm.PackageManager.PERMISSION_GRANTED)new NativeApi().localMedia(id,"export",exportArgs);else new NativeApi().callback(id,false,"Camera roll access denied. Your private copy was kept.");}}
  static String read(InputStream input)throws IOException{if(input==null)return "";try(InputStream in=input;ByteArrayOutputStream out=new ByteArrayOutputStream()){byte[] b=new byte[8192];int n;while((n=in.read(b))!=-1)out.write(b,0,n);return out.toString("UTF-8");}}
  private void alerts(boolean explicit){
@@ -200,6 +191,6 @@ public class MainActivity extends Activity {
  @Override protected void onActivityResult(int request,int result,Intent data){super.onActivityResult(request,result,data);
   if(request==100 && chooser!=null){chooser.onReceiveValue(result==RESULT_OK&&data!=null?new Uri[]{data.getData()}:null);chooser=null;}
  }
- @Override public void onBackPressed(){web.evaluateJavascript("(()=>{if(document.querySelector('#modal').open){closeModal();return;}if(document.querySelector('#drawer').classList.contains('open')){drawer(false);return;}navigate('bridge');})()",null);}
+ @Override public void onBackPressed(){web.evaluateJavascript("bridgeBack()",null);}
  @Override protected void onDestroy(){heartbeat.shutdownNow();io.shutdownNow();mediaIO.shutdownNow();super.onDestroy();}
 }

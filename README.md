@@ -1,12 +1,12 @@
 # ComfyBridge
 
-[Download the Android APK](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.5/ComfyBridge-0.1.0-beta.5.apk) | [Windows package and beta release notes](https://github.com/gkoogz/ComfyBridge/releases/tag/v0.1.0-beta.5)
+[Download the Android APK](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.6/ComfyBridge-0.1.0-beta.6.apk) | [Windows package and beta release notes](https://github.com/gkoogz/ComfyBridge/releases/tag/v0.1.0-beta.6)
 
 <img src="artwork/comfybridge.png" width="128" alt="ComfyBridge white cube and play icon on black">
 
 An Android remote for an existing Windows ComfyUI installation. The phone edits generation settings, uploads images and masks, and views results; the PC does the GPU work. A small Windows tray application wakes its Python worker on demand.
 
-**0.1.0-beta.5 is a personal-workflow beta**, adapted specifically to `Image gen.json` and `Video gen.json` in `E:\ComfyUI-Zluda\user\default\workflows`. It is not a general ComfyUI workflow importer. Models, LoRAs, workflow files, prompts, generated media, pairing credentials, and signing keys are not included in this repository or release.
+**0.1.0-beta.6 is a personal-workflow beta**, adapted specifically to `Image gen.json` and `Video gen.json` in `E:\ComfyUI-Zluda\user\default\workflows`. It is not a general ComfyUI workflow importer. Models, LoRAs, workflow files, prompts, generated media, pairing credentials, and signing keys are not included in this repository or release.
 
 The phone shows **PC connected** as soon as the bridge answers. Loading models and unavailable telemetry have their own messages. If the server or VPN drops, leave the phone app open: it retries automatically using the saved pairing. **Disconnect** or **Cancel reconnect** stops those retries.
 
@@ -26,15 +26,17 @@ Both paired phones can watch the PC queue. **Generate / Add to queue** captures 
 
 The percentage is an estimate for the current image or video, alongside its batch position. It follows the submitted nodes: loading and LoRAs, prompt/source/mask encoding, sampling, VAE decoding, then saving. Video also includes frame assembly and MP4 encoding. Cached nodes have little weight. Between reported steps the estimate advances conservatively, and the PC learns relative stage costs from successful runs. Only indexing a finished result sets a job to 100%.
 
-**Bridge → PC settings backup** saves this phone’s settings, prompt library, presets, and starting images/masks to the PC. Check for **Saved on PC** before uninstalling. A fresh installation pairs again and restores the most recently updated profile; **Restore from a phone…** lets you pick another by model, ID and date. Each installation writes to its own profile, so two phones can edit independently. Private offline media is repopulated from the PC; a camera-roll export is separate.
+**Bridge → Backups & notifications → PC settings backup** saves this phone’s settings, prompt library, presets, and starting images/masks to the PC. Check for **Saved on PC** before uninstalling. A fresh installation pairs again and restores the most recently updated profile; **Restore from a phone…** lets you pick another by model, ID and date. Each installation writes to its own profile, so two phones can edit independently. Private offline media is repopulated from the PC; a camera-roll export is separate.
 
 **Generation notifications** opens Android notification settings or requests permission. With notifications enabled, your phone watches batches it submits, including when you leave the app. The progress notification displays batch progress and the current item/stage. Completion, cancellation and failure are reported per batch. If the PC becomes unreachable, updates wait for connectivity; Android can defer background updates under its power and foreground-service limits. The other phone's jobs remain visible in the shared queue without sending duplicate alerts to both devices.
 
-## Phone media and offline playback
+## Gallery and inline playback
+
+Tap a Library tile to open its original at the largest size that fits without cropping. Videos play and seek in the same view. Tap the media to hide or show the bottom **Save to camera roll** and **Archive / Unarchive** controls. Swipe right to bring the grid back under your finger; at a main screen the same gesture opens the menu. Generator **Latest result** spans the screen and plays videos in place. Tap a recent thumbnail to change the result shown there.
 
 **Library** downloads the newest 100 generated images and videos combined, including archived items, while the paired app is open and connected. The count shows how many recent originals are ready. Open an older item while connected to fetch it on demand. Android plays videos from a complete private file after its size and SHA-256 match the PC; you can then play it or view an image offline, even after relaunching the app. A failed transfer or low storage leaves existing copies intact.
 
-The phone checks the PC on connection, about every five minutes while open, and when you tap **Check now**. **Phone copies to review** lists files that changed or disappeared, plus older copies that have left the recent 100. They stay available until you decide. Tap one, choose **Save to camera roll** to export the existing bytes to **DCIM/ComfyBridge**, and optionally confirm replacement or removal. Keeping the private copy requires no action; protected or on-demand copies can temporarily take the total above 100. Archiving only changes where an item is displayed.
+The phone checks the PC on connection, about every five minutes while open, and when you tap **Check now**. **Library → Phone copies** lists files that changed or disappeared, plus older copies that have left the recent 100. They stay available until you decide. Tap one, choose **Save to camera roll** to export the existing bytes to **DCIM/ComfyBridge**, and optionally confirm replacement or removal. Keeping the private copy requires no action; protected or on-demand copies can temporarily take the total above 100. Archiving only changes where an item is displayed.
 
 ## Install the beta
 
