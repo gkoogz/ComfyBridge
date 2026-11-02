@@ -34,16 +34,24 @@ function paintFrame(id){
   const caption=$('.watchCaption');if(caption)caption.textContent='Live preview';
  }
 }
+function bindFrame(el,id){
+ if(el.dataset.frameJob!==id){
+  el.removeAttribute('src');el.hidden=true;
+  if(id)el.dataset.frameJob=id;else delete el.dataset.frameJob;
+ }
+ if(id)paintFrame(id);
+}
+const showsQueue=()=>['bridge','image','video'].includes(page);
 async function watchFrames(){
- const job=currentImage();
- if(page!=='image'||!connected||document.hidden||!imagePreviewProtocol||!job||job.status!=='running'){
+ const job=liveJob(active);
+ if(!showsQueue()||!connected||document.hidden||!imagePreviewProtocol||job?.status!=='running'){
   stopFrames();return;
  }
  if(frameStream?.id===job.id)return;
  stopFrames();
  const stream={id:job.id,controller:new AbortController()};frameStream=stream;
  try{
-  while(frameStream===stream&&connected&&page==='image'&&!document.hidden){
+  while(frameStream===stream&&connected&&showsQueue()&&!document.hidden){
    const after=frames.get(job.id)?.revision??-1;
    const response=await fetch('/preview/'+job.id+'?after='+after,{signal:stream.controller.signal,cache:'no-store'});
    if(frameStream!==stream)break;
@@ -53,7 +61,7 @@ async function watchFrames(){
    if(rev===null)break;
    const url=URL.createObjectURL(await response.blob()),img=new Image();img.src=url;
    try{await img.decode();}catch{URL.revokeObjectURL(url);break;}
-   if(frameStream!==stream||active!==job.id||page!=='image'){URL.revokeObjectURL(url);break;}
+   if(frameStream!==stream||active!==job.id||!showsQueue()){URL.revokeObjectURL(url);break;}
    const old=frames.get(job.id);
    frames.set(job.id,{revision:Number(rev),url});lastCaptured=job.id;paintFrame(job.id);pruneFrames();
    if(old)URL.revokeObjectURL(old.url);
@@ -61,7 +69,7 @@ async function watchFrames(){
  }catch{/* A subsequent foreground status poll reconnects the stream. */}
  finally{if(frameStream===stream)frameStream=null;}
 }
-document.addEventListener('visibilitychange',()=>{if(document.hidden)stopFrames();else if(page==='image')watchFrames();});
+document.addEventListener('visibilitychange',()=>{if(document.hidden)stopFrames();else watchFrames();});
 
 function renderLiveImage(box){
  const view=liveSelection;if(page!=='image'||!view)return false;

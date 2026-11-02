@@ -96,7 +96,9 @@ setInterval(()=>{if(!document.hidden&&$('#queueList'))updateTimers();},1000);
 function renderQueue(){
  const box=$('#queueList');if(!box)return;
  const items=queueHistory.length?queueHistory:jobs.filter(j=>liveStatus(j.status));
- const key=JSON.stringify(items.map(j=>[j.id,j.status,j.media,media(j.media,true),j.ended]));
+ const frameId=imagePreviewProtocol?active:null;
+ const key=JSON.stringify([frameId,items.map(j=>[j.id,j.status,j.media,media(j.media,true),j.ended])]);
+ watchFrames();
  if(box.dataset.version===key&&box.dataset.failure===historyFailure){updateTimers();return;}
  if(box.dataset.touching==='1'){updateTimers();return;}
  if(!$('.queueRows',box)){
@@ -119,12 +121,14 @@ function renderQueue(){
  rows.innerHTML=items.map(j=>{
   const active=liveStatus(j.status),label={complete:'Success',cancelled:'Aborted',error:'Fail'}[j.status]||j.status;
   const cover=j.media&&media(j.media,true);
-  return '<div class="queueJob">'+(j.media?'<button class="jobThumb" data-output="'+j.media+'" aria-label="Open result in Library">'+(cover?'<img src="'+cover+'" loading="lazy" alt="">':'▦')+'</button>':'<span class="jobThumb">'+(j.kind==='video'?'▷':'▧')+'</span>')+
+  return '<div class="queueJob">'+(j.media?'<button class="jobThumb" data-output="'+j.media+'" aria-label="Open result in Library">'+(cover?'<img src="'+cover+'" loading="lazy" alt="">':'▦')+'</button>':'<span class="jobThumb">'+(j.kind==='video'?'▷':'▧')+(active&&j.id===frameId?'<img class="queuePreview" data-frame-job="'+j.id+'" hidden alt="Live generation preview">':'')+'</span>')+
    '<div class="jobInfo"><b>'+esc(j.kind)+' <small>'+new Date(j.created*1000).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})+'</small></b><small>'+esc(active?j.status:'Finished')+' <span class="jobElapsed" data-clock="'+j.id+'"></span></small></div>'+
+   (active?'<i class="spinner jobSpinner" aria-hidden="true"></i>':'')+
    (active&&j.owner===info().device?'<button data-cancel="'+j.batch+'">Cancel batch</button>':'<small class="outcome '+esc(j.status)+'">'+esc(label)+'</small>')+
    '<button class="jobRecall" data-replay="'+j.id+'" aria-label="Load this generation in the editor">↗</button></div>';
  }).join('')+(items.length?'':'<small>No generations in the last 24 hours.</small>');
  rows.scrollTop=scroll;
+ if(frameId)paintFrame(frameId);
  $$('[data-cancel]',box).forEach(b=>b.onclick=()=>stopBatch(b.dataset.cancel));
  $$('[data-output]',box).forEach(b=>b.onclick=async()=>{
   if(!library.find(j=>j.id===b.dataset.output))await syncShelf(true);

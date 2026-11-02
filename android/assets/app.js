@@ -55,7 +55,7 @@ async function init(){
  };window.openJobAlert();
 }
 function drawer(open){document.querySelector('#drawer').inert=!open;$('#drawer').classList.toggle('open',open);$('#shade').hidden=!open;}
-function navigate(to){if(page==='image'&&to!=='image')leaveLiveImage();if(viewerOpen())closeViewer(true);const forward=page==='bridge'&&['image','video'].includes(to),out=forward?outgoingBridge():null;page=to;archived=false;presetName='';drawer(false);render();$('#workspace').scrollTop=0;if(out)enterGenerator(out);if(connected){poll();if(['image','video'].includes(to))syncSettings();if(to==='notepad')syncNotes();}}
+function navigate(to){if(page!==to&&(page==='image'||!['image','video','bridge'].includes(to)))leaveLiveImage();if(viewerOpen())closeViewer(true);const forward=page==='bridge'&&['image','video'].includes(to),out=forward?outgoingBridge():null;page=to;archived=false;presetName='';drawer(false);render();$('#workspace').scrollTop=0;if(out)enterGenerator(out);if(connected){poll();if(['image','video'].includes(to))syncSettings();if(to==='notepad')syncNotes();}}
 function connection(value){connected=value;$$('.dot').forEach(d=>d.classList.toggle('connected',value));$('#statusDot').setAttribute('aria-label',value?'Connected':'Disconnected');$('#drawerStatus').textContent=value?'PC connected':'Disconnected';}
 function render(){
  document.body.dataset.page=page;
@@ -426,8 +426,8 @@ function updateProgress(){if(!$('#play'))return;
   const timer=document.createElement('span');timer.id='activeTimer';
   timer.textContent=elapsed(queueHistory.find(row=>row.id===j.id));$('#jobMessage').append(' ',timer);
   const mini=$('#livePreview');
-  if(imagePreviewProtocol&&page==='image'&&j.kind==='image'){
-   mini.dataset.frameJob=j.id;paintFrame(j.id);mini.hidden=!frames.has(j.id);
+  if(imagePreviewProtocol){
+   bindFrame(mini,running?j.id:null);
   }else{
    delete mini.dataset.frameJob;mini.hidden=!previewAvailable||!running;
    if(!mini.hidden)mini.src='/preview?t='+Date.now();
@@ -461,14 +461,15 @@ function renderCarousel(){
   const image=tile.querySelector('img');
   tile.disabled=!live;tile.setAttribute('aria-label',live?'View live image preview':'Generation in progress');
   if(live){
-   if(image.dataset.frameJob!==live.id){image.removeAttribute('src');image.hidden=true;image.dataset.frameJob=live.id;}
-   paintFrame(live.id);tile.onclick=()=>selectLiveImage(live.id);
+   bindFrame(image,live.id);tile.onclick=()=>selectLiveImage(live.id);
+  }else if(imagePreviewProtocol){
+   bindFrame(image,jobs.some(j=>j.id===active&&j.kind===page)?active:null);
   }else{
    delete image.dataset.frameJob;image.hidden=!previewAvailable||!jobs.some(j=>j.id===active&&j.kind===page);
    if(!image.hidden)image.src='/preview?t='+Date.now();
   }
  }
- if(page==='image'){watchFrames();pruneFrames();}
+ pruneFrames();
 }
 function duration(n){return Math.floor(n/60)+':'+String(Math.floor(n%60)).padStart(2,'0');}
 const warningText={changed:'The PC file changed. Your original phone copy is protected.',missing:'The PC file was deleted. Your phone copy is still here.',older:'Outside the newest 100. You can keep this copy, save it to the camera roll, or remove it from the app.'};

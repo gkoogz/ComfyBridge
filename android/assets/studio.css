@@ -26,6 +26,8 @@ body[data-page=bridge] .queueRows{height:0;min-height:0;max-height:none;flex:1}
 .queueJob{height:52px;display:flex;align-items:center;gap:7px;border-top:1px solid var(--line)}
 .jobThumb{width:34px;height:36px;flex:none;display:grid;place-items:center;padding:0;border:0;background:var(--bg);border-radius:5px;overflow:hidden;color:var(--muted)}
 .jobThumb img{width:100%;height:100%;object-fit:cover}
+.jobThumb{position:relative}.jobThumb .queuePreview{position:absolute;inset:0;object-fit:contain;background:var(--bg)}
+.queueJob .jobSpinner{width:14px;height:14px;flex:none}
 .jobInfo{min-width:0;flex:1;line-height:1.25}.jobInfo b{font-size:13px;text-transform:capitalize}.jobInfo small{font-size:10px;font-weight:400}.jobInfo>small{display:block}
 .jobElapsed,#activeTimer{font-variant-numeric:tabular-nums}
 .queueJob button[data-cancel]{padding:4px 6px;font-size:11px}
