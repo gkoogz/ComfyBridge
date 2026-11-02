@@ -469,6 +469,27 @@ class BridgeTests(unittest.IsolatedAsyncioTestCase):
                         if freq:self.assertAlmostEqual(np.argmax(abs(np.fft.rfft(block))),freq,delta=3)
                         else:self.assertLess(np.max(np.abs(block[:-rate//20])),.001)  # avoid AAC pre-echo at the cut
 
+    def test_negative_video_text_only_changes_guidance_and_keeps_visual_references(self):
+        s=w.WF.defaults()['video']
+        prefix='ComfyBridge/'+str(uuid.uuid4())
+        for model in (s['model'],w.EROS_BETA7):
+            s['model']=model
+            for upload,extension in ((None,None),('input.png',None),(None,{'id':'source'})):
+                s.update(upload=upload,extension=extension)
+                s.pop('negative',None)
+                original=w.WF.build('video',s,prefix)
+                s['negative']=' \n '
+                self.assertEqual(original,w.WF.build('video',s,prefix))
+                s['negative']='  unwanted reflections  '
+                g=w.WF.build('video',s,prefix)
+                cond=g['6']['inputs']
+                self.assertEqual(g['55']['inputs'],dict(cond,prompt='unwanted reflections'))
+                self.assertEqual(g['9']['class_type'],'CFGGuider')
+                self.assertEqual(g['9']['inputs'],dict(model=original['9']['inputs']['model'],
+                    positive=['50' if extension else '6',0],negative=['56' if extension else '55',0],cfg=2.0))
+                if extension:self.assertEqual(g['56']['inputs'],dict(g['50']['inputs'],positive=['55',0]))
+                self.assertEqual(g['13']['inputs'],original['13']['inputs'])
+
     async def test_eros_recipe_selects_weights_and_removes_only_stock_turbo(self):
         video=copy.deepcopy(w.WF.defaults()['video'])
         base=w.WF.build('video',video,'ComfyBridge/test')

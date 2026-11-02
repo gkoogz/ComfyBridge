@@ -162,10 +162,22 @@ class Workflows:
                 model=node(27,'MiniMaxH3SigmaShift',model=model,shift_video=12.,shift_audio=3.)
                 model=node(28,'ComfyBridgeErosVSA',model=model,min_tokens=12288)
             first_frame = {'first_frame':image} if not extension and not text_only else {}
-            cond = node(6, 'MiniMaxH3ImageToVideo', clip=clip, vae=vae, prompt=s.get('positive', ''), width=width, height=height, length=frames, **first_frame)
-            if extension:
-                cond = node(50, 'MiniMaxH3AddGuide', positive=cond, latent=['6',1], vae=vae, image=image, frame_idx=0)
-            guider = node(9, 'BasicGuider', model=model, conditioning=cond)
+            def h3_condition(text, encode_id, guide_id):
+                condition = node(encode_id, 'MiniMaxH3ImageToVideo', clip=clip, vae=vae,
+                                 prompt=text, width=width, height=height, length=frames, **first_frame)
+                if extension:
+                    condition = node(guide_id, 'MiniMaxH3AddGuide', positive=condition, latent=['6',1],
+                                     vae=vae, image=image, frame_idx=0)
+                return condition
+
+            cond = h3_condition(s.get('positive', ''), 6, 50)
+            negative = (s.get('negative') or '').strip()
+            if negative:
+                # Give both passes the same visual reference so CFG contrasts the text alone.
+                avoid = h3_condition(negative, 55, 56)
+                guider = node(9, 'CFGGuider', model=model, positive=cond, negative=avoid, cfg=2.0)
+            else:
+                guider = node(9, 'BasicGuider', model=model, conditioning=cond)
             sampler = node(10, 'KSamplerSelect', sampler_name='euler' if eros else self.widgets('video', 10)[0])
             noise = node(11, 'RandomNoise', noise_seed=seed)
             sigmas = node(12, 'BasicScheduler', model=model, scheduler='simple', steps=steps, denoise=1.)

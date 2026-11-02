@@ -1,12 +1,12 @@
 # ComfyBridge
 
-**[Open the beta 23 release page](https://github.com/gkoogz/ComfyBridge/releases/tag/v0.1.0-beta.23)** · [Download the Android APK](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.23/ComfyBridge-0.1.0-beta.23.apk) · [All releases](https://github.com/gkoogz/ComfyBridge/releases)
+**[Open the beta 24 release page](https://github.com/gkoogz/ComfyBridge/releases/tag/v0.1.0-beta.24)** · [Download the Android APK](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.24/ComfyBridge-0.1.0-beta.24.apk) · [All releases](https://github.com/gkoogz/ComfyBridge/releases)
 
 <img src="artwork/comfybridge.png" width="128" alt="ComfyBridge white cube and play icon on black">
 
 An Android remote for an existing Windows ComfyUI installation. The phone edits generation settings, uploads images and masks, and views results; the PC does the GPU work. A small Windows tray application wakes its Python worker on demand.
 
-**0.1.0-beta.23 is a personal-workflow beta**, adapted specifically to `Image gen.json` and `Video gen.json` in `E:\ComfyUI-Zluda\user\default\workflows`. It is not a general ComfyUI workflow importer. Models, LoRAs, workflow files, prompts, generated media, pairing credentials, and signing keys are not included in this repository or release.
+**0.1.0-beta.24 is a personal-workflow beta**, adapted specifically to `Image gen.json` and `Video gen.json` in `E:\ComfyUI-Zluda\user\default\workflows`. It is not a general ComfyUI workflow importer. Models, LoRAs, workflow files, prompts, generated media, pairing credentials, and signing keys are not included in this repository or release.
 
 The phone shows **PC connected** as soon as the bridge answers. Loading models and unavailable telemetry have their own messages. If the server or VPN drops, leave the phone app open: it retries automatically using the saved pairing. **Disconnect** or **Cancel reconnect** stops those retries.
 
@@ -51,6 +51,8 @@ Open **Notepad** from the sidebar to write wrapped text anywhere on the page. An
 Tap a Library tile to open its original at the largest size that fits without cropping. Videos play and seek in the same view. Tap the media to hide or show the bottom **Save to camera roll** and **Archive / Unarchive** controls. Swipe right to bring the grid back under your finger; at a main screen the same gesture opens the menu. Swipe left to tuck the menu away. Generator **Latest result** spans the screen and plays videos in place. Tap a recent thumbnail to change the result shown there. During image generation, tap the spinning first thumbnail to watch the sampler preview at full width. The last preview stays visible until the downloaded original is ready to display. **Skip image** stops that image and continues the queue. The phone that submitted it controls Skip.
 
 In **Video > Canvas & model**, tap **MiniMax H3** or **10Eros Max · Beta 7**. Both use the H3 VAE and Qwen text encoder from the saved workflow. The original restores its four-step Turbo LoRA. Eros selects eight steps, Euler/simple, video/audio shift 12/3 and the VSA attention patch with 10% keep. Other LoRAs and the current prompt/input are preserved. The Windows installer adds an Eros-specific ComfyUI node. It keeps short sequences dense, uses tiled PyTorch VSA on ZLUDA, and delegates to ComfyUI’s native VSA on CUDA GPUs. On ZLUDA, Eros keeps INT8 weights in storage and uses ComfyUI’s per-layer floating-point math for INT8 projections. The Eros patch is scoped to that model.
+
+The optional **Negative prompt** panel sits below the positive prompt. Enter a short description of what to avoid to use experimental negative guidance at CFG 2.0. This adds a model evaluation per sampling step. A blank field uses the original sampling path. With a starting image or an extension, both prompts use the same visual reference.
 
 The supported Eros checkpoint is TenStrip's original beta 7 eight-step Turbo INT8 HQ safetensors (SHA-256 `8a51ca3f7d290a799d89fefcde4ede60962256955a91dfe4746d3cc07814fd6e`). Place it in `models/diffusion_models` to enable the choice. This is distinct from the later BF16 fix1. [Author's checkpoint](https://huggingface.co/TenStrip/10Eros-Max/blob/8afd8538d26f0e44d981920fef82e9c0086c8b71/10Eros_Max_h3_8stepTURBO_beta7_int8HQ.safetensors)
 

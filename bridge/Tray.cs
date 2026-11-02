@@ -21,8 +21,8 @@ using Microsoft.Win32;
 [assembly: System.Reflection.AssemblyTitle("Comfy Bridge")]
 [assembly: System.Reflection.AssemblyDescription("Phone to ComfyUI bridge")]
 [assembly: System.Reflection.AssemblyVersion("0.1.0.0")]
-[assembly: System.Reflection.AssemblyFileVersion("0.1.0.27")]
-[assembly: System.Reflection.AssemblyInformationalVersion("0.1.0-beta.23")]
+[assembly: System.Reflection.AssemblyFileVersion("0.1.0.28")]
+[assembly: System.Reflection.AssemblyInformationalVersion("0.1.0-beta.24")]
 
 partial class Bridge : ApplicationContext {
     static readonly string Home = AppDomain.CurrentDomain.BaseDirectory;
@@ -152,7 +152,7 @@ partial class Bridge : ApplicationContext {
                 nextWorkerCheck=DateTime.UtcNow.AddSeconds(3);
                 var monitor=new JavaScriptSerializer().Deserialize<Dictionary<string,object>>(await MonitorJson());
                 object build;object list;
-                if(monitor.TryGetValue("build",out build)&&Convert.ToString(build)==Application.ProductVersion&&Convert.ToInt32(monitor["protocol"])>=14)return;
+                if(monitor.TryGetValue("build",out build)&&Convert.ToString(build)==Application.ProductVersion&&Convert.ToInt32(monitor["protocol"])>=15)return;
                 if(!monitor.TryGetValue("jobs",out list)||((System.Collections.ICollection)list).Count!=0||Volatile.Read(ref relays)>0)return;
                 var info=new ProcessStartInfo(python,"\""+Path.Combine(Home,"handoff.py")+"\""){WorkingDirectory=Home,UseShellExecute=false,CreateNoWindow=true};
                 using(var handoff=Process.Start(info)){
