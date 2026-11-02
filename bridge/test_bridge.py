@@ -405,6 +405,27 @@ class BridgeTests(unittest.IsolatedAsyncioTestCase):
             s['frames']=1
             self.assertEqual(w.WF.build('video',s,'ComfyBridge/test')['51']['inputs']['length'],1)
 
+    async def test_eros_recipe_selects_weights_and_removes_only_stock_turbo(self):
+        video=copy.deepcopy(w.WF.defaults()['video'])
+        base=w.WF.build('video',video,'ComfyBridge/test')
+        stock=video['loras'][0]['name']
+        video.update(model=w.EROS_BETA7,steps=8)
+        video['loras'].append(dict(name='user-extra',strength=.12))
+        graph=w.WF.build('video',video,'ComfyBridge/test')
+        self.assertEqual(graph['5']['inputs']['unet_name'],w.EROS_BETA7)
+        self.assertEqual(graph['3'],base['3']);self.assertEqual(graph['4'],base['4'])
+        adapters=[n['inputs'] for n in graph.values() if n['class_type']=='LoraLoaderModelOnly']
+        self.assertEqual([(l['lora_name'],l['strength_model']) for l in adapters],[('user-extra',.12)])
+        self.assertEqual(graph['27']['inputs']['shift_video'],12)
+        self.assertEqual(graph['27']['inputs']['shift_audio'],3)
+        self.assertEqual(graph['28']['class_type'],'ComfyBridgeErosVSA')
+        self.assertEqual(graph['28']['inputs'],dict(model=['27',0],min_tokens=12288))
+        self.assertEqual(graph['9']['inputs']['model'],['28',0])
+        self.assertEqual(graph['12']['inputs']['model'],['28',0])
+        self.assertEqual(graph['12']['inputs']['steps'],8)
+        self.assertEqual(base['100']['inputs']['lora_name'],stock)
+        self.assertNotIn('28',base)
+
     async def test_empty_comfy_control_response(self):
         app=web.Application()
         async def empty(request):return web.Response(status=200)

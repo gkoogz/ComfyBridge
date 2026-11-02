@@ -9,6 +9,9 @@ foreach($file in 'ComfyBridge.exe','worker.py','workflows.py','extension.py','me
 }
 if (-not (Test-Path (Join-Path $target 'config.json'))) { Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'config.json') -Destination $target }
 $studioRoot=(Get-Content -Raw -LiteralPath (Join-Path $target 'config.json')|ConvertFrom-Json).comfyRoot
+$nodeFolder=Join-Path $studioRoot 'custom_nodes/comfybridge_eros_vsa'
+New-Item -ItemType Directory -Force $nodeFolder | Out-Null
+Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'comfybridge_eros_vsa.py') -Destination (Join-Path $nodeFolder '__init__.py') -Force
 & (Join-Path $studioRoot 'venv\Scripts\python.exe') (Join-Path $target 'studio.py') --init
 if($LASTEXITCODE){throw 'Could not initialize queue timers and workspace storage.'}
 $admin=([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)

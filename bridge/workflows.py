@@ -4,6 +4,8 @@ import math
 from pathlib import Path
 from extension import GUIDE_FRAMES, guide_names
 
+EROS_BETA7 = '10Eros_Max_h3_8stepTURBO_beta7_int8HQ.safetensors'
+
 
 class Workflows:
     def __init__(self, root):
@@ -17,6 +19,23 @@ class Workflows:
 
     def widgets(self, kind, node):
         return (self.image if kind == 'image' else self.video)[str(node)].get('widgets_values', [])
+
+    def video_models(self, nodes, unets, clips, vaes, loras):
+        base=self.widgets('video',5)[0]
+        clip=self.widgets('video',3)[0]
+        vae=self.widgets('video',4)[0]
+        required=self.widgets('video',8)[0]
+        profiles=[]
+        for name,label,steps in [(base,'MiniMax H3 · Original',4),(EROS_BETA7,'10Eros Max · Beta 7',8)]:
+            builtin=name==EROS_BETA7
+            dependencies=[(name,unets),(clip,clips),(vae,vaes)]
+            if builtin:
+                dependencies.extend((node,nodes) for node in ('MiniMaxH3SigmaShift','BlockSparseAttention','ComfyBridgeErosVSA'))
+            else:
+                dependencies.append((required,loras))
+            missing=[item for item,available in dependencies if item not in available]
+            profiles.append(dict(model=name,label=label,steps=steps,builtinTurbo=builtin,missing=missing))
+        return profiles
 
     def defaults(self):
         k = self.widgets('image', 3)
@@ -92,6 +111,11 @@ class Workflows:
             image = node(8, 'VAEDecode', samples=latent, vae=vae)
             node(9, 'SaveImage', images=image, filename_prefix=prefix)
         elif kind == 'video':
+            base_model=self.widgets('video',5)[0]
+            checkpoint=s.get('model') or base_model
+            if checkpoint not in (base_model,EROS_BETA7):
+                raise ValueError('Choose an installed H3 video model.')
+            eros=checkpoint==EROS_BETA7
             extension = s.get('extension')
             text_only = not extension and not s.get('upload')
             if text_only and (width % 32 or height % 32):
@@ -122,21 +146,26 @@ class Workflows:
                 clip = node(2, 'CUDNNToggleAMD', any_input=clip, enable_cudnn=False)
             vae = node(4, 'VAELoader', vae_name=self.widgets('video', 4)[0])
             u = self.widgets('video', 5)
-            model = node(5, 'UNETLoader', unet_name=u[0], weight_dtype=u[1])
+            model = node(5, 'UNETLoader', unet_name=checkpoint, weight_dtype=u[1])
             mandatory = self.widgets('video', 8)
-            if not loras or loras[0].get('name') != mandatory[0] or not loras[0].get('enabled', True):
+            if not eros and (not loras or loras[0].get('name') != mandatory[0] or not loras[0].get('enabled', True)):
                 raise ValueError('The MiniMax turbo LoRA is required in the first slot.')
             for i, l in enumerate(loras):
+                if eros and l['name']==mandatory[0]:
+                    continue
                 if l.get('enabled', True):
                     fixed = mandatory[1] if recorded_video_strength is None else recorded_video_strength
-                    strength = fixed if i == 0 else l['strength']
+                    strength = fixed if i == 0 and not eros else l['strength']
                     model = node(100+i, 'LoraLoaderModelOnly', model=model, lora_name=l['name'], strength_model=float(strength))
+            if eros:
+                model=node(27,'MiniMaxH3SigmaShift',model=model,shift_video=12.,shift_audio=3.)
+                model=node(28,'ComfyBridgeErosVSA',model=model,min_tokens=12288)
             first_frame = {'first_frame':image} if not extension and not text_only else {}
             cond = node(6, 'MiniMaxH3ImageToVideo', clip=clip, vae=vae, prompt=s.get('positive', ''), width=width, height=height, length=frames, **first_frame)
             if extension:
                 cond = node(50, 'MiniMaxH3AddGuide', positive=cond, latent=['6',1], vae=vae, image=image, frame_idx=0)
             guider = node(9, 'BasicGuider', model=model, conditioning=cond)
-            sampler = node(10, 'KSamplerSelect', sampler_name=self.widgets('video', 10)[0])
+            sampler = node(10, 'KSamplerSelect', sampler_name='euler' if eros else self.widgets('video', 10)[0])
             noise = node(11, 'RandomNoise', noise_seed=seed)
             sigmas = node(12, 'BasicScheduler', model=model, scheduler='simple', steps=steps, denoise=1.)
             latent = node(13, 'SamplerCustomAdvanced', noise=noise, guider=guider, sampler=sampler, sigmas=sigmas, latent_image=['6', 1])

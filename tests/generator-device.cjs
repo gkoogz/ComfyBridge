@@ -63,6 +63,15 @@ const assert=require('node:assert/strict');
   check('Duration calculation is visible',await p.locator('#durationInfo span').innerText()==='56 actual frames ÷ 12 FPS');
   await fold('LoRAs').click();check('Mandatory video strength stays locked',await p.locator('[data-strength="0"]').first().isDisabled());
   await fold('Latest result').click();check('Latest result can be collapsed',await p.locator('#result').isHidden());
+  await p.locator('#clearUpload').click();
+  const resolution=p.getByRole('slider',{name:'Video resolution'});
+  check('Text-to-video has a visible resolution slider',await resolution.isVisible());
+  await resolution.focus();await resolution.press('End');
+  check('Resolution slider updates both fields and warns above the video budget',await ev(()=>{
+   const s=state.settings.video;
+   return +$('[data-setting=width]').value===s.width&&+$('[data-setting=height]').value===s.height&&
+    s.width%32===0&&s.height%32===0&&$('#resolutionInfo').classList.contains('overBudget');
+  }));
  }finally{
   await ev(saved=>{for(const k of Object.keys(localStorage))if(k.startsWith('fold:'))localStorage.removeItem(k);for(const [k,v] of Object.entries(saved))localStorage.setItem(k,v);},storage);
   await p.reload();await browser.close();

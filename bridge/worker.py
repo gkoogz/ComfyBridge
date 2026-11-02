@@ -24,7 +24,7 @@ from PIL import Image, ImageOps
 
 from queue_progress import LIVE_JOBS, positions, prepare
 from studio import prepare as prepare_studio, mark_skipping
-from workflows import Workflows
+from workflows import Workflows, EROS_BETA7
 from progress import Progress
 IMPORT_LOCK = asyncio.Lock()
 MAX_VIDEO_UPLOAD = 512*1024*1024
@@ -69,6 +69,7 @@ if not CLIENT_FILE.exists():
     CLIENT_FILE.write_text('comfybridge-' + secrets.token_hex(16))
 CLIENT = CLIENT_FILE.read_text().strip()
 CATALOG = None
+CATALOG_EROS_ON_DISK = None
 CATALOG_LOCK = asyncio.Lock()
 STOPPING = set()
 
@@ -124,22 +125,30 @@ async def ensure_comfy():
 
 
 async def catalogue():
+    global CATALOG
+    installed=(ROOT/'models/diffusion_models'/EROS_BETA7).is_file()
+    if CATALOG_EROS_ON_DISK is not None and installed!=CATALOG_EROS_ON_DISK:
+        CATALOG=None
     if CATALOG is not None:return CATALOG
     async with CATALOG_LOCK:
         return await load_catalogue()
 
 
 async def load_catalogue():
-    global CATALOG
+    global CATALOG, CATALOG_EROS_ON_DISK
     if CATALOG is not None:
         return CATALOG
     await ensure_comfy()
+    eros_on_disk=(ROOT/'models/diffusion_models'/EROS_BETA7).is_file()
     obj = await comfy('/object_info')
     def choices(cls, name):
         field = obj[cls]['input']['required'][name]
         return field[0] if isinstance(field[0], list) else field[1].get('options', [])
     CATALOG = dict(defaults=WF.defaults(), models=choices('CheckpointLoaderSimple', 'ckpt_name'),
                    loras=choices('LoraLoader', 'lora_name'))
+    CATALOG['videoModels']=WF.video_models(obj,choices('UNETLoader','unet_name'),choices('CLIPLoader','clip_name'),
+                                            choices('VAELoader','vae_name'),CATALOG['loras'])
+    CATALOG_EROS_ON_DISK=eros_on_disk
     return CATALOG
 
 
@@ -296,7 +305,12 @@ async def run_jobs():
                     if stopping and (settings.get('extension') or not entry.get('outputs')):
                         update(j['id'], status='cancelled')
                     elif status.get('status_str') == 'error':
-                        update(j['id'], status='cancelled' if stopping else 'error', error=json.dumps(status.get('messages', []))[-3000:])
+                        failure=next((data for event,data in reversed(status.get('messages',[]))
+                                      if event=='execution_error'),{})
+                        message=failure.get('exception_message') or 'ComfyUI reported an error. See the PC log.'
+                        node=failure.get('node_type')
+                        update(j['id'],status='cancelled' if stopping else 'error',
+                               error=((node+': ' if node else '')+message)[:3000])
                     else:
                         await collect(j, entry)
                         DB.executemany('INSERT INTO stage_cost VALUES(?,?,?) ON CONFLICT(kind,node) DO UPDATE SET factor=0.65*stage_cost.factor+0.35*excluded.factor',
@@ -460,7 +474,7 @@ async def api(request):
                 j['queuePosition'], j['queueTotal'] = counts[j['id']]
             if j['id']==ACTIVE and TRACKER and j['status'] not in ('complete','cancelled','error'):
                 j['progress'],j['current_node']=TRACKER.sample()
-        return web.json_response(dict(protocol=11,jobs=jobs, active=ACTIVE, preview=bool(PREVIEW), previewRevision=PREVIEW_REV,ownedComfy=bool(OWNED)))
+        return web.json_response(dict(protocol=12,jobs=jobs, active=ACTIVE, preview=bool(PREVIEW), previewRevision=PREVIEW_REV,ownedComfy=bool(OWNED)))
     if path.startswith('preview/'):
         job=str(uuid.UUID(path[8:]))
         after=int(request.query.get('after','-1'))
@@ -558,7 +572,14 @@ async def api(request):
         if kind == 'image' and s['model'] not in cat['models']:
             raise ValueError('The selected checkpoint is not available.')
         locked=None
-        if kind == 'video' and s.get('loras'):
+        if kind=='video' and cat.get('videoModels'):
+            profile=next((p for p in cat['videoModels'] if p['model']==s.get('model')),None)
+            if not profile:raise ValueError('Choose a supported H3 video model.')
+            if profile['missing']:raise ValueError('Missing on PC: '+', '.join(profile['missing']))
+        if kind=='video' and s.get('model')==EROS_BETA7:
+            required=WF.widgets('video',8)[0]
+            s['loras']=[l for l in s.get('loras',[]) if l['name']!=required]
+        elif kind == 'video' and s.get('loras'):
             required,locked=WF.widgets('video',8)[:2]
             if s.get('replayOf'):
                 original=DB.execute("SELECT settings FROM jobs WHERE id=? AND kind='video'",(str(uuid.UUID(s['replayOf'])),)).fetchone()

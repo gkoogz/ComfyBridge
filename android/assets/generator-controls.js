@@ -42,12 +42,29 @@ function canvasInputs(s,step=1){
 }
 function bindCanvas(s,step=1){
  const w=$('[data-setting="width"]'),h=$('[data-setting="height"]'),link=$('#linkAspect');
- function refresh(){const locked=!!s.aspectLock;
+ const slider=$('#textVideoResolution');
+ let stops=[];
+ function refresh(rebuild=true){const locked=!!s.aspectLock;
   link.setAttribute('aria-pressed',String(locked));link.setAttribute('aria-label',locked?'Unlock aspect ratio':'Lock aspect ratio');
   $('#canvasRatio').textContent=aspect(s.width,s.height)+(locked?' · Locked':'');
-  if(step===32)updateVideo(false);
+  if(slider){
+   if(rebuild){
+    stops=textCanvasStops(s);
+    slider.min=0;slider.max=stops.length-1;slider.step=1;slider.disabled=stops.length<2;
+    slider.value=stops.findIndex(([width,height])=>width===s.width&&height===s.height);
+    markPixelBudget(slider,stops.findIndex(([width,height])=>width*height>pixelBudget),stops.length);
+   }
+   slider.setAttribute('aria-valuetext',s.width+' by '+s.height);
+   updateVideo(false);
+  }
  }
- link.onclick=()=>{s.aspectLock=s.aspectLock?null:[s.width,s.height];refresh();persist();};
+ if(slider)slider.oninput=()=>{
+  s.videoSliderRatio??=[s.width,s.height];
+  [s.width,s.height]=stops[slider.valueAsNumber];
+  w.value=s.width;h.value=s.height;
+  refresh(false);persist();
+ };
+ link.onclick=()=>{s.aspectLock=s.aspectLock?null:[s.width,s.height];if(slider)delete s.videoSliderRatio;refresh();persist();};
  function edit(input,companion,key,other,commit){
   let value=input.valueAsNumber;
   if(!Number.isFinite(value)){if(commit)input.value=s[key];return;}
@@ -57,7 +74,9 @@ function bindCanvas(s,step=1){
    min=Math.max(min,Math.ceil(32*ratio-1e-8));max=Math.min(max,Math.floor(8192*ratio+1e-8));
   }
   if(!commit&&(value<min||value>max))return;
-  value=limit(Math.round(value/step)*step,Math.ceil(min/step)*step,Math.floor(max/step)*step);s[key]=value;
+  value=limit(Math.round(value/step)*step,Math.ceil(min/step)*step,Math.floor(max/step)*step);
+  if(slider&&s[key]!==value)delete s.videoSliderRatio;
+  s[key]=value;
   if(commit)input.value=value;
   if(ratio){s[other]=limit(Math.round(value/ratio/step)*step,32,8192);companion.value=s[other];}
   refresh();persist();
@@ -67,6 +86,31 @@ function bindCanvas(s,step=1){
   input.onblur=()=>edit(input,companion,key,other,true);
  }
  refresh();
+}
+function textCanvasStops(s){
+ const [w,h]=s.aspectLock||s.videoSliderRatio||[s.width,s.height];
+ const short=Math.min(w,h),long=Math.max(w,h);
+ let a=long,b=short;
+ while(b){const rem=a%b;a=b;b=rem;}
+ // Use exact ratios when there are enough sizes below budget. Otherwise use the
+ // nearest 32px pair, keeping the same reference ratio throughout a drag.
+ const exactWidth=32*w/a,exactHeight=32*h/a;
+ const stride=exactWidth*exactHeight*36<=pixelBudget?Math.min(exactWidth,exactHeight):32;
+ const choices=[];
+ let safe=0,over=0;
+ for(let side=stride;side<=8192;side+=stride){
+  const other=Math.round(side*long/short/32)*32;
+  if(other>8192)break;
+  if(side*other<=pixelBudget)safe++;
+  else if(++over>Math.max(1,Math.ceil(safe/8)))break;
+  choices.push(w<=h?[side,other]:[other,side]);
+ }
+ if(!choices.some(([width,height])=>width===s.width&&height===s.height))choices.push([s.width,s.height]);
+ return choices.sort((left,right)=>left[0]*left[1]-right[0]*right[1]);
+}
+function markPixelBudget(slider,firstOver,count){
+ const percent=firstOver<0?100:limit((firstOver-.5)/Math.max(1,count-1)*100,0,100);
+ slider.style.setProperty('--safe-stop',percent+'%');
 }
 function videoSize(inp,pct){
  const side=n=>Math.max(32,Math.round(n*(1+pct/100)/32)*32);
@@ -100,8 +144,7 @@ function bindVideoScale(s,inp){
  if(!stops.length){slider.disabled=true;reset.disabled=true;$('#scaleBounds').textContent='Choose a smaller source to fit the model’s maximum dimensions.';return;}
  slider.min=0;slider.max=stops.length-1;slider.step=1;slider.value=Math.max(0,index);
  const red=stops.findIndex(p=>{const [w,h]=videoSize(inp,p);return w*h>pixelBudget;});
- const threshold=red<0?100:limit((red-.5)/Math.max(1,stops.length-1)*100,0,100);
- slider.style.setProperty('--safe-stop',threshold+'%');
+ markPixelBudget(slider,red,stops.length);
  $('#scaleBounds').textContent=stops[0]+'% to '+(stops.at(-1)>0?'+':'')+stops.at(-1)+'%';
  const change=index=>{slider.value=index;s.scale=stops[index];updateVideo(true);persist();};
  slider.oninput=()=>change(+slider.value);
@@ -116,7 +159,7 @@ function bindSteps(s,maxSteps){
 }
 let lastTick=-Infinity;
 document.addEventListener('input',e=>{
- if(!e.isTrusted||!e.target.matches('#videoSeconds,#main input[type=range][data-setting],#main input[type=range][data-strength]'))return;
+ if(!e.isTrusted||!e.target.matches('#textVideoResolution,#videoSeconds,#main input[type=range][data-setting],#main input[type=range][data-strength]'))return;
  const now=performance.now();
  if(now-lastTick>=48){lastTick=now;window.Native?.sliderTick?.();}
 });

@@ -76,7 +76,7 @@ async function loadCatalog(){
  const id=epoch;catalogLoading=true;serviceNote='PC connected. Loading ComfyUI models…';notice();
  try{const data=await api('catalog');if(id!==epoch)return;
   for(const kind of ['image','video'])if(!state.settings[kind])state.settings[kind]=structuredClone(data.defaults[kind]);
-  catalog=data;persist(null);serviceNote='';if(page==='bridge'||!$('#play')&&['image','video'].includes(page))render();
+  catalog=data;persist(null);serviceNote='';if(page==='video')refreshVideoModelField();if(page==='bridge'||!$('#play')&&['image','video'].includes(page))render();
  }catch(e){if(id!==epoch)return;serviceNote='Model list unavailable: '+e.message;}
  finally{if(id===epoch){catalogLoading=false;if(!catalog&&page==='bridge')renderBridge();notice();}}
 }
@@ -138,13 +138,14 @@ function renderGenerator(){
  if(kind==='video'&&!ext&&!s.exactFrames)s.frames=5+17*Math.max(0,Math.ceil((s.frames-5)/17));
  if(textVideo)[s.width,s.height]=videoSize(s,0);
  if(!inp.data)s.denoise=1;
- $('#main').innerHTML=`<div class="gentoolbar"><div class="row spread"><div class="row"><span id="runSpinner" class="spinner" hidden></span><div class="playwrap"><button id="play" class="green">▶ Generate</button><button id="batchButton" class="green" aria-label="Choose batch">⌄</button><div class="pop" id="batchMenu" hidden>${[2,4,8,16].map(n=>`<button data-batch="${n}" style="display:block;width:100%">Batch of ${n}</button>`).join('')}</div></div></div><button id="stopBatch" class="stop" hidden>■ Stop mine</button><span class="batchlabel" id="batchLabel">${s.batch>1?s.batch+' in batch':'Single generation'}</span></div><div class="progressrow" id="progressRow" hidden><img class="preview" id="livePreview" alt="Generation preview"><div class="progress"><i id="progressFill"></i><span id="progressText"></span></div></div><div class="statusmessage" id="jobMessage"></div></div><div id="genError"></div><div id="queueList"></div><div class="row spread modeRow"><p class="eyebrow">${kind==='image'?'A STILL, A STORY':'VIDEO STUDIO'}</p><span class="pill" id="mode">${ext?'EXTEND VIDEO':textVideo?'TEXT → VIDEO':kind==='video'?'IMAGE → VIDEO':inp.mask?'INPAINT':inp.data?'IMAGE → IMAGE':'TEXT → IMAGE'}</span></div><section class="card"><div class="row spread"><h2>${ext?'Source video':kind==='video'?'Starting image or video':'Starting image'}</h2><small>${ext?'Original clip':'Optional'}</small></div><div class="upload">${ext?extensionSource(ext):inp.data?`<img src="${inp.data}" alt="Starting image">`:`<div><strong>＋</strong><span>${kind==='video'?'Choose a photo or video':'Choose an image'}</span><br><small>Tap to browse your phone</small></div>`}<input type="file" id="upload" accept="${kind==='video'?'image/*,video/*':'image/*'}" aria-label="Choose starting media"></div><div class="uploadtools">${inp.data?`<div class="sourceDims"><strong>${inp.width} × ${inp.height}</strong><small>Source · ${aspect(inp.width,inp.height)}</small></div>`:`<small>${ext?'Select another photo or video to replace this clip.':kind==='image'?'Leave empty for text to image':'Text only, a photo to animate, or a video to extend.'}</small>`}<div>${kind==='image'?'<button id="maskButton" '+(!inp.data?'disabled':'')+'>'+(inp.mask?'Edit mask':'◌ Apply mask')+'</button>':''} <button id="clearUpload" class="danger" ${!inp.data&&!ext?'disabled':''}>Clear ×</button></div></div>${inp.mask?'<button id="clearMask" class="textbutton danger">Reset mask</button>':''}${kind==='image'&&inp.data&&(inp.width>1256||inp.height>1256)?'<div class="warning">ⓘ Large source image · above 1256 × 1256.</div>':''}</section><section class="card"><h2>Canvas & model</h2>${kind==='image'?canvasInputs(s):`${textVideo?canvasInputs(s,32)+'<div id="resolutionInfo"></div>':`<div class="field scaleField"><div class="row spread"><label for="videoScale">Scale from source</label><strong id="scaleValue"></strong></div><div id="resolutionInfo"></div><input id="videoScale" class="scaleRange" type="range" data-setting="scale" step="1"><div class="row spread"><small id="scaleBounds"></small><button type="button" id="originalScale" class="textbutton">Original · 0%</button></div></div>`}<div class="field"><div class="row spread"><label for="videoSeconds">${ext?'Time to add':'Video length'}</label><strong id="secondsValue"></strong></div><input id="videoSeconds" type="range" min="1" max="20" step="0.25"></div><div class="grid2 field"><div><label>${ext?'Frames to add':'Frames'}</label><input type="number" data-setting="frames" min="1" max="${ext?3570:3592}" value="${s.frames}"></div><div><label>FPS</label><input type="number" data-setting="fps" step="any" ${ext?'disabled':''} min="1" max="120" value="${s.fps}"></div></div><div id="durationInfo" aria-label="Video duration"></div>`}<div class="field"><label>${kind==='video'?'Model · locked to workflow':'Checkpoint'}</label>${kind==='video'?`<input readonly value="${esc(s.model)}">`:`<select data-setting="model">${[...new Set([s.model,...(catalog?.models||[])])].map(m=>`<option ${m===s.model?'selected':''}>${esc(m)}</option>`).join('')}</select>`}</div></section><section class="card"><div class="row spread"><h2>LoRAs</h2><button id="addLora" class="textbutton">＋ Add</button></div><div id="loras"></div></section>${promptField('positive','Positive prompt')}${kind==='image'?promptField('negative','Negative prompt'):''}<section class="card"><h2>Generation settings</h2>${slider('steps','Steps',1,maxSteps)}${kind==='image'?slider('cfg','CFG',0,20,.1)+slider('denoise','Denoise'+(!inp.data?' · locked for text to image':''),0,1,.01,!inp.data):''}<div class="field"><label>Seed</label><input type="text" inputmode="numeric" data-setting="seed" value="${esc(s.seed)}"></div><label class="togglelabel"><input type="checkbox" id="increment" ${s.increment?'checked':''}>Increment seed after each generation</label></section><section id="latestPanel"><div class="sectionline"><h2>Latest result</h2><button id="toLibrary" class="textbutton">Library ↗</button></div><div class="resultbox" id="result"></div><div class="carousel" id="carousel"></div></section>`;
+ $('#main').innerHTML=`<div class="gentoolbar"><div class="row spread"><div class="row"><span id="runSpinner" class="spinner" hidden></span><div class="playwrap"><button id="play" class="green">▶ Generate</button><button id="batchButton" class="green" aria-label="Choose batch">⌄</button><div class="pop" id="batchMenu" hidden>${[2,4,8,16].map(n=>`<button data-batch="${n}" style="display:block;width:100%">Batch of ${n}</button>`).join('')}</div></div></div><button id="stopBatch" class="stop" hidden>■ Stop mine</button><span class="batchlabel" id="batchLabel">${s.batch>1?s.batch+' in batch':'Single generation'}</span></div><div class="progressrow" id="progressRow" hidden><img class="preview" id="livePreview" alt="Generation preview"><div class="progress"><i id="progressFill"></i><span id="progressText"></span></div></div><div class="statusmessage" id="jobMessage"></div></div><div id="genError"></div><div id="queueList"></div><div class="row spread modeRow"><p class="eyebrow">${kind==='image'?'A STILL, A STORY':'VIDEO STUDIO'}</p><span class="pill" id="mode">${ext?'EXTEND VIDEO':textVideo?'TEXT → VIDEO':kind==='video'?'IMAGE → VIDEO':inp.mask?'INPAINT':inp.data?'IMAGE → IMAGE':'TEXT → IMAGE'}</span></div><section class="card"><div class="row spread"><h2>${ext?'Source video':kind==='video'?'Starting image or video':'Starting image'}</h2><small>${ext?'Original clip':'Optional'}</small></div><div class="upload">${ext?extensionSource(ext):inp.data?`<img src="${inp.data}" alt="Starting image">`:`<div><strong>＋</strong><span>${kind==='video'?'Choose a photo or video':'Choose an image'}</span><br><small>Tap to browse your phone</small></div>`}<input type="file" id="upload" accept="${kind==='video'?'image/*,video/*':'image/*'}" aria-label="Choose starting media"></div><div class="uploadtools">${inp.data?`<div class="sourceDims"><strong>${inp.width} × ${inp.height}</strong><small>Source · ${aspect(inp.width,inp.height)}</small></div>`:`<small>${ext?'Select another photo or video to replace this clip.':kind==='image'?'Leave empty for text to image':'Text only, a photo to animate, or a video to extend.'}</small>`}<div>${kind==='image'?'<button id="maskButton" '+(!inp.data?'disabled':'')+'>'+(inp.mask?'Edit mask':'◌ Apply mask')+'</button>':''} <button id="clearUpload" class="danger" ${!inp.data&&!ext?'disabled':''}>Clear ×</button></div></div>${inp.mask?'<button id="clearMask" class="textbutton danger">Reset mask</button>':''}${kind==='image'&&inp.data&&(inp.width>1256||inp.height>1256)?'<div class="warning">ⓘ Large source image · above 1256 × 1256.</div>':''}</section><section class="card"><h2>Canvas & model</h2>${kind==='image'?canvasInputs(s):`${textVideo?canvasInputs(s,32)+'<div class="field scaleField"><label for="textVideoResolution">Resolution</label><div id="resolutionInfo"></div><input id="textVideoResolution" class="scaleRange" type="range" aria-label="Video resolution"><small>Red starts above 768 × 1152 pixels.</small></div>' :`<div class="field scaleField"><div class="row spread"><label for="videoScale">Scale from source</label><strong id="scaleValue"></strong></div><div id="resolutionInfo"></div><input id="videoScale" class="scaleRange" type="range" data-setting="scale" step="1"><div class="row spread"><small id="scaleBounds"></small><button type="button" id="originalScale" class="textbutton">Original · 0%</button></div></div>`}<div class="field"><div class="row spread"><label for="videoSeconds">${ext?'Time to add':'Video length'}</label><strong id="secondsValue"></strong></div><input id="videoSeconds" type="range" min="1" max="20" step="0.25"></div><div class="grid2 field"><div><label>${ext?'Frames to add':'Frames'}</label><input type="number" data-setting="frames" min="1" max="${ext?3570:3592}" value="${s.frames}"></div><div><label>FPS</label><input type="number" data-setting="fps" step="any" ${ext?'disabled':''} min="1" max="120" value="${s.fps}"></div></div><div id="durationInfo" aria-label="Video duration"></div>`}<div class="field"><label>${kind==='video'?'Video model':'Checkpoint'}</label>${kind==='video'?`<div id="videoModelControls">${videoModelField(s)}</div>`:`<select data-setting="model">${[...new Set([s.model,...(catalog?.models||[])])].map(m=>`<option ${m===s.model?'selected':''}>${esc(m)}</option>`).join('')}</select>`}</div></section><section class="card"><div class="row spread"><h2>LoRAs</h2><button id="addLora" class="textbutton">＋ Add</button></div><div id="loras"></div></section>${promptField('positive','Positive prompt')}${kind==='image'?promptField('negative','Negative prompt'):''}<section class="card"><h2>Generation settings</h2>${slider('steps','Steps',1,maxSteps)}${kind==='image'?slider('cfg','CFG',0,20,.1)+slider('denoise','Denoise'+(!inp.data?' · locked for text to image':''),0,1,.01,!inp.data):''}<div class="field"><label>Seed</label><input type="text" inputmode="numeric" data-setting="seed" value="${esc(s.seed)}"></div><label class="togglelabel"><input type="checkbox" id="increment" ${s.increment?'checked':''}>Increment seed after each generation</label></section><section id="latestPanel"><div class="sectionline"><h2>Latest result</h2><button id="toLibrary" class="textbutton">Library ↗</button></div><div class="resultbox" id="result"></div><div class="carousel" id="carousel"></div></section>`;
  $('#upload').onchange=e=>loadStartingMedia(e.target);$('#clearUpload').onclick=()=>{state.inputs[kind]={};delete s.extension;s.upload=null;s.mask=null;s.scale=0;if(kind==='video'&&s.textCanvas)Object.assign(s,s.textCanvas);if(kind==='image'){s.width=1024;s.height=1536;s.denoise=1;if(s.aspectLock)s.aspectLock=[s.width,s.height];}persist();renderGenerator();};
  if($('#maskButton'))$('#maskButton').onclick=openMask;if($('#clearMask'))$('#clearMask').onclick=()=>{delete inp.mask;delete s.mask;persist();renderGenerator();};
  $('#increment').onchange=e=>{s.increment=e.target.checked;persist();};
  $$('[data-setting]').forEach(el=>el.oninput=()=>{let key=el.dataset.setting;s[key]=['model','seed'].includes(key)?el.value:Number(el.value);$$(`[data-setting="${key}"]`).forEach(other=>{if(other!==el)other.value=el.value;});if(kind==='video'&&['frames','fps'].includes(key))updateVideo(false);persist();});
  $('#batchButton').onclick=()=>$('#batchMenu').hidden=!$('#batchMenu').hidden;$$('[data-batch]').forEach(el=>el.onclick=()=>{s.batch=+el.dataset.batch;$('#batchLabel').textContent=s.batch+' in batch';$('#batchMenu').hidden=true;persist();generate();});
  $('#play').onclick=generate;$('#toLibrary').onclick=()=>navigate('library');$('#addLora').onclick=()=>{if(!catalog?.loras?.length)return toast('Connect to load your LoRAs.');s.loras.push({name:catalog.loras[0],strength:1,enabled:true});renderLoras();persist();};
+ if(kind==='video')bindVideoModelButtons();
  renderLoras();wirePrompts();bindSteps(s,maxSteps);
  if(kind==='image')bindCanvas(s);else if(textVideo)bindCanvas(s,32);else{bindVideoScale(s,inp);updateVideo(false);}
  if(kind==='video')bindVideoTime(s);
@@ -159,9 +160,57 @@ function wirePrompts(){
  $$('[data-prompt-library]').forEach(el=>el.onchange=()=>{if(el.value==='')return;let key=el.dataset.promptLibrary;state.settings[page][key]=state.prompts[+el.value].text;$(`textarea[data-setting="${key}"]`).value=state.settings[page][key];persist();});
  $$('[data-delete-prompt]').forEach(b=>b.onclick=()=>{let sel=$(`[data-prompt-library="${b.dataset.deletePrompt}"]`);if(sel.value==='')return toast('Choose a saved prompt first.');state.prompts.splice(+sel.value,1);persist('prompts');renderGenerator();});
 }
+const erosModel='10Eros_Max_h3_8stepTURBO_beta7_int8HQ.safetensors';
+function videoModelField(s){
+ const profiles=catalog?.videoModels;
+ if(!profiles)return '<input readonly aria-label="Video model" value="'+esc(s.model)+'">';
+ const options=profiles.map(p=>'<button type="button" value="'+esc(p.model)+'" aria-pressed="'+(p.model===s.model)+'" '+
+  (p.missing.length?'aria-disabled="true"':'')+'>'+
+  esc(p.label)+(p.missing.length?' · unavailable':'')+'</button>').join('');
+ const profile=profiles.find(p=>p.model===s.model);
+ const detail=profile?.missing.length?'Missing on PC: '+profile.missing.join(', '):
+  profile?.builtinTurbo?'Built-in 8-step Turbo · H3 VAE + Qwen encoder':'4-step Turbo LoRA · H3 VAE + Qwen encoder';
+ return '<div id="videoModel" role="group" aria-label="Video model">'+options+'</div><small>'+esc(detail)+'</small>';
+}
+function bindVideoModelButtons(){
+ $$('#videoModel button').forEach(button=>{button.onclick=()=>switchVideoModel(button.value);});
+}
+function refreshVideoModelField(){
+ const host=$('#videoModelControls');if(!host)return;
+ host.innerHTML=videoModelField(state.settings.video);bindVideoModelButtons();
+}
+async function switchVideoModel(model){
+ const s=state.settings.video,session=epoch,original=s.model;
+ if(submitting||state.pendingByKind?.video||state.pendingRequest?.kind==='video'){
+  toast('Wait for the pending submission to be confirmed before changing models.');return;
+ }
+ let profile=catalog?.videoModels?.find(p=>p.model===model);
+ if(!profile)return;
+ if(profile.missing.length&&connected){
+  try{
+   const latest=await api('catalog');
+   if(page!=='video'||epoch!==session||s!==state.settings.video||original!==s.model)return;
+   catalog=latest;refreshVideoModelField();
+   profile=catalog.videoModels.find(p=>p.model===model);
+  }catch(e){toast(e.message);return;}
+ }
+ if(!profile||profile.missing.length){toast('Missing on PC: '+(profile?.missing.join(', ')||model));return;}
+ if(original===model)return;
+ s.model=model;s.steps=profile.steps;delete s.replayOf;
+ const fixed=catalog.defaults.video.loras[0];
+ s.loras=s.loras.filter(l=>l.name!==fixed.name);
+ if(!profile.builtinTurbo)s.loras.unshift({...fixed});
+ persist('video');renderGenerator();
+}
 function renderLoras(){
  const list=state.settings[page].loras;
- if(page==='video'){
+ if(page==='video'&&state.settings.video.model===erosModel){
+  const stock=catalog?.defaults?.video?.loras?.[0]?.name;
+  for(let i=list.length-1;i>=0;i--){
+   if(list[i].name===stock)list.splice(i,1);else delete list[i].locked;
+  }
+ }
+ if(page==='video'&&state.settings.video.model!==erosModel){
   const fixed=catalog?.defaults?.video?.loras?.[0];
   if(fixed&&list[0]?.name!==fixed.name)list.unshift({...fixed});
   else if(list[0]){
@@ -169,7 +218,7 @@ function renderLoras(){
    Object.assign(list[0],fixed,{locked:true,enabled:true,strength});
   }
  }
- $('#loras').innerHTML=list.length?list.map((l,i)=>`<div class="lora" data-lora="${i}"><div class="row"><input type="checkbox" data-enable="${i}" ${l.enabled?'checked':''} ${l.locked?'disabled':''} aria-label="Enable LoRA">${l.locked?`<span class="lockedname">▣ ${esc(l.name)}</span>`:`<select data-lora-name="${i}">${[...new Set([l.name,...(catalog?.loras||[])])].map(n=>`<option ${n===l.name?'selected':''}>${esc(n)}</option>`).join('')}</select><button data-remove-lora="${i}" class="icon danger" aria-label="Remove LoRA">×</button>`}</div><div class="controlrow"><input type="range" data-strength="${i}" ${l.locked?'disabled':''} min="-5" max="5" step=".1" value="${l.strength}" aria-label="LoRA strength"><input type="number" data-strength="${i}" ${l.locked?'disabled':''} min="-20" max="20" step="any" value="${l.strength}" aria-label="LoRA strength"></div>${l.locked?'<small>Required turbo LoRA · fixed strength</small>':''}</div>`).join(''):'<small>No LoRAs added.</small>';
+ $('#loras').innerHTML=list.length?list.map((l,i)=>`<div class="lora" data-lora="${i}"><div class="row"><input type="checkbox" data-enable="${i}" ${l.enabled?'checked':''} ${l.locked?'disabled':''} aria-label="Enable LoRA">${l.locked?`<span class="lockedname">▣ ${esc(l.name)}</span>`:`<select data-lora-name="${i}">${[...new Set([l.name,...(catalog?.loras||[])])].map(n=>`<option ${n===l.name?'selected':''}>${esc(n)}</option>`).join('')}</select><button data-remove-lora="${i}" class="icon danger" aria-label="Remove LoRA">×</button>`}</div><div class="controlrow"><input type="range" data-strength="${i}" ${l.locked?'disabled':''} min="-5" max="5" step=".1" value="${l.strength}" aria-label="LoRA strength"><input type="number" data-strength="${i}" ${l.locked?'disabled':''} min="-20" max="20" step="any" value="${l.strength}" aria-label="LoRA strength"></div>${l.locked?'<small>Required turbo LoRA · fixed strength</small>':''}</div>`).join(''):page==='video'&&state.settings.video.model===erosModel?'<small>Eros Turbo is built in. Add optional LoRAs here.</small>':'<small>No LoRAs added.</small>';
  $$('[data-enable]').forEach(e=>e.onchange=()=>{list[+e.dataset.enable].enabled=e.checked;persist();});$$('[data-lora-name]').forEach(e=>e.onchange=()=>{list[+e.dataset.loraName].name=e.value;persist();});
  $$('[data-remove-lora]').forEach(e=>e.onclick=()=>{list.splice(+e.dataset.removeLora,1);persist();renderLoras();});$$('[data-strength]').forEach(el=>{
   const i=Number(el.dataset.strength);
@@ -320,6 +369,7 @@ async function generate(){
  state.pendingByKind??={};if(state.pendingRequest){state.pendingByKind[state.pendingRequest.kind]=state.pendingRequest;delete state.pendingRequest;}
  let payload=state.pendingByKind[kind];
  if(kind==='video'&&snapshot.exactFrames&&!snapshot.extension&&queueProtocol<11)return toast('Update Windows to beta 20 for exact video length.');
+ if(kind==='video'&&snapshot.model===erosModel&&queueProtocol<12)return toast('Selecting Eros Max needs Windows beta 21.');
  if(snapshot.extension&&queueProtocol<9)return toast('Extend needs the new Windows worker. If you just updated, let the previous queue finish and reconnect after 90 seconds.');
  if(!payload&&kind==='video'&&!inp.data&&!snapshot.extension){
   if(queueProtocol<10)return toast('Text to video needs Windows beta 19. If you just updated, let the previous worker finish its queue.');
