@@ -65,19 +65,19 @@ function render(){
 }
 const pcIcon='<svg viewBox="0 0 64 64"><rect x="7" y="10" width="50" height="34" rx="5"/><path d="M23 54h18M32 44v10M17 34l8-9 8 6 13-13"/></svg>';
 let editPair=false,pairAddress=null,bridgeError="";
-let wanted=false,epoch=0,probing=false,nextProbe=0,misses=0,catalogLoading=false,serviceNote='',pollNote='';
-function notice(){const el=$('#linkNotice'),n=library.filter(j=>['missing','changed'].includes(j.warning)).length;const review=n?n+' PC file(s) changed or disappeared. Open Library to review your protected phone copies.':'';el.textContent=[wanted&&!connected?'Reconnecting to your PC. '+bridgeError+' Accepted jobs continue on the PC.':connected?[serviceNote,pollNote].filter(Boolean).join(' '):'',page==='library'?'':review].filter(Boolean).join(' ');el.hidden=!el.textContent;}
+let wanted=false,epoch=0,probing=false,nextProbe=0,misses=0,catalogLoading=false,retryCatalogAt=0,workerBuild='',serviceNote='',pollNote='';
+function notice(){const el=$('#linkNotice'),n=library.filter(j=>['missing','changed'].includes(j.warning)).length;const review=n?n+' PC file(s) changed or disappeared. Open Library to review your protected phone copies.':'';el.textContent=[wanted&&!connected?'Reconnecting to your PC. '+bridgeError+' Accepted jobs continue on the PC.':connected?(/after the previous worker goes idle/i.test(serviceNote+' '+pollNote)?'PC connected. The Windows bridge is updating; retrying automatically.':[serviceNote,pollNote].filter(Boolean).join(' ')):'',page==='library'?'':review].filter(Boolean).join(' ');el.hidden=!el.textContent;}
 function clearSession(){leaveLiveImage();imagePreviewProtocol=false;
  queueProtocol=0;rollingSkip=false;jobs=[];active=null;queueHistory=[];historyFailure='';
- ++epoch;profileReady=false;clearTimeout(profileTimer);wanted=false;misses=0;nextProbe=0;catalogLoading=false;serviceNote=pollNote=bridgeError='';connection(false);notice();
+ ++epoch;profileReady=false;clearTimeout(profileTimer);wanted=false;misses=0;nextProbe=0;catalogLoading=false;retryCatalogAt=0;workerBuild='';serviceNote=pollNote=bridgeError='';connection(false);notice();
 }
 async function loadCatalog(){
  if(catalogLoading||catalog||!connected)return;
  const id=epoch;catalogLoading=true;serviceNote='PC connected. Loading ComfyUI models…';notice();
  try{const data=await api('catalog');if(id!==epoch)return;
   for(const kind of ['image','video'])if(!state.settings[kind])state.settings[kind]=structuredClone(data.defaults[kind]);
-  catalog=data;persist(null);serviceNote='';if(page==='video')refreshVideoModelField();if(page==='bridge'||!$('#play')&&['image','video'].includes(page))render();
- }catch(e){if(id!==epoch)return;serviceNote='Model list unavailable: '+e.message;}
+  catalog=data;retryCatalogAt=0;persist(null);serviceNote='';if(page==='video')refreshVideoModelField();if(page==='bridge'||!$('#play')&&['image','video'].includes(page))render();
+ }catch(e){if(id!==epoch)return;retryCatalogAt=Date.now()+8000;serviceNote='Model list unavailable: '+e.message;}
  finally{if(id===epoch){catalogLoading=false;if(!catalog&&page==='bridge')renderBridge();notice();}}
 }
 function reached(){const cameBack=!connected;misses=0;nextProbe=0;bridgeError='';connection(true);
@@ -95,7 +95,7 @@ function unreachable(e){
  if(page==='bridge')renderBridge();notice();
 }
 async function heartbeat(){
- if(connected&&!document.hidden){if(Date.now()>=nextSettings)syncSettings();if(page==='notepad'&&Date.now()>=nextNoteSync)syncNotes();}
+ if(connected&&!document.hidden){if(!catalog&&!catalogLoading&&retryCatalogAt&&Date.now()>=retryCatalogAt)loadCatalog();if(Date.now()>=nextSettings)syncSettings();if(page==='notepad'&&Date.now()>=nextNoteSync)syncNotes();}
  if(!wanted||probing||connecting||document.hidden||Date.now()<nextProbe)return;const id=epoch;probing=true;
  try{await api('ping');if(id===epoch)reached();}catch(e){if(id===epoch)unreachable(e);}finally{probing=false;}
 }
@@ -369,7 +369,7 @@ async function generate(){
  snapshot.steps=limit(Math.round(Number(snapshot.steps))||1,1,stepLimit(kind));
  state.pendingByKind??={};if(state.pendingRequest){state.pendingByKind[state.pendingRequest.kind]=state.pendingRequest;delete state.pendingRequest;}
  let payload=state.pendingByKind[kind];
- if(kind==='video'){snapshot.sound=s.sound!==false;if(queueProtocol<13)return toast('Update the Windows bridge to beta 22 for video sound controls.');}
+ if(kind==='video'){snapshot.sound=s.sound!==false;if(queueProtocol<14)return toast('Video sound needs Windows beta 23. If the PC just updated, its active queue will finish first.');}
  if(kind==='video'&&snapshot.exactFrames&&!snapshot.extension&&queueProtocol<11)return toast('Update Windows to beta 20 for exact video length.');
  if(kind==='video'&&snapshot.model===erosModel&&queueProtocol<12)return toast('Selecting Eros Max needs Windows beta 21.');
  if(snapshot.extension&&queueProtocol<9)return toast('Extend needs the new Windows worker. If you just updated, let the previous queue finish and reconnect after 90 seconds.');
@@ -399,6 +399,7 @@ async function poll(){
  try{
   if(view!=='notepad'){const [status,latest]=await Promise.all([view==='library'?null:api('status'),view==='bridge'?null:api('library')]);if(!current())return;
    if(status){
+    const build=status.build||String(status.protocol);if(workerBuild&&workerBuild!==build){catalog=null;loadCatalog();}workerBuild=build;
     jobs=status.jobs;active=status.active;previewAvailable=status.preview;queueProtocol=status.protocol;imagePreviewProtocol=queueProtocol>=7;
     if(view==='bridge')updateBridgeActivity();
     await refreshHistory();if(!current())return;

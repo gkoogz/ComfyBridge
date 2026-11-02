@@ -21,8 +21,8 @@ using Microsoft.Win32;
 [assembly: System.Reflection.AssemblyTitle("Comfy Bridge")]
 [assembly: System.Reflection.AssemblyDescription("Phone to ComfyUI bridge")]
 [assembly: System.Reflection.AssemblyVersion("0.1.0.0")]
-[assembly: System.Reflection.AssemblyFileVersion("0.1.0.26")]
-[assembly: System.Reflection.AssemblyInformationalVersion("0.1.0-beta.22")]
+[assembly: System.Reflection.AssemblyFileVersion("0.1.0.27")]
+[assembly: System.Reflection.AssemblyInformationalVersion("0.1.0-beta.23")]
 
 partial class Bridge : ApplicationContext {
     static readonly string Home = AppDomain.CurrentDomain.BaseDirectory;
@@ -34,6 +34,8 @@ partial class Bridge : ApplicationContext {
     static X509Certificate2 certificate;
     static string fingerprint;
     static Process worker;
+    static int relays;
+    static DateTime nextWorkerCheck=DateTime.MinValue;
     static SemaphoreSlim starting = new SemaphoreSlim(1,1);
     static readonly Dictionary<string,DateTime> phones=new Dictionary<string,DateTime>();
     static readonly Dictionary<string,DateTime> watchers=new Dictionary<string,DateTime>();
@@ -138,19 +140,27 @@ partial class Bridge : ApplicationContext {
     static async Task Wake() {
         await starting.WaitAsync();
         try {
-            // An earlier tray instance may have left its worker finishing jobs.
+            await PrepareWorker();
+            Interlocked.Increment(ref relays);
+        } finally {starting.Release();}
+    }
+    static async Task PrepareWorker() {
+            // Serve compatible endpoints on the old worker until its bridge jobs drain.
+            // The GPU process has a separate lifetime and is never stopped by the handoff.
             try {using(var c=new System.Net.Sockets.TcpClient()){await c.ConnectAsync("127.0.0.1",18766);}
-                if(worker==null||worker.HasExited){using(var probe=new WebClient()){
-                    probe.Proxy=null;probe.Headers["Authorization"]="Bearer "+token;
-                    var monitor=new JavaScriptSerializer().Deserialize<Dictionary<string,object>>(await probe.DownloadStringTaskAsync("http://127.0.0.1:18766/api/monitor"));
-                    if(!monitor.ContainsKey("protocol")||Convert.ToInt32(monitor["protocol"])<5)
-                        throw new IOException("Finishing the previous bridge version. Jobs continue on the PC; new requests resume automatically after the old worker goes idle.");
-                    var remaining=monitor["jobs"] as System.Collections.ICollection;
-                    if(Convert.ToInt32(monitor["protocol"])<13&&remaining!=null&&remaining.Count==0)
-                        throw new IOException("Starting the updated bridge after the previous worker goes idle. Try again in about 90 seconds.");
-                }}
-                return;
+                if(worker!=null&&!worker.HasExited || DateTime.UtcNow<nextWorkerCheck)return;
+                nextWorkerCheck=DateTime.UtcNow.AddSeconds(3);
+                var monitor=new JavaScriptSerializer().Deserialize<Dictionary<string,object>>(await MonitorJson());
+                object build;object list;
+                if(monitor.TryGetValue("build",out build)&&Convert.ToString(build)==Application.ProductVersion&&Convert.ToInt32(monitor["protocol"])>=14)return;
+                if(!monitor.TryGetValue("jobs",out list)||((System.Collections.ICollection)list).Count!=0||Volatile.Read(ref relays)>0)return;
+                var info=new ProcessStartInfo(python,"\""+Path.Combine(Home,"handoff.py")+"\""){WorkingDirectory=Home,UseShellExecute=false,CreateNoWindow=true};
+                using(var handoff=Process.Start(info)){
+                    await Task.Run((Action)handoff.WaitForExit);
+                    if(handoff.ExitCode!=0)return;
+                }
             }catch(System.Net.Sockets.SocketException){}
+            catch(WebException e){if(e.Status!=WebExceptionStatus.ConnectFailure&&e.Status!=WebExceptionStatus.ConnectionClosed)throw;}
             if(worker==null || worker.HasExited) {
                 worker=Process.Start(new ProcessStartInfo(python,"\""+Path.Combine(Home,"worker.py")+"\""){WorkingDirectory=Home,UseShellExecute=false,CreateNoWindow=true,WindowStyle=ProcessWindowStyle.Hidden});
             }
@@ -159,7 +169,6 @@ partial class Bridge : ApplicationContext {
                 await Task.Delay(100);
             }
             throw new Exception("Bridge worker could not start.");
-        } finally {starting.Release();}
     }
     static async Task Handle(System.Net.Sockets.TcpClient client,bool encrypted) {
       using(client)using(Stream stream=encrypted?(Stream)new SslStream(client.GetStream(),false):client.GetStream()) {
@@ -209,7 +218,9 @@ partial class Bridge : ApplicationContext {
                 await ReplyStudio(stream,path.Substring(12),device,length);return;
             }
             await Wake();
+            try {
             var req=(HttpWebRequest)WebRequest.Create("http://127.0.0.1:18766"+raw);
+            req.KeepAlive=false;
             req.Method=first[0];req.Headers["Authorization"]="Bearer "+token;req.Timeout=240000;req.ReadWriteTimeout=240000;req.Proxy=null;
             if(identified)req.Headers["X-Bridge-Device"]=device;
             string range;
@@ -247,6 +258,7 @@ partial class Bridge : ApplicationContext {
                 await Headers(stream,(int)upstream.StatusCode,upstream.ContentType,upstream.ContentLength,upstream.Headers);
                 using(var input=upstream.GetResponseStream())await input.CopyToAsync(stream);
             }
+            }finally{Interlocked.Decrement(ref relays);}
         }catch(Exception ex){try{Reply(stream,503,Json.Serialize(new {error=ex.Message})).GetAwaiter().GetResult();}catch{}}
       }
     }

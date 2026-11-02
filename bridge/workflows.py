@@ -178,7 +178,8 @@ class Workflows:
             soundtrack = {}
             if s.get('sound'):
                 avae = node(52, 'VAELoader', vae_name=H3_AUDIO_VAE)
-                audio = node(53, 'VAEDecodeAudio', samples=latent, vae=avae)
+                # This decoder accepts H3's nested stereo latent and uses the VAE's own sample rate.
+                audio = node(53, 'LTXVAudioVAEDecode', samples=latent, audio_vae=avae)
                 count = int(s['frames']) if extension or s.get('exactFrames') else frames
                 # Crop on H3's native clock before the muxer can truncate either stream.
                 soundtrack['audio'] = node(54, 'TrimAudioDuration', audio=audio,

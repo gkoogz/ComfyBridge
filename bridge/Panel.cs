@@ -130,10 +130,10 @@ partial class Bridge {
         return new[]{"pending","submitting","running","cancelling"}.Contains(Convert.ToString(job["status"]));
     }
     static async Task<string> MonitorJson(){
-        using(var client=new WebClient()){
-            client.Proxy=null;client.Headers["Authorization"]="Bearer "+token;
-            return await client.DownloadStringTaskAsync("http://127.0.0.1:18766/api/monitor").ConfigureAwait(false);
-        }
+        var req=(HttpWebRequest)WebRequest.Create("http://127.0.0.1:18766/api/monitor");
+        req.Proxy=null;req.KeepAlive=false;req.Headers["Authorization"]="Bearer "+token;
+        using(var resp=await req.GetResponseAsync().ConfigureAwait(false))
+        using(var reader=new System.IO.StreamReader(resp.GetResponseStream()))return await reader.ReadToEndAsync().ConfigureAwait(false);
     }
     static async Task<string> QueueResponse(string body,bool singleBatch){
         var serializer=new System.Web.Script.Serialization.JavaScriptSerializer();

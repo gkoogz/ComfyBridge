@@ -17,6 +17,7 @@ import uuid
 import threading
 from pathlib import Path
 import extension
+from handoff import adopt
 
 import aiohttp
 from aiohttp import web
@@ -63,7 +64,7 @@ PREVIEW_JOB = None
 PREVIEW_REV = 0
 PREVIEW_CHANGE = None
 SESSION = None
-OWNED = None
+OWNED = adopt(DATA, ROOT)
 CLIENT_FILE = DATA / 'client_id.txt'
 if not CLIENT_FILE.exists():
     CLIENT_FILE.write_text('comfybridge-' + secrets.token_hex(16))
@@ -148,7 +149,7 @@ async def load_catalogue():
                    loras=choices('LoraLoader', 'lora_name'))
     CATALOG['videoModels']=WF.video_models(obj,choices('UNETLoader','unet_name'),choices('CLIPLoader','clip_name'),
                                             choices('VAELoader','vae_name'),CATALOG['loras'])
-    CATALOG['audioMissing']=[name for name in ('VAEDecodeAudio','TrimAudioDuration') if name not in obj]
+    CATALOG['audioMissing']=[name for name in ('LTXVAudioVAEDecode','TrimAudioDuration') if name not in obj]
     if H3_AUDIO_VAE not in choices('VAELoader','vae_name'):
         CATALOG['audioMissing'].append(H3_AUDIO_VAE)
     CATALOG_EROS_ON_DISK=eros_on_disk
@@ -480,7 +481,7 @@ async def api(request):
                 j['queuePosition'], j['queueTotal'] = counts[j['id']]
             if j['id']==ACTIVE and TRACKER and j['status'] not in ('complete','cancelled','error'):
                 j['progress'],j['current_node']=TRACKER.sample()
-        return web.json_response(dict(protocol=13,jobs=jobs, active=ACTIVE, preview=bool(PREVIEW), previewRevision=PREVIEW_REV,ownedComfy=bool(OWNED)))
+        return web.json_response(dict(protocol=14,build='0.1.0-beta.23',jobs=jobs, active=ACTIVE, preview=bool(PREVIEW), previewRevision=PREVIEW_REV,ownedComfy=bool(OWNED)))
     if path.startswith('preview/'):
         job=str(uuid.UUID(path[8:]))
         after=int(request.query.get('after','-1'))
