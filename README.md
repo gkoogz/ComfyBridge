@@ -1,12 +1,12 @@
 # ComfyBridge
 
-**[Open the beta 21 release page](https://github.com/gkoogz/ComfyBridge/releases/tag/v0.1.0-beta.21)** · [Download the Android APK](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.21/ComfyBridge-0.1.0-beta.21.apk) · [All releases](https://github.com/gkoogz/ComfyBridge/releases)
+**[Open the beta 22 release page](https://github.com/gkoogz/ComfyBridge/releases/tag/v0.1.0-beta.22)** · [Download the Android APK](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.22/ComfyBridge-0.1.0-beta.22.apk) · [All releases](https://github.com/gkoogz/ComfyBridge/releases)
 
 <img src="artwork/comfybridge.png" width="128" alt="ComfyBridge white cube and play icon on black">
 
 An Android remote for an existing Windows ComfyUI installation. The phone edits generation settings, uploads images and masks, and views results; the PC does the GPU work. A small Windows tray application wakes its Python worker on demand.
 
-**0.1.0-beta.21 is a personal-workflow beta**, adapted specifically to `Image gen.json` and `Video gen.json` in `E:\ComfyUI-Zluda\user\default\workflows`. It is not a general ComfyUI workflow importer. Models, LoRAs, workflow files, prompts, generated media, pairing credentials, and signing keys are not included in this repository or release.
+**0.1.0-beta.22 is a personal-workflow beta**, adapted specifically to `Image gen.json` and `Video gen.json` in `E:\ComfyUI-Zluda\user\default\workflows`. It is not a general ComfyUI workflow importer. Models, LoRAs, workflow files, prompts, generated media, pairing credentials, and signing keys are not included in this repository or release.
 
 The phone shows **PC connected** as soon as the bridge answers. Loading models and unavailable telemetry have their own messages. If the server or VPN drops, leave the phone app open: it retries automatically using the saved pairing. **Disconnect** or **Cancel reconnect** stops those retries.
 
@@ -54,7 +54,7 @@ The supported Eros checkpoint is TenStrip's original beta 7 eight-step Turbo INT
 
 On Video, leave **Starting image** empty for text-to-video. Drag **Resolution** under Width and Height to scale both sides, or enter dimensions and lock the aspect ratio. The slider turns red above the 768 x 1152 pixel budget. Video dimensions snap to multiples of 32. Upload a starting image for image-to-video, or clear it to return to your text-to-video canvas.
 
-Choose **Video length** or **Time to add** from 1–20 seconds. Changing FPS keeps the requested time and updates the editable frame count. A selected video opens Extend mode. Phone clips are uploaded to the PC (up to 512 MiB), oriented for playback, and padded to the MiniMax canvas grid. The PC needs FFmpeg on PATH or installed with Shotcut to import clips. Source audio is kept and the new segment is silent.
+Choose **Video length** or **Time to add** from 1–20 seconds. Changing FPS keeps the requested time and updates the editable frame count. A selected video opens Extend mode. Phone clips are uploaded to the PC (up to 512 MiB), oriented for playback, and padded to the MiniMax canvas grid. The PC needs FFmpeg on PATH or installed with Shotcut to import clips. **Include sound** (under the duration in **Canvas & model**) defaults on. H3 generates a soundtrack for new clips and continuations; playback FPS changes preserve pitch. An extension keeps the source audio and adds generated sound after the cut. Turning sound off omits the entire audio track from the new MP4, leaving the original untouched. Sound requires FFmpeg and `minimax_h3_audio_vae_fp32.safetensors` in `models/vae`.
 
 **Extend video** in Latest result, Library, or Archive opens the Video editor with the source resolution and FPS locked. Enter the number of new frames and describe what happens next. The PC uses the last five source frames as a motion guide, trims the overlap, and publishes a new joined clip. The original stays in the library. The original must still be available on the PC.
 

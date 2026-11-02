@@ -43,8 +43,15 @@ class BridgeTests(unittest.IsolatedAsyncioTestCase):
             if path=='/prompt':
                 self.accepted[data['prompt_id']]=data
                 if self.complete:
-                    filename=data['prompt_id']+'.png'
-                    Image.new('RGB',(48,64),'#58bbcc').save(w.ROOT/'output/ComfyBridge'/filename)
+                    if '16' in data['prompt'] and data['prompt']['16']['class_type']=='SaveVideo':
+                        filename=data['prompt_id']+'.mp4'
+                        args=['-f','lavfi','-i','color=c=blue:s=64x96:r=24']
+                        if 'audio' in data['prompt']['15']['inputs']:
+                            args+=['-f','lavfi','-i','sine=frequency=440:sample_rate=32000','-c:a','aac']
+                        w.extension.ffmpeg(*args,'-t','1','-c:v','libx264',w.ROOT/'output/ComfyBridge'/filename)
+                    else:
+                        filename=data['prompt_id']+'.png'
+                        Image.new('RGB',(48,64),'#58bbcc').save(w.ROOT/'output/ComfyBridge'/filename)
                     self.history[data['prompt_id']]={'status':{'status_str':'success'},'outputs':{'9':{'images':[dict(filename=filename,subfolder='ComfyBridge',type='output')]}}}
                 return {'prompt_id':data['prompt_id']}
             if path.startswith('/history/'):
@@ -105,7 +112,7 @@ class BridgeTests(unittest.IsolatedAsyncioTestCase):
         w.DB.execute("INSERT INTO media VALUES('original','old','video',?,'',1,0,0)",(str(src),));w.DB.commit()
         response,source=await self.request('extension/original')
         self.assertEqual((response.status,source['frames'],source['width'],source['fps']),(200,12,64,18))
-        s=copy.deepcopy(w.WF.defaults()['video']);s.update(extension=source,frames=7)
+        s=copy.deepcopy(w.WF.defaults()['video']);s.update(extension=source,frames=7,sound=False)
         w.CATALOG['loras'] += [s['loras'][0]['name']]
         fake=w.comfy
         async def render(path,data=None):
@@ -327,7 +334,7 @@ class BridgeTests(unittest.IsolatedAsyncioTestCase):
         ok,_=await self.request('skip',{'id':first},owner)
         self.assertEqual(ok.status,200)
         for _ in range(300):
-            if second in self.history:break
+            if w.DB.execute('SELECT status FROM jobs WHERE id=?',(second,)).fetchone()[0]=='complete':break
             await asyncio.sleep(.02)
         self.assertEqual([r['status'] for r in w.rows('SELECT status FROM jobs ORDER BY rowid')],['cancelled','complete'])
         await self.request('skip',{'id':first},owner)
@@ -404,6 +411,63 @@ class BridgeTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(graph['15']['inputs']['images'],['51',0])
             s['frames']=1
             self.assertEqual(w.WF.build('video',s,'ComfyBridge/test')['51']['inputs']['length'],1)
+
+    def test_sound_uses_joint_latent_and_native_frame_clock(self):
+        s=w.WF.defaults()['video']
+        s.update(frames=15, exactFrames=True, fps=12)
+        for model in (s['model'],w.EROS_BETA7):
+            s['model']=model
+            for upload, ext in ((None,None),('image.png',None),(None,{'id':'source'})):
+                s.update(sound=True,upload=upload,extension=ext)
+                graph=w.WF.build('video',s,'ComfyBridge/'+str(uuid.uuid4()))
+                self.assertEqual(graph['53']['inputs']['samples'],['13',0])
+                self.assertEqual(graph['54']['inputs']['duration'],15/24)
+                self.assertEqual(graph['54']['inputs']['start_index'],(5 if ext else 0)/24)
+                self.assertEqual(graph['15']['inputs']['audio'],['54',0])
+                self.assertEqual(graph['15']['inputs']['fps'],24)
+                s['sound']=False
+                graph=w.WF.build('video',s,'ComfyBridge/'+str(uuid.uuid4()))
+                self.assertNotIn('audio',graph['15']['inputs'])
+                self.assertNotIn('53',graph)
+                self.assertEqual(graph['15']['inputs']['fps'],12)
+
+    def test_extension_sound_at_cut_and_silent_export(self):
+        import av
+        import numpy as np
+        e=w.extension
+        folder=Path(TEMP.name)
+        def tone(path,freq=None):
+            args=['-f','lavfi','-i','color=c=red:s=64x96:r=24']
+            if freq:args+=['-f','lavfi','-i',f'sine=frequency={freq}:sample_rate=32000','-c:a','aac']
+            e.ffmpeg(*args,'-t','1','-threads','1','-c:v','libx264',path)
+        for source_audio in (True,False):
+            src=folder/'src.mp4'
+            tone(src,440 if source_audio else None)
+            # Source playback is 12 FPS. The new second starts as 24 native frames.
+            if source_audio: e.finish_sound(src,12)
+            else:
+                e.ffmpeg('-f','lavfi','-i','color=c=blue:s=64x96:r=12','-t','2','-c:v','libx264',src)
+            info=e.describe(src,'src')
+            for sound in (True,False):
+                dest=folder/'tail.mp4'
+                tone(dest,880 if sound else None)
+                e.join(src,dest,info,24,folder/'thumb.jpg',lambda:False,sound)
+                before=dest.read_bytes()
+                e.join(src,dest,info,24,folder/'thumb.jpg',lambda:False,sound)
+                self.assertEqual(dest.read_bytes(),before)
+                with av.open(str(dest)) as c:
+                    self.assertEqual(c.streams.video[0].frames,48)
+                    self.assertEqual(c.streams.video[0].average_rate,12)
+                    self.assertEqual(bool(c.streams.audio),sound)
+                    if not sound:continue
+                    a=c.streams.audio[0]
+                    self.assertAlmostEqual(float(a.duration*a.time_base),4,places=2)
+                    pcm=np.concatenate([f.to_ndarray()[0] for f in c.decode(a)])
+                    rate=a.codec_context.sample_rate
+                    for second,freq in ((1,440 if source_audio else 0),(3,880)):
+                        block=pcm[second*rate:(second+1)*rate]
+                        if freq:self.assertAlmostEqual(np.argmax(abs(np.fft.rfft(block))),freq,delta=3)
+                        else:self.assertLess(np.max(np.abs(block[:-rate//20])),.001)  # avoid AAC pre-echo at the cut
 
     async def test_eros_recipe_selects_weights_and_removes_only_stock_turbo(self):
         video=copy.deepcopy(w.WF.defaults()['video'])

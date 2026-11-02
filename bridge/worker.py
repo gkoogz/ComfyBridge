@@ -24,7 +24,7 @@ from PIL import Image, ImageOps
 
 from queue_progress import LIVE_JOBS, positions, prepare
 from studio import prepare as prepare_studio, mark_skipping
-from workflows import Workflows, EROS_BETA7
+from workflows import Workflows, EROS_BETA7, H3_AUDIO_VAE
 from progress import Progress
 IMPORT_LOCK = asyncio.Lock()
 MAX_VIDEO_UPLOAD = 512*1024*1024
@@ -148,6 +148,9 @@ async def load_catalogue():
                    loras=choices('LoraLoader', 'lora_name'))
     CATALOG['videoModels']=WF.video_models(obj,choices('UNETLoader','unet_name'),choices('CLIPLoader','clip_name'),
                                             choices('VAELoader','vae_name'),CATALOG['loras'])
+    CATALOG['audioMissing']=[name for name in ('VAEDecodeAudio','TrimAudioDuration') if name not in obj]
+    if H3_AUDIO_VAE not in choices('VAELoader','vae_name'):
+        CATALOG['audioMissing'].append(H3_AUDIO_VAE)
     CATALOG_EROS_ON_DISK=eros_on_disk
     return CATALOG
 
@@ -213,6 +216,9 @@ async def collect(job, entry):
                 id = uuid.uuid4().hex
                 thumb = DATA / 'thumbnails' / (id+'.jpg'); thumb.parent.mkdir(exist_ok=True)
                 duration = 0
+                if job['kind']=='video' and settings.get('sound') and not ext:
+                    update(job['id'], current_node='Timing soundtrack', progress=.99)
+                    await asyncio.to_thread(extension.finish_sound,path,settings['fps'])
                 if job['kind'] == 'image':
                     with Image.open(path) as img:
                         img.thumbnail((400, 400)); img.convert('RGB').save(thumb, quality=80)
@@ -220,7 +226,7 @@ async def collect(job, entry):
                     src = extension.source_path(DB, ROOT, ext['id'])
                     update(job['id'], current_node='Joining continuation', progress=.99)
                     stop = threading.Event()
-                    joining = asyncio.create_task(asyncio.to_thread(extension.join,src,path,ext,int(settings['frames']),thumb,stop.is_set))
+                    joining = asyncio.create_task(asyncio.to_thread(extension.join,src,path,ext,int(settings['frames']),thumb,stop.is_set,settings.get('sound')))
                     try:
                         while not joining.done():
                             await asyncio.wait({joining}, timeout=.4)
@@ -474,7 +480,7 @@ async def api(request):
                 j['queuePosition'], j['queueTotal'] = counts[j['id']]
             if j['id']==ACTIVE and TRACKER and j['status'] not in ('complete','cancelled','error'):
                 j['progress'],j['current_node']=TRACKER.sample()
-        return web.json_response(dict(protocol=12,jobs=jobs, active=ACTIVE, preview=bool(PREVIEW), previewRevision=PREVIEW_REV,ownedComfy=bool(OWNED)))
+        return web.json_response(dict(protocol=13,jobs=jobs, active=ACTIVE, preview=bool(PREVIEW), previewRevision=PREVIEW_REV,ownedComfy=bool(OWNED)))
     if path.startswith('preview/'):
         job=str(uuid.UUID(path[8:]))
         after=int(request.query.get('after','-1'))
@@ -572,6 +578,13 @@ async def api(request):
         if kind == 'image' and s['model'] not in cat['models']:
             raise ValueError('The selected checkpoint is not available.')
         locked=None
+        if kind=='video':
+            s.setdefault('sound', not s.get('replayOf'))
+            if not isinstance(s['sound'], bool): raise ValueError('Video sound must be on or off.')
+            if s['sound']:
+                if cat.get('audioMissing'):
+                    raise ValueError('Video sound needs '+', '.join(cat['audioMissing'])+' on the PC. Install it or turn off Include sound.')
+                extension.ffmpeg_path()
         if kind=='video' and cat.get('videoModels'):
             profile=next((p for p in cat['videoModels'] if p['model']==s.get('model')),None)
             if not profile:raise ValueError('Choose a supported H3 video model.')

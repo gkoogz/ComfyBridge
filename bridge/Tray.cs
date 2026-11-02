@@ -21,8 +21,8 @@ using Microsoft.Win32;
 [assembly: System.Reflection.AssemblyTitle("Comfy Bridge")]
 [assembly: System.Reflection.AssemblyDescription("Phone to ComfyUI bridge")]
 [assembly: System.Reflection.AssemblyVersion("0.1.0.0")]
-[assembly: System.Reflection.AssemblyFileVersion("0.1.0.25")]
-[assembly: System.Reflection.AssemblyInformationalVersion("0.1.0-beta.21")]
+[assembly: System.Reflection.AssemblyFileVersion("0.1.0.26")]
+[assembly: System.Reflection.AssemblyInformationalVersion("0.1.0-beta.22")]
 
 partial class Bridge : ApplicationContext {
     static readonly string Home = AppDomain.CurrentDomain.BaseDirectory;
@@ -146,7 +146,7 @@ partial class Bridge : ApplicationContext {
                     if(!monitor.ContainsKey("protocol")||Convert.ToInt32(monitor["protocol"])<5)
                         throw new IOException("Finishing the previous bridge version. Jobs continue on the PC; new requests resume automatically after the old worker goes idle.");
                     var remaining=monitor["jobs"] as System.Collections.ICollection;
-                    if(Convert.ToInt32(monitor["protocol"])<12&&remaining!=null&&remaining.Count==0)
+                    if(Convert.ToInt32(monitor["protocol"])<13&&remaining!=null&&remaining.Count==0)
                         throw new IOException("Starting the updated bridge after the previous worker goes idle. Try again in about 90 seconds.");
                 }}
                 return;

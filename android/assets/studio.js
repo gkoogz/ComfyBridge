@@ -149,6 +149,7 @@ function renderQueue(){
    }
    if(page!==origin||session!==epoch)return;
    settings.batch=1;
+   if(kind==='video' && settings.sound===undefined)settings.sound=false; // older jobs were silent
    if(state.pendingByKind)delete state.pendingByKind[kind];
    if(state.pendingRequest?.kind===kind)delete state.pendingRequest;
    state.settings[kind]=settings;state.inputs[kind]=inputs;persist(kind);navigate(kind);

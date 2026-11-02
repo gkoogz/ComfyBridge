@@ -1,8 +1,9 @@
-"""Prepare a five-frame motion guide and publish a joined, silent ComfyBridge MP4."""
+"""Time H3 sound to the selected FPS and join continuations without altering the source."""
 from collections import deque
 from fractions import Fraction
 from pathlib import Path
 import os
+import math
 import re
 import shutil
 import subprocess
@@ -47,14 +48,67 @@ def describe(path, media_id):
                     fps=float(fps), frames=stream.frames, hasAudio=bool(container.streams.audio))
 
 
-def ffmpeg(*args):
+def ffmpeg_path():
     exe = shutil.which('ffmpeg') or Path(os.environ.get('ProgramFiles','C:/Program Files'))/'Shotcut/ffmpeg.exe'
     if not Path(exe).is_file():
-        raise ValueError('Install FFmpeg on the PC and add it to PATH, or install Shotcut, to import phone videos.')
+        raise ValueError('Install FFmpeg on the PC and add it to PATH, or install Shotcut, for video sound and imports.')
+    return exe
+
+
+def ffmpeg(*args):
+    exe = ffmpeg_path()
     result = subprocess.run([str(exe),'-nostdin','-v','error','-y',*map(str,args)],
                             capture_output=True,creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
     if result.returncode:
         raise ValueError('Could not process the selected clip: '+result.stderr.decode(errors='replace')[-350:])
+
+
+def finish_sound(path, fps):
+    """Retime a native 24 FPS H3 export once; copy the video bitstream unchanged."""
+    import av
+    with av.open(str(path)) as media:
+        if not media.streams.audio:
+            raise ValueError('H3 returned no soundtrack. Check the audio decoder on the PC.')
+        stream = media.streams.video[0]
+        frames = stream.frames
+        if media.metadata.get('comment') == 'ComfyBridge timed audio':
+            return
+        if stream.average_rate != 24:
+            raise ValueError('Unexpected H3 soundtrack frame rate.')
+        audio=media.streams.audio[0]
+        if float(fps)==24 and audio.duration and abs(float(audio.duration*audio.time_base)-frames/24)<.002:
+            return  # The native AAC stream already fits; avoid a second encode.
+    rate = Fraction(str(fps)).limit_denominator(10000)
+    duration = frames / float(rate)
+    factor = float(rate)/24
+    # Give atempo room to flush its last window, including for very short exports.
+    tempo = ['apad=pad_dur=0.1']
+    while factor < .5:
+        tempo.append('atempo=0.5'); factor *= 2
+    while factor > 2:
+        tempo.append('atempo=2'); factor /= 2
+    if abs(factor-1) > 1e-9: tempo.append(f'atempo={factor:.12g}')
+    tempo.extend(('apad',f'atrim=duration={duration:.10f}'))
+    timescale = math.lcm(24,rate.numerator)
+    tick = timescale*rate.denominator//rate.numerator
+    timing = (f'setts=time_base=1/{timescale}:prescale=1:pts=round(PTS*24/{timescale})*{tick}:'
+              f'dts=round(DTS*24/{timescale})*{tick}:duration={tick}')
+    tmp = path.with_suffix('.timing.mp4')
+    try:
+        def mux(timestamps):
+            ffmpeg('-i',path,'-map','0:v:0','-map','0:a:0','-c:v','copy','-bsf:v',timestamps,
+                   '-video_track_timescale',timescale,'-af',','.join(tempo),'-c:a','aac','-b:a','192k',
+                   '-metadata','comment=ComfyBridge timed audio','-movflags','+faststart',tmp)
+        try:
+            mux(timing)
+        except ValueError as exc:
+            if 'prescale' not in str(exc): raise
+            # Older FFmpeg versions can still rescale the native timestamps (rounded to one tick).
+            ratio=24/float(rate)
+            mux(f'setts=pts=round(PTS*{ratio:.14g}):dts=round(DTS*{ratio:.14g}):duration=round(DURATION*{ratio:.14g})')
+        tmp.replace(path)
+    finally:
+        tmp.unlink(missing_ok=True)
 
 
 def import_clip(raw, folder, digest):
@@ -114,7 +168,7 @@ def prepare_guide(root, source, info, job):
         raise ValueError('Source video changed while decoding the guide.')
 
 
-def join(source, suffix, info, extra, thumb, cancelled):
+def join(source, suffix, info, extra, thumb, cancelled, sound=None):
     """Replace only this job's generated suffix, atomically. A restart can safely retry."""
     import av
     if revision(source) != info['revision']:
@@ -127,6 +181,8 @@ def join(source, suffix, info, extra, thumb, cancelled):
         if tail_frames != total:
             if tail_frames != extra:
                 raise ValueError(f'Expected {extra} continuation frames, got {tail_frames}.')
+            if sound:
+                finish_sound(suffix, info['fps'])
             with av.open(str(source)) as src, av.open(str(tmp),'w',options={'movflags':'+faststart'}) as out:
                 stream = src.streams.video[0]
                 fps = stream.average_rate
@@ -152,10 +208,20 @@ def join(source, suffix, info, extra, thumb, cancelled):
         if cancelled():raise InterruptedError('Extension cancelled.')
         if revision(source)!=info['revision']:raise ValueError('Source changed while joining.')
         if tail_frames!=total:
-            if info.get('hasAudio'):
+            # None denotes a pre-sound job already on the queue: preserve its historical behavior.
+            if sound or (sound is None and info.get('hasAudio')):
                 audio_tmp=tmp.with_suffix('.audio.mp4')
                 try:
-                    ffmpeg('-i',tmp,'-i',source,'-map','0:v:0','-map','1:a:0','-c','copy','-movflags','+faststart',audio_tmp)
+                    if sound:
+                        fmt='aformat=sample_rates=48000:channel_layouts=stereo'
+                        head=f'[1:a:0]{fmt},asetpts=PTS-STARTPTS' if info.get('hasAudio') else 'anullsrc=r=48000:cl=stereo'
+                        head+=f",apad,atrim=duration={info['frames']/info['fps']:.10f}[head];"
+                        tail=f'[2:a:0]{fmt},asetpts=PTS-STARTPTS,apad,atrim=duration={extra/info["fps"]:.10f}[tail];'
+                        ffmpeg('-i',tmp,'-i',source,'-i',suffix,'-filter_complex',
+                               head+tail+'[head][tail]concat=n=2:v=0:a=1[sound]','-map','0:v:0','-map','[sound]',
+                               '-c:v','copy','-c:a','aac','-b:a','192k','-movflags','+faststart',audio_tmp)
+                    else:
+                        ffmpeg('-i',tmp,'-i',source,'-map','0:v:0','-map','1:a:0','-c','copy','-movflags','+faststart',audio_tmp)
                     if cancelled():raise InterruptedError('Extension cancelled.')
                     audio_tmp.replace(tmp)
                 finally:

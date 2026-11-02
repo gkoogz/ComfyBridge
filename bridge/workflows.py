@@ -5,6 +5,7 @@ from pathlib import Path
 from extension import GUIDE_FRAMES, guide_names
 
 EROS_BETA7 = '10Eros_Max_h3_8stepTURBO_beta7_int8HQ.safetensors'
+H3_AUDIO_VAE = 'minimax_h3_audio_vae_fp32.safetensors'
 
 
 class Workflows:
@@ -54,7 +55,7 @@ class Workflows:
                 'video': dict(model=self.widgets('video', 5)[0], width=v[1], height=v[2],
                               frames=v[3], fps=self.widgets('video', 15)[0], steps=4, cfg=1,
                               seed=str(self.widgets('video', 11)[0]), increment=True, denoise=1,
-                              positive=v[0], negative='', scale=0, batch=1,
+                              positive=v[0], negative='', scale=0, batch=1, sound=True,
                               loras=[dict(name=self.widgets('video', 8)[0], strength=self.widgets('video', 8)[1], enabled=True, locked=True)]),
                 'notices': ['Video gen.json has an invalid numeric scheduler (4) and steps=1. The bridge uses simple / 4 steps for the saved turbo LoRA. The original file is unchanged.',
                             'MiniMax H3 rounds frame count up to 17k+5. Duration uses the actual frame count / FPS.']}
@@ -174,7 +175,16 @@ class Workflows:
                 images = node(51, 'ImageFromBatch', image=images, batch_index=GUIDE_FRAMES, length=extra)
             elif s.get('exactFrames') and int(s['frames'])!=frames:
                 images = node(51, 'ImageFromBatch', image=images, batch_index=0, length=int(s['frames']))
-            video = node(15, 'CreateVideo', images=images, fps=fps, bit_depth='auto', color_space='sRGB', codec='none')
+            soundtrack = {}
+            if s.get('sound'):
+                avae = node(52, 'VAELoader', vae_name=H3_AUDIO_VAE)
+                audio = node(53, 'VAEDecodeAudio', samples=latent, vae=avae)
+                count = int(s['frames']) if extension or s.get('exactFrames') else frames
+                # Crop on H3's native clock before the muxer can truncate either stream.
+                soundtrack['audio'] = node(54, 'TrimAudioDuration', audio=audio,
+                    start_index=(GUIDE_FRAMES if extension else 0)/24, duration=count/24)
+            video = node(15, 'CreateVideo', images=images, fps=24 if soundtrack else fps,
+                         bit_depth='auto', color_space='sRGB', codec='none', **soundtrack)
             node(16, 'SaveVideo', video=video, filename_prefix=prefix, format='mp4', **{'format.codec': 'h264', 'format.codec.encoding': 'auto'})
         else:
             raise ValueError('Unknown generation type.')

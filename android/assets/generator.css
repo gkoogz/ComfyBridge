@@ -43,3 +43,4 @@ body:is([data-page=image],[data-page=video]) .modeRow{margin:2px 0 7px}
 #videoModel button{flex:1;padding:6px 4px;font-size:13px}
 #videoModel button[aria-pressed=true]{background:#223b31;color:var(--mint);border-color:var(--mint)}
 #videoModel button[aria-disabled=true]{opacity:.5}
+.soundToggle{min-height:44px;margin:4px 0 8px}.soundToggle strong,.soundToggle small{display:block}.soundToggle strong{color:var(--text);font-size:14px}
