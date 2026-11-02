@@ -17,6 +17,7 @@ import uuid
 import threading
 from pathlib import Path
 import extension
+import recipes
 from handoff import adopt
 
 import aiohttp
@@ -55,6 +56,7 @@ if 'owner' not in {r[1] for r in DB.execute('PRAGMA table_info(jobs)')}:
     DB.execute("ALTER TABLE jobs ADD COLUMN owner TEXT NOT NULL DEFAULT 'legacy'");DB.commit()
 prepare(DB)
 prepare_studio(DB)
+DB.execute("CREATE TABLE IF NOT EXISTS generation_graphs(job TEXT PRIMARY KEY,graph TEXT NOT NULL)")
 TRACKER = None
 LAST_REQUEST = time.monotonic()
 IN_FLIGHT = 0
@@ -276,7 +278,7 @@ async def run_jobs():
         try:
             settings = json.loads(j['settings'])
             locked=settings['loras'][0]['strength'] if j['kind']=='video' and settings.get('loras') else None
-            graph = WF.build(j['kind'], settings, 'ComfyBridge/'+j['id'], recorded_video_strength=locked)
+            graph = recipes.recorded_graph(DB,j['id']) or WF.build(j['kind'], settings, 'ComfyBridge/'+j['id'], recorded_video_strength=locked)
             if ACTIVE!=j['id'] or not TRACKER:
                 learned=dict(DB.execute('SELECT node,factor FROM stage_cost WHERE kind=?',(j['kind'],)))
                 TRACKER=Progress(j['kind'],graph,settings,learned=learned)
@@ -286,13 +288,19 @@ async def run_jobs():
             if j['status'] == 'pending':
                 if j['batch'] in STOPPING:
                     update(j['id'], status='cancelled'); continue
+                if settings.get('recipeVersion'):
+                    for field in ('upload','mask'):
+                        if settings.get(field):
+                            await asyncio.to_thread(recipes.checked_source,ROOT/'input'/settings[field])
                 ext = settings.get('extension')
                 if ext:
                     update(j['id'],current_node='Reading last five frames')
                     src = extension.source_path(DB,ROOT,ext['id'])
+                    if ext['id'].startswith('recipe-'):
+                        await asyncio.to_thread(recipes.checked_source,src)
                     await asyncio.to_thread(extension.prepare_guide,ROOT,src,ext,j['id'])
-                    if DB.execute('SELECT status FROM jobs WHERE id=?',(j['id'],)).fetchone()[0]!='pending':
-                        continue
+                if DB.execute('SELECT status FROM jobs WHERE id=?',(j['id'],)).fetchone()[0]!='pending':
+                    continue
                 update(j['id'], status='submitting')
                 await comfy('/prompt', dict(prompt=graph, client_id=CLIENT, prompt_id=j['id']))
                 update(j['id'], status='running')
@@ -481,7 +489,7 @@ async def api(request):
                 j['queuePosition'], j['queueTotal'] = counts[j['id']]
             if j['id']==ACTIVE and TRACKER and j['status'] not in ('complete','cancelled','error'):
                 j['progress'],j['current_node']=TRACKER.sample()
-        return web.json_response(dict(protocol=15,build='0.1.0-beta.24',jobs=jobs, active=ACTIVE, preview=bool(PREVIEW), previewRevision=PREVIEW_REV,ownedComfy=bool(OWNED)))
+        return web.json_response(dict(protocol=16,build='0.1.0-beta.26',jobs=jobs, active=ACTIVE, preview=bool(PREVIEW), previewRevision=PREVIEW_REV,ownedComfy=bool(OWNED)))
     if path.startswith('preview/'):
         job=str(uuid.UUID(path[8:]))
         after=int(request.query.get('after','-1'))
@@ -511,7 +519,7 @@ async def api(request):
         return web.json_response(await asyncio.to_thread(media_manifest, items, ROOT, DATA))
     if path.startswith('media/') or path.startswith('thumb/'):
         parts = path.split('/')
-        if parts[0]=='thumb' and re.fullmatch(r'upload-[0-9a-f]{64}',parts[1]):
+        if parts[0]=='thumb' and re.fullmatch(r'(upload|recipe)-[0-9a-f]{64}',parts[1]):
             return web.FileResponse(extension.source_path(DB,ROOT,parts[1]).with_suffix('.jpg'))
         item = rows('SELECT * FROM media WHERE id=?', (parts[1],))
         if not item:
@@ -561,6 +569,7 @@ async def api(request):
             if existing[0]['owner']!=device:raise web.HTTPForbidden()
             return web.json_response(dict(batch=batch,ids=[r['id'] for r in existing]))
         checked_upload(s.get('upload')); checked_upload(s.get('mask'))
+        await asyncio.to_thread(recipes.keep_images,ROOT,s)
         if s.get('extension'):
             if kind!='video' or s.get('upload') or s.get('mask'):
                 raise ValueError('An extension needs one source video.')
@@ -568,6 +577,7 @@ async def api(request):
             info=await asyncio.to_thread(extension.describe,source,requested['id'])
             if info['revision']!=requested.get('revision'):
                 raise ValueError('Source video changed. Select Extend video again.')
+            info=await asyncio.to_thread(recipes.keep_clip,ROOT,source,info)
             s.update(extension=info,width=info['width'],height=info['height'],fps=info['fps'],scale=0)
         cat = await catalogue()
         existing=rows('SELECT id,owner FROM jobs WHERE batch=? ORDER BY ordinal',(batch,))
@@ -607,11 +617,16 @@ async def api(request):
                 raise ValueError('A selected LoRA is not available: '+l['name'])
         ids = []; created = time.time()
         prepared = []
+        graphs = []
+        s['recipeVersion']=1
         for i in range(count):
             settings = dict(s); settings['seed'] = str((int(s['seed'])+(i if s.get('increment') else 0)) % (2**64))
-            id = str(uuid.uuid4()); WF.build(kind, settings, 'ComfyBridge/'+id, recorded_video_strength=locked)
+            id = str(uuid.uuid4())
+            graph=recipes.graph_for_replay(DB,kind,settings,id) or WF.build(kind, settings, 'ComfyBridge/'+id, recorded_video_strength=locked)
+            graphs.append((id,json.dumps(graph)))
             prepared.append((id,batch,kind,json.dumps(settings),'pending',created,i+1,count,device)); ids.append(id)
         with DB:
+            DB.executemany('INSERT INTO generation_graphs VALUES(?,?)',graphs)
             DB.executemany('INSERT INTO jobs(id,batch,kind,settings,status,created,ordinal,total,owner) '
                            'VALUES(?,?,?,?,?,?,?,?,?)', prepared)
         return web.json_response(dict(batch=batch, ids=ids))

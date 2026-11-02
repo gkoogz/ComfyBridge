@@ -146,6 +146,11 @@ class BridgeTests(unittest.IsolatedAsyncioTestCase):
         s['extension']={**source,'revision':'stale'}
         response,_=await self.request('generate',dict(kind='video',count=1,settings=s,requestId=str(uuid.uuid4())))
         self.assertEqual(response.status,400)
+        src.unlink()
+        from studio import replay
+        restored=replay(w.DB,w.ROOT,batch['ids'][0])['settings']
+        self.assertTrue(restored['extension']['id'].startswith('recipe-'))
+        self.assertEqual(w.extension.source_path(w.DB,w.ROOT,restored['extension']['id']).read_bytes(),original)
 
     async def test_panel_monitor_does_not_keep_worker_awake(self):
         await self.submit(4)
@@ -370,6 +375,33 @@ class BridgeTests(unittest.IsolatedAsyncioTestCase):
         graph=w.WF.build('image',settings,'ComfyBridge/test')
         self.assertEqual(graph['3']['inputs']['latent_image'],['43',0]);self.assertEqual(graph['3']['inputs']['denoise'],.6)
         self.assertEqual(graph['52']['inputs']['channel'],'red')
+
+    async def test_library_replay_preserves_batch_seed_sources_and_sampler(self):
+        from studio import replay
+        source=w.ROOT/'input/ComfyBridge/original.png'
+        mask=source.with_name('painted.png')
+        Image.new('RGB',(64,96),'blue').save(source)
+        Image.new('RGB',(64,96),'white').save(mask)
+        self.settings.update(upload='ComfyBridge/original.png',mask='ComfyBridge/painted.png',
+                             seed='18446744073709551614',denoise=.4,increment=True)
+        _,batch=await self.submit(2)
+        second=batch['ids'][1]
+        source.unlink();mask.unlink()
+        result=replay(w.DB,w.ROOT,second)
+        self.assertEqual(result['settings']['seed'],'18446744073709551615')
+        self.assertEqual(set(result['inputs']),{'data','mask'})
+        self.settings=result['settings']
+        original=w.recipes.recorded_graph(w.DB,second)
+        from unittest.mock import patch
+        with patch.object(w.WF,'build',side_effect=AssertionError('Recompiled exact recipe')):
+            response,repeat=await self.submit()
+        self.assertEqual(response.status,200,repeat)
+        again=w.recipes.recorded_graph(w.DB,repeat['ids'][0])
+        original['9']['inputs']['filename_prefix']='ComfyBridge/'+repeat['ids'][0]
+        self.assertEqual(again,original)
+        (w.ROOT/'input'/self.settings['mask']).write_bytes(b'changed')
+        with self.assertRaisesRegex(ValueError,'changed'):
+            replay(w.DB,w.ROOT,second)
 
     async def test_fixed_seed_batch_and_recovery(self):
         self.settings['increment']=False;await self.submit(2)

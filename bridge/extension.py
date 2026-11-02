@@ -13,6 +13,8 @@ GUIDE_FRAMES = 5
 
 
 def source_path(db, root, media_id):
+    if re.fullmatch(r'recipe-[0-9a-f]{64}', media_id):
+        return root/'input/ComfyBridge/recipes'/(media_id[7:]+'.mp4')
     if re.fullmatch(r'upload-[0-9a-f]{64}', media_id):
         path = root/'input/ComfyBridge/videos'/(media_id+'.mp4')
         if not path.is_file():
@@ -135,10 +137,15 @@ def import_clip(raw, folder, digest):
         finally:
             tmp.unlink(missing_ok=True)
     info=describe(target,media_id)
-    with av.open(str(target)) as video:
-        cover=next(video.decode(video=0)).to_image()
-        cover.thumbnail((400,400));cover.convert('RGB').save(target.with_suffix('.jpg'),quality=80)
+    save_cover(target,target.with_suffix('.jpg'))
     return info
+
+
+def save_cover(source,target):
+    import av
+    with av.open(str(source)) as video:
+        cover=next(video.decode(video=0)).to_image()
+        cover.thumbnail((400,400));cover.convert('RGB').save(target,quality=80)
 
 
 def guide_names(job):

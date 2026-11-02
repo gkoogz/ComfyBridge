@@ -4,7 +4,7 @@ New-Item -ItemType Directory -Force $target | Out-Null
 $exe = Join-Path $target 'ComfyBridge.exe'
 # Only replace this installation; the Python worker and queued Comfy jobs keep running.
 Get-Process ComfyBridge -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $exe } | ForEach-Object { Stop-Process -Id $_.Id; $_.WaitForExit() }
-foreach($file in 'ComfyBridge.exe','worker.py','workflows.py','extension.py','handoff.py','media_index.py','progress.py','queue_progress.py','studio.py'){
+foreach($file in 'ComfyBridge.exe','worker.py','workflows.py','extension.py','handoff.py','media_index.py','progress.py','queue_progress.py','studio.py','recipes.py'){
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot $file) -Destination $target -Force
 }
 if (-not (Test-Path (Join-Path $target 'config.json'))) { Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'config.json') -Destination $target }

@@ -10,6 +10,7 @@ import sys
 import time
 import uuid
 import urllib.request
+import recipes
 
 NOW_SQL = "(julianday('now')-2440587.5)*86400"
 LIVE = "('pending','running','submitting','cancelling')"
@@ -130,8 +131,20 @@ def replay(db, root, job):
     if row is None:
         raise ValueError('Generation no longer exists.')
     settings=json.loads(row['settings'])
-    if row['kind']=='video':
-        settings['replayOf']=job
+    if not settings.get('recipeVersion') and db.execute("SELECT 1 FROM sqlite_master WHERE name='legacy_sources'").fetchone():
+        saved=db.execute('SELECT sources FROM legacy_sources WHERE job=?',(job,)).fetchone()
+        if saved:
+            settings.update(json.loads(saved[0]))
+    settings['replayOf']=job
+    if settings.get('extension'):
+        import extension
+        clip=settings['extension']
+        source=extension.source_path(db,root,clip['id'])
+        if clip['id'].startswith('recipe-'):
+            recipes.checked_source(source)
+            clip['revision']=extension.revision(source)
+        elif not source.is_file() or extension.revision(source)!=clip.get('revision'):
+            raise ValueError('The original source video is missing or changed on the PC.')
     inputs={}
     for field,key in [('upload','data'),('mask','mask')]:
         if not settings.get(field):
@@ -139,6 +152,8 @@ def replay(db, root, job):
         filename=(root/'input'/settings[field]).resolve()
         if not filename.is_relative_to((root/'input/ComfyBridge').resolve()) or not filename.is_file():
             raise ValueError('The original '+field+' is missing on the PC.')
+        if filename.parent==(root/'input/ComfyBridge/recipes').resolve():
+            recipes.checked_source(filename)
         inputs[key]='data:image/png;base64,'+base64.b64encode(filename.read_bytes()).decode('ascii')
     return dict(kind=row['kind'],settings=settings,inputs=inputs)
 
@@ -257,5 +272,8 @@ if __name__=='__main__':
     if '--init' in sys.argv:
         with sqlite3.connect(Path(os.environ['LOCALAPPDATA'])/'ComfyBridge/library.sqlite') as db:
             prepare(db)
+            config=json.loads(Path(__file__).with_name('config.json').read_text(encoding='utf-8-sig'))
+            saved,missing=recipes.preserve_library(db,Path(config['comfyRoot']))
+            print(f'Protected sources for {saved} existing generations; {missing} unavailable.')
     else:
         serve()

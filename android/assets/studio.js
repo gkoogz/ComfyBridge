@@ -138,10 +138,15 @@ function renderQueue(){
   const tile=$('.libraryitem[data-media="'+item.id+'"]');
   if(tile){tile.scrollIntoView({block:'center'});tile.click();}else openMedia(item);
  });
- $$('[data-replay]',box).forEach(b=>b.onclick=async()=>{
-  b.disabled=true;const origin=page,session=epoch;
+ $$('[data-replay]',box).forEach(b=>b.onclick=()=>restoreGeneration(b.dataset.replay,b));
+ updateTimers();
+}
+async function restoreGeneration(job,button,stillHere=()=>true){
+  button.disabled=true;const origin=page,session=epoch;
   try{
-   const {kind,settings,inputs}=await api('studio/replay/'+b.dataset.replay);
+   if(!connected)throw Error('Connect to the PC to restore this generation.');
+   if(!job)throw Error('This item has no saved generation record.');
+   const {kind,settings,inputs}=await api('studio/replay/'+job);
    if(inputs.data){const img=await loadImg(inputs.data);inputs.width=img.naturalWidth;inputs.height=img.naturalHeight;}
    if(inputs.mask){
     const mask=await loadImg(inputs.mask),canvas=document.createElement('canvas');
@@ -151,16 +156,15 @@ function renderQueue(){
     for(let i=0;i<pixels.data.length;i+=4){pixels.data[i+3]=pixels.data[i];pixels.data[i]=pixels.data[i+1]=pixels.data[i+2]=255;}
     ctx.putImageData(pixels,0,0);inputs.mask=canvas.toDataURL('image/png');
    }
-   if(page!==origin||session!==epoch)return;
+   if(page!==origin||session!==epoch||!stillHere())return;
    settings.batch=1;
+   settings.replayOf=job;
    if(kind==='video' && settings.sound===undefined)settings.sound=false; // older jobs were silent
-   if(state.pendingByKind)delete state.pendingByKind[kind];
-   if(state.pendingRequest?.kind===kind)delete state.pendingRequest;
+   if(submitting||state.pendingByKind?.[kind]||state.pendingRequest?.kind===kind)
+    throw Error('Resolve the pending submission before restoring another generation.');
    state.settings[kind]=settings;state.inputs[kind]=inputs;persist(kind);navigate(kind);
    toast('Generation settings loaded');
-  }catch(e){toast(e.message);}finally{b.disabled=false;}
- });
- updateTimers();
+  }catch(e){if(page===origin&&stillHere())toast(e.message);}finally{button.disabled=false;}
 }
 async function refreshHistory(){
  try{const h=await api('studio/history');queueHistory=h.jobs;historyOffset=h.now-Date.now()/1000;historyFailure='';rollingSkip=h.supportsRollingSkip===true;}

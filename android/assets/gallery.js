@@ -210,6 +210,10 @@ function openMedia(item){
  archive.onclick=async()=>{archive.disabled=true;try{await api('archive',{id:item.id,archived:!item.archived});updateItem({...current(),archived:!item.archived});if(stillHere())closeViewer();await syncShelf(true);}catch(e){msg(e.message);archive.disabled=false;}};
  $('#saveMedia').onclick=async e=>{const b=e.currentTarget;b.disabled=true;try{if(!current().local)throw Error('Wait for the phone copy to finish downloading.');await local('export',{id:item.id});msg('Saved to DCIM/ComfyBridge in your camera roll.');}catch(err){msg(err.message);}finally{b.disabled=false;}};
  $('#saveMedia').after(item.kind==='image'?makeVideoButton(item):extendVideoButton(item));
+ const regenerate=document.createElement('button');
+ regenerate.type='button';regenerate.textContent='↗ Regenerate';
+ regenerate.onclick=()=>restoreGeneration(current().job,regenerate,()=>stillHere()&&!viewerClosing);
+ $('.viewerActions',view).append(regenerate);
  if(item.warning){const w=$('#mediaWarning');w.textContent=warningText[item.warning]+' ';const b=document.createElement('button');w.append(b);const replace=item.warning==='changed';b.textContent=replace?'Replace…':'Remove copy…';b.disabled=replace&&!connected;b.onclick=()=>{msg('Save to the camera roll first if you want to keep this version.');b.textContent=replace?'Confirm replacement':'Confirm removal';b.onclick=async()=>{b.disabled=true;try{const j=await local(replace?'replace':'drop',{id:item.id,local:item.local,sha256:item.sha256});updateItem(j);if(stillHere())closeViewer();}catch(e){msg(e.message);b.disabled=false;}};};}
  mountAsset($('.asset',view),item,true);
 }

@@ -131,7 +131,7 @@ function slider(key,label,min,max,step=1,disabled=false){let s=state.settings[pa
 function renderGenerator(){
  const kind=page,s=state.settings[kind],inp=state.inputs[kind];
  if(!s){$('#main').innerHTML='<div class="empty"><div class="symbol">◉</div><h2>'+(connected?'Waiting for workflow settings':'Connect your studio first')+'</h2><p>'+(connected?'The PC is connected. Check Bridge for model loading status.':'Workflow defaults and your model library will load from the PC.')+'</p><button class="green" id="goBridge">Open Bridge</button></div>';$('#goBridge').onclick=()=>navigate('bridge');return;}
- const maxSteps=stepLimit(kind);
+ const maxSteps=s.replayOf?Math.max(stepLimit(kind),Number(s.steps)||1):stepLimit(kind);
  s.steps=limit(Math.round(Number(s.steps))||1,1,maxSteps);
  const ext=kind==='video'&&s.extension;
  const textVideo=kind==='video'&&!inp.data&&!ext;
@@ -366,7 +366,7 @@ async function stopBatch(batch){try{await api('stop',{batch});toast('Stopping th
 async function generate(){
  if(!connected)return toast('Connect to your PC first.');if(submitting)return;
  const kind=page,s=state.settings[kind],inp=structuredClone(state.inputs[kind]),snapshot=structuredClone(s),count=s.batch||1;
- snapshot.steps=limit(Math.round(Number(snapshot.steps))||1,1,stepLimit(kind));
+ snapshot.steps=limit(Math.round(Number(snapshot.steps))||1,1,s.replayOf?Math.max(stepLimit(kind),s.steps):stepLimit(kind));
  state.pendingByKind??={};if(state.pendingRequest){state.pendingByKind[state.pendingRequest.kind]=state.pendingRequest;delete state.pendingRequest;}
  let payload=state.pendingByKind[kind];
  if(kind==='video'&&(snapshot.negative||'').trim()&&queueProtocol<15)return toast('Update Windows to beta 24 for video negative prompts.');

@@ -55,7 +55,7 @@ class StudioTests(unittest.TestCase):
             settings=dict(seed='18446744073709551615',positive='test',upload='ComfyBridge/image.png',mask='ComfyBridge/mask.png')
             self.add_job(settings)
             result=replay(self.db,root,self.job)
-            self.assertEqual(result['settings'],settings)
+            self.assertEqual(result['settings'],{**settings,'replayOf':self.job})
             self.assertEqual(result['inputs']['mask'],'data:image/png;base64,bWFzaw==')
             (folder/'mask.png').unlink()
             with self.assertRaisesRegex(ValueError,'missing'):
