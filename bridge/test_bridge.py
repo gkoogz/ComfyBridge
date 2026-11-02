@@ -389,6 +389,22 @@ class BridgeTests(unittest.IsolatedAsyncioTestCase):
         self.settings['width']=0;r,d=await self.submit();self.assertEqual(r.status,400)
         self.assertEqual(w.rows('SELECT * FROM jobs'),[])
 
+    async def test_video_duration_trims_only_the_model_padding(self):
+        s=copy.deepcopy(w.WF.defaults()['video'])
+        s.update(frames=39,fps=12,exactFrames=True)
+        for upload in (None,'ComfyBridge/source.png'):
+            s['upload']=upload
+            # 39 is on the model grid; 15 frames (1.25 seconds) requires 22 internally.
+            s['frames']=39
+            self.assertNotIn('51',w.WF.build('video',s,'ComfyBridge/test'))
+            s['frames']=15
+            graph=w.WF.build('video',s,'ComfyBridge/test')
+            self.assertEqual(graph['6']['inputs']['length'],22)
+            self.assertEqual(graph['51']['inputs'],dict(image=['14',0],batch_index=0,length=15))
+            self.assertEqual(graph['15']['inputs']['images'],['51',0])
+            s['frames']=1
+            self.assertEqual(w.WF.build('video',s,'ComfyBridge/test')['51']['inputs']['length'],1)
+
     async def test_empty_comfy_control_response(self):
         app=web.Application()
         async def empty(request):return web.Response(status=200)

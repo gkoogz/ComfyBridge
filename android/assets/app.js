@@ -135,10 +135,11 @@ function renderGenerator(){
  s.steps=limit(Math.round(Number(s.steps))||1,1,maxSteps);
  const ext=kind==='video'&&s.extension;
  const textVideo=kind==='video'&&!inp.data&&!ext;
+ if(kind==='video'&&!ext&&!s.exactFrames)s.frames=5+17*Math.max(0,Math.ceil((s.frames-5)/17));
  if(textVideo)[s.width,s.height]=videoSize(s,0);
  if(!inp.data)s.denoise=1;
- $('#main').innerHTML=`<div class="gentoolbar"><div class="row spread"><div class="row"><span id="runSpinner" class="spinner" hidden></span><div class="playwrap"><button id="play" class="green">▶ Generate</button><button id="batchButton" class="green" aria-label="Choose batch">⌄</button><div class="pop" id="batchMenu" hidden>${[2,4,8,16].map(n=>`<button data-batch="${n}" style="display:block;width:100%">Batch of ${n}</button>`).join('')}</div></div></div><button id="stopBatch" class="stop" hidden>■ Stop mine</button><span class="batchlabel" id="batchLabel">${s.batch>1?s.batch+' in batch':'Single generation'}</span></div><div class="progressrow" id="progressRow" hidden><img class="preview" id="livePreview" alt="Generation preview"><div class="progress"><i id="progressFill"></i><span id="progressText"></span></div></div><div class="statusmessage" id="jobMessage"></div></div><div id="genError"></div><div id="queueList"></div><div class="row spread modeRow"><p class="eyebrow">${kind==='image'?'A STILL, A STORY':'VIDEO STUDIO'}</p><span class="pill" id="mode">${ext?'EXTEND VIDEO':textVideo?'TEXT → VIDEO':kind==='video'?'IMAGE → VIDEO':inp.mask?'INPAINT':inp.data?'IMAGE → IMAGE':'TEXT → IMAGE'}</span></div><section class="card"><div class="row spread"><h2>${ext?'Source video':'Starting image'}</h2><small>${ext?'Original clip':'Optional'}</small></div><div class="upload">${ext?extensionSource(ext):inp.data?`<img src="${inp.data}" alt="Starting image">`:'<div><strong>＋</strong><span>Choose an image</span><br><small>Tap to browse your phone</small></div>'}<input type="file" id="upload" accept="image/*" aria-label="Choose starting image"></div><div class="uploadtools">${inp.data?`<div class="sourceDims"><strong>${inp.width} × ${inp.height}</strong><small>Source · ${aspect(inp.width,inp.height)}</small></div>`:`<small>${ext?'Tap the clip to switch to a starting image.':kind==='image'?'Leave empty for text to image':'Leave empty for text to video'}</small>`}<div>${kind==='image'?'<button id="maskButton" '+(!inp.data?'disabled':'')+'>'+(inp.mask?'Edit mask':'◌ Apply mask')+'</button>':''} <button id="clearUpload" class="danger" ${!inp.data&&!ext?'disabled':''}>Clear ×</button></div></div>${inp.mask?'<button id="clearMask" class="textbutton danger">Reset mask</button>':''}${kind==='image'&&inp.data&&(inp.width>1256||inp.height>1256)?'<div class="warning">ⓘ Large source image · above 1256 × 1256.</div>':''}</section><section class="card"><h2>Canvas & model</h2>${kind==='image'?canvasInputs(s):`${textVideo?canvasInputs(s,32)+'<div id="resolutionInfo"></div>':`<div class="field scaleField"><div class="row spread"><label for="videoScale">Scale from source</label><strong id="scaleValue"></strong></div><div id="resolutionInfo"></div><input id="videoScale" class="scaleRange" type="range" data-setting="scale" step="1"><div class="row spread"><small id="scaleBounds"></small><button type="button" id="originalScale" class="textbutton">Original · 0%</button></div></div>`}<div class="grid2 field"><div><label>${ext?'Add · frames':'Length · frames'}</label><input type="number" data-setting="frames" min="${ext?1:5}" max="${ext?3570:3592}" value="${s.frames}"></div><div><label>FPS</label><input type="number" data-setting="fps" ${ext?'disabled':''} min="1" max="120" value="${s.fps}"></div></div><div id="durationInfo" aria-label="Video duration"></div>`}<div class="field"><label>${kind==='video'?'Model · locked to workflow':'Checkpoint'}</label>${kind==='video'?`<input readonly value="${esc(s.model)}">`:`<select data-setting="model">${[...new Set([s.model,...(catalog?.models||[])])].map(m=>`<option ${m===s.model?'selected':''}>${esc(m)}</option>`).join('')}</select>`}</div></section><section class="card"><div class="row spread"><h2>LoRAs</h2><button id="addLora" class="textbutton">＋ Add</button></div><div id="loras"></div></section>${promptField('positive','Positive prompt')}${kind==='image'?promptField('negative','Negative prompt'):''}<section class="card"><h2>Generation settings</h2>${slider('steps','Steps',1,maxSteps)}${kind==='image'?slider('cfg','CFG',0,20,.1)+slider('denoise','Denoise'+(!inp.data?' · locked for text to image':''),0,1,.01,!inp.data):''}<div class="field"><label>Seed</label><input type="text" inputmode="numeric" data-setting="seed" value="${esc(s.seed)}"></div><label class="togglelabel"><input type="checkbox" id="increment" ${s.increment?'checked':''}>Increment seed after each generation</label></section><section id="latestPanel"><div class="sectionline"><h2>Latest result</h2><button id="toLibrary" class="textbutton">Library ↗</button></div><div class="resultbox" id="result"></div><div class="carousel" id="carousel"></div></section>`;
- $('#upload').onchange=e=>loadImage(e.target.files[0]);$('#clearUpload').onclick=()=>{state.inputs[kind]={};delete s.extension;s.upload=null;s.mask=null;s.scale=0;if(kind==='video'&&s.textCanvas)Object.assign(s,s.textCanvas);if(kind==='image'){s.width=1024;s.height=1536;s.denoise=1;if(s.aspectLock)s.aspectLock=[s.width,s.height];}persist();renderGenerator();};
+ $('#main').innerHTML=`<div class="gentoolbar"><div class="row spread"><div class="row"><span id="runSpinner" class="spinner" hidden></span><div class="playwrap"><button id="play" class="green">▶ Generate</button><button id="batchButton" class="green" aria-label="Choose batch">⌄</button><div class="pop" id="batchMenu" hidden>${[2,4,8,16].map(n=>`<button data-batch="${n}" style="display:block;width:100%">Batch of ${n}</button>`).join('')}</div></div></div><button id="stopBatch" class="stop" hidden>■ Stop mine</button><span class="batchlabel" id="batchLabel">${s.batch>1?s.batch+' in batch':'Single generation'}</span></div><div class="progressrow" id="progressRow" hidden><img class="preview" id="livePreview" alt="Generation preview"><div class="progress"><i id="progressFill"></i><span id="progressText"></span></div></div><div class="statusmessage" id="jobMessage"></div></div><div id="genError"></div><div id="queueList"></div><div class="row spread modeRow"><p class="eyebrow">${kind==='image'?'A STILL, A STORY':'VIDEO STUDIO'}</p><span class="pill" id="mode">${ext?'EXTEND VIDEO':textVideo?'TEXT → VIDEO':kind==='video'?'IMAGE → VIDEO':inp.mask?'INPAINT':inp.data?'IMAGE → IMAGE':'TEXT → IMAGE'}</span></div><section class="card"><div class="row spread"><h2>${ext?'Source video':kind==='video'?'Starting image or video':'Starting image'}</h2><small>${ext?'Original clip':'Optional'}</small></div><div class="upload">${ext?extensionSource(ext):inp.data?`<img src="${inp.data}" alt="Starting image">`:`<div><strong>＋</strong><span>${kind==='video'?'Choose a photo or video':'Choose an image'}</span><br><small>Tap to browse your phone</small></div>`}<input type="file" id="upload" accept="${kind==='video'?'image/*,video/*':'image/*'}" aria-label="Choose starting media"></div><div class="uploadtools">${inp.data?`<div class="sourceDims"><strong>${inp.width} × ${inp.height}</strong><small>Source · ${aspect(inp.width,inp.height)}</small></div>`:`<small>${ext?'Select another photo or video to replace this clip.':kind==='image'?'Leave empty for text to image':'Text only, a photo to animate, or a video to extend.'}</small>`}<div>${kind==='image'?'<button id="maskButton" '+(!inp.data?'disabled':'')+'>'+(inp.mask?'Edit mask':'◌ Apply mask')+'</button>':''} <button id="clearUpload" class="danger" ${!inp.data&&!ext?'disabled':''}>Clear ×</button></div></div>${inp.mask?'<button id="clearMask" class="textbutton danger">Reset mask</button>':''}${kind==='image'&&inp.data&&(inp.width>1256||inp.height>1256)?'<div class="warning">ⓘ Large source image · above 1256 × 1256.</div>':''}</section><section class="card"><h2>Canvas & model</h2>${kind==='image'?canvasInputs(s):`${textVideo?canvasInputs(s,32)+'<div id="resolutionInfo"></div>':`<div class="field scaleField"><div class="row spread"><label for="videoScale">Scale from source</label><strong id="scaleValue"></strong></div><div id="resolutionInfo"></div><input id="videoScale" class="scaleRange" type="range" data-setting="scale" step="1"><div class="row spread"><small id="scaleBounds"></small><button type="button" id="originalScale" class="textbutton">Original · 0%</button></div></div>`}<div class="field"><div class="row spread"><label for="videoSeconds">${ext?'Time to add':'Video length'}</label><strong id="secondsValue"></strong></div><input id="videoSeconds" type="range" min="1" max="20" step="0.25"></div><div class="grid2 field"><div><label>${ext?'Frames to add':'Frames'}</label><input type="number" data-setting="frames" min="1" max="${ext?3570:3592}" value="${s.frames}"></div><div><label>FPS</label><input type="number" data-setting="fps" step="any" ${ext?'disabled':''} min="1" max="120" value="${s.fps}"></div></div><div id="durationInfo" aria-label="Video duration"></div>`}<div class="field"><label>${kind==='video'?'Model · locked to workflow':'Checkpoint'}</label>${kind==='video'?`<input readonly value="${esc(s.model)}">`:`<select data-setting="model">${[...new Set([s.model,...(catalog?.models||[])])].map(m=>`<option ${m===s.model?'selected':''}>${esc(m)}</option>`).join('')}</select>`}</div></section><section class="card"><div class="row spread"><h2>LoRAs</h2><button id="addLora" class="textbutton">＋ Add</button></div><div id="loras"></div></section>${promptField('positive','Positive prompt')}${kind==='image'?promptField('negative','Negative prompt'):''}<section class="card"><h2>Generation settings</h2>${slider('steps','Steps',1,maxSteps)}${kind==='image'?slider('cfg','CFG',0,20,.1)+slider('denoise','Denoise'+(!inp.data?' · locked for text to image':''),0,1,.01,!inp.data):''}<div class="field"><label>Seed</label><input type="text" inputmode="numeric" data-setting="seed" value="${esc(s.seed)}"></div><label class="togglelabel"><input type="checkbox" id="increment" ${s.increment?'checked':''}>Increment seed after each generation</label></section><section id="latestPanel"><div class="sectionline"><h2>Latest result</h2><button id="toLibrary" class="textbutton">Library ↗</button></div><div class="resultbox" id="result"></div><div class="carousel" id="carousel"></div></section>`;
+ $('#upload').onchange=e=>loadStartingMedia(e.target);$('#clearUpload').onclick=()=>{state.inputs[kind]={};delete s.extension;s.upload=null;s.mask=null;s.scale=0;if(kind==='video'&&s.textCanvas)Object.assign(s,s.textCanvas);if(kind==='image'){s.width=1024;s.height=1536;s.denoise=1;if(s.aspectLock)s.aspectLock=[s.width,s.height];}persist();renderGenerator();};
  if($('#maskButton'))$('#maskButton').onclick=openMask;if($('#clearMask'))$('#clearMask').onclick=()=>{delete inp.mask;delete s.mask;persist();renderGenerator();};
  $('#increment').onchange=e=>{s.increment=e.target.checked;persist();};
  $$('[data-setting]').forEach(el=>el.oninput=()=>{let key=el.dataset.setting;s[key]=['model','seed'].includes(key)?el.value:Number(el.value);$$(`[data-setting="${key}"]`).forEach(other=>{if(other!==el)other.value=el.value;});if(kind==='video'&&['frames','fps'].includes(key))updateVideo(false);persist();});
@@ -146,6 +147,7 @@ function renderGenerator(){
  $('#play').onclick=generate;$('#toLibrary').onclick=()=>navigate('library');$('#addLora').onclick=()=>{if(!catalog?.loras?.length)return toast('Connect to load your LoRAs.');s.loras.push({name:catalog.loras[0],strength:1,enabled:true});renderLoras();persist();};
  renderLoras();wirePrompts();bindSteps(s,maxSteps);
  if(kind==='image')bindCanvas(s);else if(textVideo)bindCanvas(s,32);else{bindVideoScale(s,inp);updateVideo(false);}
+ if(kind==='video')bindVideoTime(s);
  $$('#main > section.card,#latestPanel').forEach(installFold);
  renderResults();updateProgress();
 }
@@ -179,6 +181,27 @@ function renderLoras(){
   };
   if(el.type==='number')el.onblur=()=>{el.value=list[i].strength;};
  });
+}
+async function loadStartingMedia(field){
+ const file=field.files[0];
+ if(!file)return;
+ const video=file.type.startsWith('video/')||(!file.type&&window.Native?.pickedVideo?.());
+ if(page!=='video'||!video)return loadImage(file);
+ if(!connected||queueProtocol<11){toast('Connect to Windows beta 20 to import a video.');field.value='';return;}
+ if(state.pendingByKind?.video||state.pendingRequest?.kind==='video'){toast('Resolve the pending video submission first.');field.value='';return;}
+ const session=epoch;
+ const play=$('#play'),batch=$('#batchButton');
+ field.disabled=play.disabled=batch.disabled=true;
+ const status=document.createElement('p');
+ status.setAttribute('role','status');status.textContent='Uploading and preparing the source video…';
+ field.closest('.upload').after(status);
+ try{
+  const source=await new Promise((resolve,reject)=>{
+   const id=++rpcId;pending.set(id,{resolve,reject});Native.importVideo(id,file.size);
+  });
+  if(field.isConnected&&session===epoch)activateExtension(source);
+ }catch(e){if(field.isConnected)toast(e.message);}
+ finally{status.remove();field.value='';field.disabled=play.disabled=batch.disabled=false;}
 }
 async function loadImage(file){
  if(!file)return;const kind=page;
@@ -223,6 +246,29 @@ function extensionSource(ext){
  return '<div id="extensionSource">'+(poster?'<img alt="Source video" src="'+esc(poster)+'">':'')+
   '<b>Extend this clip</b><small>'+duration(ext.frames/ext.fps)+' · '+ext.width+' × '+ext.height+' · '+ext.fps+' FPS</small></div>';
 }
+function bindVideoTime(s){
+ const slider=$('#videoSeconds'),frames=$('[data-setting="frames"]'),fps=$('[data-setting="fps"]');
+ function bySeconds(seconds){
+  const wanted=Math.round(seconds*s.fps);
+  s.frames=limit(wanted,1,s.extension?3570:3592);
+  s.seconds=wanted===s.frames?seconds:s.frames/s.fps;s.exactFrames=true;
+  frames.value=s.frames;updateVideo(false);persist();
+ }
+ slider.oninput=()=>bySeconds(slider.valueAsNumber);
+ fps.oninput=()=>{
+  const rate=fps.valueAsNumber;
+  if(!Number.isFinite(rate)||rate<1||rate>120)return;
+  const seconds=s.seconds??s.frames/s.fps;
+  s.fps=rate;bySeconds(seconds);
+ };
+ fps.onblur=()=>{fps.value=s.fps;};
+ frames.oninput=()=>{
+  const count=frames.valueAsNumber;
+  if(!Number.isInteger(count)||count<1||count>Number(frames.max))return;
+  s.frames=count;s.exactFrames=true;s.seconds=count/s.fps;updateVideo(false);persist();
+ };
+ frames.onblur=()=>{frames.value=s.frames;};
+}
 function updateVideo(rescale){
  const s=state.settings.video,inp=state.inputs.video;
  if(rescale&&inp.data)[s.width,s.height]=videoSize(inp,s.scale);
@@ -233,8 +279,11 @@ function updateVideo(rescale){
  }
  $('#resolutionInfo').innerHTML='<strong>'+s.width+' × '+s.height+'</strong><small>'+aspect(s.width,s.height)+' · '+(s.width*s.height/1e6).toFixed(2)+' MP'+(high?' · Above pixel budget':'')+'</small>';
  $('#resolutionInfo').classList.toggle('overBudget',high);
- const frames=s.extension?s.frames:5+17*Math.max(0,Math.ceil((s.frames-5)/17));
- const valid=s.frames>=(s.extension?1:5)&&s.fps>=1;
+ const seconds=s.seconds??s.frames/s.fps;
+ $('#videoSeconds').value=seconds;
+ $('#secondsValue').textContent=Number(seconds.toFixed(2))+' s'+(seconds<1||seconds>20?' · custom':'');
+ const frames=s.extension||s.exactFrames?s.frames:5+17*Math.max(0,Math.ceil((s.frames-5)/17));
+ const valid=s.frames>=(s.extension||s.exactFrames?1:5)&&s.fps>=1;
  $('#durationInfo').innerHTML='<small>Duration</small><strong>'+(valid?(frames/s.fps).toFixed(2)+' s':'—')+'</strong><span>'+frames+' actual frames ÷ '+s.fps+' FPS'+(s.frames>300?' · Above 300 frames':'')+'</span>';
  if(s.extension){
   $('#durationInfo small').textContent='Duration to add';
@@ -270,6 +319,7 @@ async function generate(){
  snapshot.steps=limit(Math.round(Number(snapshot.steps))||1,1,stepLimit(kind));
  state.pendingByKind??={};if(state.pendingRequest){state.pendingByKind[state.pendingRequest.kind]=state.pendingRequest;delete state.pendingRequest;}
  let payload=state.pendingByKind[kind];
+ if(kind==='video'&&snapshot.exactFrames&&!snapshot.extension&&queueProtocol<11)return toast('Update Windows to beta 20 for exact video length.');
  if(snapshot.extension&&queueProtocol<9)return toast('Extend needs the new Windows worker. If you just updated, let the previous queue finish and reconnect after 90 seconds.');
  if(!payload&&kind==='video'&&!inp.data&&!snapshot.extension){
   if(queueProtocol<10)return toast('Text to video needs Windows beta 19. If you just updated, let the previous worker finish its queue.');

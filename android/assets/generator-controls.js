@@ -116,7 +116,7 @@ function bindSteps(s,maxSteps){
 }
 let lastTick=-Infinity;
 document.addEventListener('input',e=>{
- if(!e.isTrusted||!e.target.matches('#main input[type=range][data-setting],#main input[type=range][data-strength]'))return;
+ if(!e.isTrusted||!e.target.matches('#videoSeconds,#main input[type=range][data-setting],#main input[type=range][data-strength]'))return;
  const now=performance.now();
  if(now-lastTick>=48){lastTick=now;window.Native?.sliderTick?.();}
 });

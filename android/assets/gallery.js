@@ -91,20 +91,24 @@ function extendVideoButton(item){
    try{source=await api((queueProtocol>=9?'':'studio/')+'extension/'+item.id);}
    catch(error){if(/Unknown workspace request|HTTP 404/.test(error.message))throw Error('Install Windows beta 18 to extend videos.');throw error;}
    if(session!==epoch||!button.isConnected||viewerClosing)return;
-   const settings=state.settings.video;
-   if(!settings)throw Error('Wait for the PC to load your video settings.');
-   rememberTextCanvas(settings);
-   Object.assign(settings,{extension:source,upload:null,mask:null,scale:0,width:source.width,height:source.height,
-    fps:source.fps,frames:Math.min(3570,Math.max(1,Math.round(source.fps*3)))});
-   state.inputs.video={};
-   persist('video');navigate('video');
-   const panel=$('#extensionSource').closest('.foldPanel');
-   if(panel.classList.contains('folded'))$('.foldToggle',panel).click();
-   panel.scrollIntoView({block:'nearest'});
+   activateExtension(source);
   }catch(e){if(button.isConnected)toast(e.message);}
   finally{button.disabled=false;button.textContent='Extend video';}
  };
  return button;
+}
+
+function activateExtension(source){
+ const settings=state.settings.video;
+ if(!settings)throw Error('Wait for the PC to load your video settings.');
+ rememberTextCanvas(settings);
+ Object.assign(settings,{extension:source,upload:null,mask:null,scale:0,width:source.width,height:source.height,
+  fps:source.fps,seconds:3,exactFrames:true,frames:Math.max(1,Math.round(source.fps*3))});
+ state.inputs.video={};
+ persist('video');navigate('video');
+ const panel=$('#extensionSource').closest('.foldPanel');
+ if(panel.classList.contains('folded'))$('.foldToggle',panel).click();
+ panel.scrollIntoView({block:'nearest'});
 }
 
 // Both surfaces use the same player. Only verified, complete originals are playable.

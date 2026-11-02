@@ -97,6 +97,8 @@ class Workflows:
             if text_only and (width % 32 or height % 32):
                 raise ValueError('Video width and height must be multiples of 32.')
             frames = 5 + 17 * max(0, math.ceil((int(s['frames']) - 5)/17))
+            if s.get('exactFrames') and not 1<=int(s['frames'])<=3592:
+                raise ValueError('Choose 1–3592 output frames.')
             fps = float(s['fps'])
             if not 5 <= frames <= 3600 or not 1 <= fps <= 120:
                 raise ValueError('Frames must be 5–3592; FPS must be 1–120.')
@@ -141,6 +143,8 @@ class Workflows:
             images = node(14, 'VAEDecode', samples=latent, vae=vae)
             if extension:
                 images = node(51, 'ImageFromBatch', image=images, batch_index=GUIDE_FRAMES, length=extra)
+            elif s.get('exactFrames') and int(s['frames'])!=frames:
+                images = node(51, 'ImageFromBatch', image=images, batch_index=0, length=int(s['frames']))
             video = node(15, 'CreateVideo', images=images, fps=fps, bit_depth='auto', color_space='sRGB', codec='none')
             node(16, 'SaveVideo', video=video, filename_prefix=prefix, format='mp4', **{'format.codec': 'h264', 'format.codec.encoding': 'auto'})
         else:

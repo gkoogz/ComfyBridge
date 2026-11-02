@@ -21,8 +21,8 @@ using Microsoft.Win32;
 [assembly: System.Reflection.AssemblyTitle("Comfy Bridge")]
 [assembly: System.Reflection.AssemblyDescription("Phone to ComfyUI bridge")]
 [assembly: System.Reflection.AssemblyVersion("0.1.0.0")]
-[assembly: System.Reflection.AssemblyFileVersion("0.1.0.23")]
-[assembly: System.Reflection.AssemblyInformationalVersion("0.1.0-beta.19")]
+[assembly: System.Reflection.AssemblyFileVersion("0.1.0.24")]
+[assembly: System.Reflection.AssemblyInformationalVersion("0.1.0-beta.20")]
 
 partial class Bridge : ApplicationContext {
     static readonly string Home = AppDomain.CurrentDomain.BaseDirectory;
@@ -146,7 +146,7 @@ partial class Bridge : ApplicationContext {
                     if(!monitor.ContainsKey("protocol")||Convert.ToInt32(monitor["protocol"])<5)
                         throw new IOException("Finishing the previous bridge version. Jobs continue on the PC; new requests resume automatically after the old worker goes idle.");
                     var remaining=monitor["jobs"] as System.Collections.ICollection;
-                    if(Convert.ToInt32(monitor["protocol"])<10&&remaining!=null&&remaining.Count==0)
+                    if(Convert.ToInt32(monitor["protocol"])<11&&remaining!=null&&remaining.Count==0)
                         throw new IOException("Starting the updated bridge after the previous worker goes idle. Try again in about 90 seconds.");
                 }}
                 return;
@@ -201,7 +201,9 @@ partial class Bridge : ApplicationContext {
             if(identified&&path.StartsWith("/api/batch/")){lock(phones)watchers[device]=DateTime.UtcNow;}
             if(path=="/api/metrics"){await Reply(stream,200,Metrics());return;}
             string lengthText;long length=0;
-            if(headers.ContainsKey("Transfer-Encoding") || (headers.TryGetValue("Content-Length",out lengthText) && (!long.TryParse(lengthText,out length) || length<0 || length>55L*1024*1024))){await Reply(stream,413,"{\"error\":\"Invalid upload length\"}");return;}
+            bool videoUpload=path=="/api/upload-video";
+            long limit=(videoUpload?512L:55L)*1024*1024;
+            if(headers.ContainsKey("Transfer-Encoding") || (headers.TryGetValue("Content-Length",out lengthText) && (!long.TryParse(lengthText,out length) || length<0 || length>limit))){await Reply(stream,413,"{\"error\":\"Invalid upload length\"}");return;}
             if(path.StartsWith("/api/studio/")){
                 if(!identified){await Reply(stream,403,"{\"error\":\"A paired phone is required.\"}");return;}
                 await ReplyStudio(stream,path.Substring(12),device,length);return;
@@ -216,7 +218,8 @@ partial class Bridge : ApplicationContext {
                 if(long.TryParse(halves[0],out start)){if(halves.Length>1 && long.TryParse(halves[1],out end))req.AddRange(start,end);else req.AddRange(start);}
             }
             if(first[0]=="POST") {
-                req.ContentType="application/json";req.ContentLength=length;
+                req.ContentType=videoUpload?"application/octet-stream":"application/json";req.ContentLength=length;
+                if(videoUpload){req.AllowWriteStreamBuffering=false;req.Timeout=900000;req.ReadWriteTimeout=900000;}
                 using(var output=await req.GetRequestStreamAsync()) {
                     byte[] buffer=new byte[65536];long remaining=length;
                     while(remaining>0){int n=stream.Read(buffer,0,(int)Math.Min(buffer.Length,remaining));if(n<=0)throw new IOException("Incomplete request");await output.WriteAsync(buffer,0,n);remaining-=n;}

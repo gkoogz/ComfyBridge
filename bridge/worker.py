@@ -26,6 +26,8 @@ from queue_progress import LIVE_JOBS, positions, prepare
 from studio import prepare as prepare_studio, mark_skipping
 from workflows import Workflows
 from progress import Progress
+IMPORT_LOCK = asyncio.Lock()
+MAX_VIDEO_UPLOAD = 512*1024*1024
 
 BASE = Path(__file__).resolve().parent
 DATA = Path(os.environ.get('COMFYBRIDGE_DATA', str(Path(os.environ.get('LOCALAPPDATA', BASE)) / 'ComfyBridge')))
@@ -220,7 +222,9 @@ async def collect(job, entry):
                     finally:
                         stop.set()
                 elif settings.get('upload'):
-                    duration = (5+17*max(0, math.ceil((int(settings['frames'])-5)/17)))/float(settings['fps'])
+                    frames=int(settings['frames'])
+                    if not settings.get('exactFrames'):frames=5+17*max(0,math.ceil((frames-5)/17))
+                    duration = frames/float(settings['fps'])
                     # The submitted first frame is a reliable cover even without ffmpeg installed.
                     with Image.open(ROOT/'input'/settings['upload']) as img:
                         img.thumbnail((400, 400)); img.convert('RGB').save(thumb, quality=80)
@@ -456,7 +460,7 @@ async def api(request):
                 j['queuePosition'], j['queueTotal'] = counts[j['id']]
             if j['id']==ACTIVE and TRACKER and j['status'] not in ('complete','cancelled','error'):
                 j['progress'],j['current_node']=TRACKER.sample()
-        return web.json_response(dict(protocol=10,jobs=jobs, active=ACTIVE, preview=bool(PREVIEW), previewRevision=PREVIEW_REV,ownedComfy=bool(OWNED)))
+        return web.json_response(dict(protocol=11,jobs=jobs, active=ACTIVE, preview=bool(PREVIEW), previewRevision=PREVIEW_REV,ownedComfy=bool(OWNED)))
     if path.startswith('preview/'):
         job=str(uuid.UUID(path[8:]))
         after=int(request.query.get('after','-1'))
@@ -486,6 +490,8 @@ async def api(request):
         return web.json_response(await asyncio.to_thread(media_manifest, items, ROOT, DATA))
     if path.startswith('media/') or path.startswith('thumb/'):
         parts = path.split('/')
+        if parts[0]=='thumb' and re.fullmatch(r'upload-[0-9a-f]{64}',parts[1]):
+            return web.FileResponse(extension.source_path(DB,ROOT,parts[1]).with_suffix('.jpg'))
         item = rows('SELECT * FROM media WHERE id=?', (parts[1],))
         if not item:
             raise web.HTTPNotFound()
@@ -494,6 +500,25 @@ async def api(request):
         d = await request.json()
         DB.execute('UPDATE media SET archived=? WHERE id=?', (int(bool(d['archived'])), d['id'])); DB.commit()
         return web.json_response({'ok': True})
+    if path == 'upload-video' and request.method == 'POST':
+        size=request.content_length
+        if not size or not 0<size<=MAX_VIDEO_UPLOAD:
+            raise ValueError('Choose a video up to 512 MiB.')
+        folder=ROOT/'input/ComfyBridge/videos';folder.mkdir(parents=True,exist_ok=True)
+        raw=folder/(uuid.uuid4().hex+'.part')
+        digest=hashlib.sha256();received=0
+        try:
+            with raw.open('xb') as out:
+                async for chunk in request.content.iter_chunked(256*1024):
+                    received+=len(chunk)
+                    if received>size:raise ValueError('Invalid video size.')
+                    out.write(chunk);digest.update(chunk)
+            if received!=size:raise ValueError('Video transfer incomplete.')
+            async with IMPORT_LOCK:
+                source=await asyncio.to_thread(extension.import_clip,raw,folder,digest.hexdigest())
+            return web.json_response(source)
+        finally:
+            raw.unlink(missing_ok=True)
     if path == 'upload' and request.method == 'POST':
         d = await request.json()
         raw = base64.b64decode(d['data'].split(',')[-1], validate=True)

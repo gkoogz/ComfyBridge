@@ -38,6 +38,7 @@ public class MainActivity extends Activity {
  private final ReleaseUpdates updates=new ReleaseUpdates();
  private final ExecutorService heartbeat=Executors.newSingleThreadExecutor();
  private ValueCallback<Uri[]> chooser;
+ private volatile Uri pickedUri;
  private final ExecutorService mediaIO=Executors.newSingleThreadExecutor();
  private MediaShelf shelf;
  private int exportRequest=-1;private String exportArgs;
@@ -98,8 +99,17 @@ public class MainActivity extends Activity {
   web.setWebChromeClient(new WebChromeClient(){
    @Override public boolean onShowFileChooser(WebView w,ValueCallback<Uri[]> callback,FileChooserParams p){
     if(chooser!=null)chooser.onReceiveValue(null);chooser=callback;
-    Intent intent=new Intent(Intent.ACTION_OPEN_DOCUMENT).setType("image/*").addCategory(Intent.CATEGORY_OPENABLE);
-    startActivityForResult(intent,100);return true;
+    boolean videos=Arrays.stream(p.getAcceptTypes()).anyMatch(type->type.contains("video/"));
+    Intent picker=new Intent("android.provider.action.PICK_IMAGES");
+    if(!videos)picker.setType("image/*");
+    try{startActivityForResult(picker,100);}
+    catch(android.content.ActivityNotFoundException unavailable){
+     Intent files=new Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE);
+     files.setType(videos?"*/*":"image/*");
+     if(videos)files.putExtra(Intent.EXTRA_MIME_TYPES,new String[]{"image/*","video/*"});
+     startActivityForResult(files,100);
+    }
+    return true;
    }
   });
   web.loadUrl(ORIGIN+"/index.html");
@@ -134,6 +144,51 @@ public class MainActivity extends Activity {
   return c;
  }
  public class NativeApi {
+  @JavascriptInterface public boolean pickedVideo(){
+   Uri uri=pickedUri;
+   String type=uri==null?null:getContentResolver().getType(uri);
+   return type!=null && type.startsWith("video/");
+  }
+  @JavascriptInterface public void importVideo(int id,long size){
+   final Uri uri=pickedUri;
+   io.execute(()->{
+    HttpURLConnection conn=null;
+    File temp=null;
+    try{
+     if(uri==null||!"content".equals(uri.getScheme()))throw new IOException("Choose a video again.");
+     final long limit=512L*1024*1024;
+     long length=size;
+     if(length>limit)throw new IOException("Choose a video up to 512 MiB.");
+     if(length<=0){
+      temp=File.createTempFile("import-",".video",getCacheDir());
+      try(InputStream in=getContentResolver().openInputStream(uri);OutputStream out=new FileOutputStream(temp)){
+       copyVideo(in,out,limit);
+      }
+      length=temp.length();
+     }
+     if(length==0)throw new IOException("That video is empty.");
+     conn=connection("api/upload-video","POST");
+     conn.setDoOutput(true);conn.setFixedLengthStreamingMode(length);conn.setReadTimeout(900000);
+     conn.setRequestProperty("Content-Type","application/octet-stream");
+     try(InputStream in=temp==null?getContentResolver().openInputStream(uri):new FileInputStream(temp);
+         OutputStream out=conn.getOutputStream()){copyVideo(in,out,length);}
+     int code=conn.getResponseCode();
+     String result=read(code>=400?conn.getErrorStream():conn.getInputStream());
+     if(code>=400){
+      String reason=code==404?"Update the Windows bridge to beta 20 for video imports.":"Video import failed.";
+      try{reason=new JSONObject(result).optString("error",reason);}catch(org.json.JSONException ignored){}
+      throw new IOException("HTTP "+code+": "+reason);
+     }
+     callback(id,true,new JSONObject(result).toString());
+    }catch(Exception e){callback(id,false,friendly(e));}
+    finally{if(conn!=null)conn.disconnect();if(temp!=null)temp.delete();}
+   });
+  }
+  private void copyVideo(InputStream in,OutputStream out,long max)throws IOException{
+   if(in==null)throw new IOException("The selected video could not be opened.");
+   byte[] buffer=new byte[128*1024];long total=0;
+   for(int n;(n=in.read(buffer))!=-1;){total+=n;if(total>max)throw new IOException("Video exceeds the upload size.");out.write(buffer,0,n);}
+  }
   @JavascriptInterface public String notificationRoute(){return noticeRoute.getAndSet("");}
   @JavascriptInterface public String configuration(){
    JSONObject d=new JSONObject();try{String h=prefs.getString("host","");d.put("host",h);d.put("paired",h.startsWith("https://")&&!prefs.getString("key","").isEmpty());d.put("fingerprint",prefs.getString("fingerprint",""));d.put("device",device(prefs));d.put("name",android.os.Build.MODEL);}catch(Exception ignored){}return d.toString();
@@ -210,7 +265,10 @@ public class MainActivity extends Activity {
  @Override protected void onResume(){super.onResume();if(prefs!=null)JobWatch.resume(this);updates.foreground(this,io);}
  @Override protected void onPause(){updates.background();super.onPause();}
  @Override protected void onActivityResult(int request,int result,Intent data){super.onActivityResult(request,result,data);
-  if(request==100 && chooser!=null){chooser.onReceiveValue(result==RESULT_OK&&data!=null?new Uri[]{data.getData()}:null);chooser=null;}
+  if(request==100 && chooser!=null){
+   pickedUri=result==RESULT_OK&&data!=null?data.getData():null;
+   chooser.onReceiveValue(pickedUri==null?null:new Uri[]{pickedUri});chooser=null;
+  }
  }
  @Override public void onBackPressed(){web.evaluateJavascript("bridgeBack()",null);}
  @Override protected void onDestroy(){heartbeat.shutdownNow();io.shutdownNow();mediaIO.shutdownNow();super.onDestroy();}

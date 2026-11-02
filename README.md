@@ -1,12 +1,12 @@
 # ComfyBridge
 
-**[Open the beta 19 release page](https://github.com/gkoogz/ComfyBridge/releases/tag/v0.1.0-beta.19)** · [Download the Android APK](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.19/ComfyBridge-0.1.0-beta.19.apk) · [All releases](https://github.com/gkoogz/ComfyBridge/releases)
+**[Open the beta 20 release page](https://github.com/gkoogz/ComfyBridge/releases/tag/v0.1.0-beta.20)** · [Download the Android APK](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.20/ComfyBridge-0.1.0-beta.20.apk) · [All releases](https://github.com/gkoogz/ComfyBridge/releases)
 
 <img src="artwork/comfybridge.png" width="128" alt="ComfyBridge white cube and play icon on black">
 
 An Android remote for an existing Windows ComfyUI installation. The phone edits generation settings, uploads images and masks, and views results; the PC does the GPU work. A small Windows tray application wakes its Python worker on demand.
 
-**0.1.0-beta.19 is a personal-workflow beta**, adapted specifically to `Image gen.json` and `Video gen.json` in `E:\ComfyUI-Zluda\user\default\workflows`. It is not a general ComfyUI workflow importer. Models, LoRAs, workflow files, prompts, generated media, pairing credentials, and signing keys are not included in this repository or release.
+**0.1.0-beta.20 is a personal-workflow beta**, adapted specifically to `Image gen.json` and `Video gen.json` in `E:\ComfyUI-Zluda\user\default\workflows`. It is not a general ComfyUI workflow importer. Models, LoRAs, workflow files, prompts, generated media, pairing credentials, and signing keys are not included in this repository or release.
 
 The phone shows **PC connected** as soon as the bridge answers. Loading models and unavailable telemetry have their own messages. If the server or VPN drops, leave the phone app open: it retries automatically using the saved pairing. **Disconnect** or **Cancel reconnect** stops those retries.
 
@@ -50,7 +50,9 @@ Tap a Library tile to open its original at the largest size that fits without cr
 
 On Video, leave **Starting image** empty for text-to-video. Enter width and height or lock the aspect ratio. Video dimensions snap to multiples of 32. Upload a starting image for image-to-video, or clear it to return to your text-to-video canvas.
 
-**Extend video** in Latest result, Library, or Archive opens the Video editor with the source resolution and FPS locked. Enter the number of new frames and describe what happens next. The PC uses the last five source frames as a motion guide, trims the overlap, and publishes a new joined clip. The original stays in the library. Requires Android and Windows beta 18 or newer and the original silent video on the PC.
+Choose **Video length** or **Time to add** from 1–20 seconds. Changing FPS keeps the requested time and updates the editable frame count. A selected video opens Extend mode. Phone clips are uploaded to the PC (up to 512 MiB), oriented for playback, and padded to the MiniMax canvas grid. The PC needs FFmpeg on PATH or installed with Shotcut to import clips. Source audio is kept and the new segment is silent.
+
+**Extend video** in Latest result, Library, or Archive opens the Video editor with the source resolution and FPS locked. Enter the number of new frames and describe what happens next. The PC uses the last five source frames as a motion guide, trims the overlap, and publishes a new joined clip. The original stays in the library. The original must still be available on the PC.
 
 **Library** downloads the newest 100 generated images and videos combined, including archived items, while the paired app is open and connected. The count shows how many recent originals are ready. Open an older item while connected to fetch it on demand. Android plays videos from a complete private file after its size and SHA-256 match the PC; you can then play it or view an image offline, even after relaunching the app. A failed transfer or low storage leaves existing copies intact.
 
