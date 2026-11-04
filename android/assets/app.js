@@ -378,7 +378,7 @@ async function generate(){
   if(queueProtocol<10)return toast('Text to video needs Windows beta 19. If you just updated, let the previous worker finish its queue.');
   snapshot.upload=null;snapshot.mask=null;
  }
- submitting=true;$('#play').disabled=true;
+ submitting=true;$('#play').disabled=true;$('#batchButton').disabled=true;$('#runSpinner').hidden=false;
  try{
   if(!payload){
    if(inp.data&&!snapshot.upload)snapshot.upload=(await api('upload',{data:inp.data})).name;
@@ -390,7 +390,14 @@ async function generate(){
   if(payload.settings.increment&&String(s.seed)===String(payload.settings.seed))s.seed=((BigInt(s.seed)+BigInt(payload.count))%(2n**64n)).toString();
   persist(kind);Native.watchBatch(accepted.batch);toast('Added '+payload.count+' to the PC queue');if(page===kind){const seed=$('[data-setting="seed"]');if(seed)seed.value=s.seed;}await poll();
  }catch(e){if(/^HTTP (400|401|403|413)/.test(e.message)){delete state.pendingByKind[kind];persist();}if($('#genError'))$('#genError').textContent=e.message;toast(e.message);}
- finally{submitting=false;if($('#play'))$('#play').disabled=false;}
+ finally{
+  submitting=false;
+  if($('#play')){
+   $('#play').disabled=false;
+   $('#batchButton').disabled=false;
+   $('#runSpinner').hidden=!queueProgress().job;
+  }
+ }
 }
 async function poll(){
  if(!connected||pollBusy||document.hidden)return;const id=epoch,view=page;pollBusy=true;
@@ -417,7 +424,7 @@ function updateProgress(){if(!$('#play'))return;
  const {pending:pendingJobs,job:j,running,pct,label}=queueProgress();
  const mine=pendingJobs.find(job=>job.kind===page&&job.owner===info().device);
  $('#play').textContent=pendingJobs.length?'▶ Add to queue':'▶ Generate';$('#play').disabled=submitting;$('#batchButton').disabled=submitting;$('#stopBatch').hidden=!mine;$('#stopBatch').onclick=()=>mine&&stopBatch(mine.batch);
- $('#runSpinner').hidden=!j;$('#progressRow').hidden=!j;
+ $('#runSpinner').hidden=!submitting&&!j;$('#progressRow').hidden=!j;
  renderQueue();
  if(j){
   $('#progressFill').style.width=pct+'%';
