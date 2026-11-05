@@ -15,6 +15,8 @@ RUNTIME_SHA = '0b67f5c54f926952a49ba98bba5cfc7ae7dd2846e4c81b1e45befa9cd01ef944'
 MODEL = 'Qwen_Qwen3.5-9B-Q5_K_M.gguf'
 MODEL_SHA = 'a686d88ec1e6881f9bf161526826cd6d6874b7f0e80e0f79acf6144a132c5d7e'
 REVISION = '182be2fd6c7bc44887d88a91cb03ff009cc9f549'
+RANGED_MIN_BYTES = 256 * 1024 * 1024
+CHUNK_BYTES = 32 * 1024 * 1024
 
 
 def sha256(path):
@@ -33,10 +35,10 @@ def download(url, dest, digest, size=None):
     if part.is_file() and sha256(part) == digest:
         part.replace(dest)
         return
-    if size and size > 256 * 1024 * 1024:
+    if size and size > RANGED_MIN_BYTES:
         chunks = dest.with_suffix('.chunks')
         chunks.mkdir(exist_ok=True)
-        block = 32 * 1024 * 1024
+        block = CHUNK_BYTES
         offsets = list(range(0, size, block))
         # Reuse any complete prefix from an interrupted sequential download.
         if part.exists() and part.stat().st_size < size:
@@ -58,14 +60,18 @@ def download(url, dest, digest, size=None):
             count = end-offset+1
             if target.exists() and target.stat().st_size == count:
                 return
-            for attempt in range(6):
+            for attempt in range(12):
                 try:
-                    request = urllib.request.Request(url,headers={'User-Agent':'ComfyBridge-local-chat','Range':f'bytes={offset}-{end}'})
+                    resume = target.stat().st_size if target.exists() else 0
+                    if resume > count:
+                        resume = 0
+                    start = offset + resume
+                    request = urllib.request.Request(url,headers={'User-Agent':'ComfyBridge-local-chat','Range':f'bytes={start}-{end}'})
                     with urllib.request.urlopen(request,timeout=45) as response:
-                        if response.status != 206 or response.headers.get('Content-Range') != f'bytes {offset}-{end}/{size}':
+                        if response.status != 206 or response.headers.get('Content-Range') != f'bytes {start}-{end}/{size}':
                             raise OSError('Download server did not honor the requested byte range.')
-                        with target.open('wb') as output:
-                            received = 0
+                        with target.open('ab' if resume else 'wb') as output:
+                            received = resume
                             while packet := response.read(1024*1024):
                                 received += len(packet)
                                 if received > count:
@@ -80,10 +86,10 @@ def download(url, dest, digest, size=None):
                             print(f'{dest.name}: {progress[0]/1024**3:.1f} / {size/1024**3:.1f} GiB',flush=True)
                     return
                 except Exception as error:
-                    if attempt == 5:
+                    if attempt == 11:
                         raise
                     print(f'Retrying model range {offset}: {type(error).__name__}',flush=True)
-                    time.sleep(2+attempt)
+                    time.sleep(min(8,2+attempt))
         with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
             list(pool.map(fetch,offsets))
         digest_check = hashlib.sha256()

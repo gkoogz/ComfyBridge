@@ -248,7 +248,7 @@ class Engine:
         flags = subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
         args = [config['executable'], '-m', str(model), '--host', '127.0.0.1', '--port', str(port),
                 '--api-key', self.key, '--no-webui', '--jinja', '--ctx-size', '12288', '--parallel', '1',
-                '--n-gpu-layers', '999' if gpu else '0', '--threads', '6', '--threads-batch', '6',
+                '--n-gpu-layers', 'auto' if gpu else '0', '--fit-target', '1536', '--threads', '6', '--threads-batch', '6',
                 '--batch-size', '512', '--ubatch-size', '128', '--flash-attn', 'on', '--no-warmup',
                 '--reasoning-budget', '0', '--no-context-shift', '--prio', '-1', '--poll', '0']
         if not gpu:
