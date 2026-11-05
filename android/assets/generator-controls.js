@@ -5,7 +5,7 @@ let promptExpanded={},promptResizeObserver;
 function sizePrompt(field,expanded){
  const key=field.dataset.setting,button=$('[data-prompt-height="'+key+'"]');
  promptExpanded[key]=expanded;
- button.textContent=expanded?'⌃':'⌄';
+ button.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>';
  button.setAttribute('aria-expanded',String(expanded));
  button.setAttribute('aria-label',(expanded?'Collapse ':'Show all ')+key+' prompt');
  field.style.height='118px';
