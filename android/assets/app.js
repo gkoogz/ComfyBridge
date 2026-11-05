@@ -75,6 +75,8 @@ async function loadCatalog(){
  if(catalogLoading||catalog||!connected)return;
  const id=epoch;catalogLoading=true;serviceNote='PC connected. Loading ComfyUI models…';notice();
  try{const data=await api('catalog');if(id!==epoch)return;
+  Object.assign(data.defaults.video,{seconds:10,exactFrames:true,
+   frames:Math.max(1,Math.round(data.defaults.video.fps*10))});
   for(const kind of ['image','video'])if(!state.settings[kind])state.settings[kind]=structuredClone(data.defaults[kind]);
   catalog=data;retryCatalogAt=0;persist(null);serviceNote='';if(page==='video')refreshVideoModelField();if(page==='bridge'||!$('#play')&&['image','video'].includes(page))render();
  }catch(e){if(id!==epoch)return;retryCatalogAt=Date.now()+8000;serviceNote='Model list unavailable: '+e.message;}

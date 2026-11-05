@@ -103,7 +103,7 @@ function activateExtension(source){
  if(!settings)throw Error('Wait for the PC to load your video settings.');
  rememberTextCanvas(settings);
  Object.assign(settings,{extension:source,upload:null,mask:null,scale:0,width:source.width,height:source.height,
-  fps:source.fps,seconds:3,exactFrames:true,frames:Math.max(1,Math.round(source.fps*3))});
+  fps:source.fps,seconds:10,exactFrames:true,frames:Math.max(1,Math.round(source.fps*10))});
  state.inputs.video={};
  persist('video');navigate('video');
  const panel=$('#extensionSource').closest('.foldPanel');
