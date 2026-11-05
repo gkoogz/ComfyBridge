@@ -29,7 +29,7 @@ const assert=require('node:assert/strict'),path=require('node:path');
    await p.waitForFunction(kind=>page===kind&&!viewerOpen()&&!!$('#play'),kind);
    const result=await p.evaluate(()=>{
     const input=state.inputs[page];return [page,$('[data-setting=seed]').value,state.settings[page].positive,
-     input.width,input.height,!!input.mask,state.settings[page].batch,...calls];
+     input.width,input.height,!!input.mask,state.settings[page].batch,...calls.filter(route=>!route.startsWith('studio/provenance/'))];
    });
    assert.deepEqual(result,[kind,'18446744073709551615','saved prompt',64,96,kind==='image',1,'studio/replay/original-job']);
   }

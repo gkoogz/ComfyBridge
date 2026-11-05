@@ -98,13 +98,19 @@ final class MediaShelf {
  }
  Uri export(Context ctx,String id)throws Exception{
   JSONObject j=get(id);String hash=j.getString("local");File f=existing(id,hash,false);
-  boolean video="video".equals(j.getString("kind"));String name="ComfyBridge-"+id.substring(0,8)+"-"+hash.substring(0,8)+(video?".mp4":".png");ContentValues cv=new ContentValues();
+  boolean video="video".equals(j.getString("kind"));String name="ComfyBridge-"+id.substring(0,8)+"-"+hash.substring(0,8)+(video?".mp4":".png");
+  return exportStream(ctx,new FileInputStream(f),video,name);
+ }
+ Uri exportStream(Context ctx,InputStream source,boolean video,String name)throws Exception{
+  try(InputStream original=source){
+  ContentValues cv=new ContentValues();
   cv.put(MediaStore.MediaColumns.DISPLAY_NAME,name);cv.put(MediaStore.MediaColumns.MIME_TYPE,video?"video/mp4":"image/png");
   if(Build.VERSION.SDK_INT>=29){cv.put(MediaStore.MediaColumns.RELATIVE_PATH,"DCIM/ComfyBridge");cv.put(MediaStore.MediaColumns.IS_PENDING,1);}
   else{File folder=new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM),"ComfyBridge");folder.mkdirs();File dst=new File(folder,name);if(dst.exists())dst=new File(folder,System.currentTimeMillis()+"-"+name);cv.put(MediaStore.MediaColumns.DATA,dst.getPath());}
   ContentResolver resolver=ctx.getContentResolver();Uri out=resolver.insert(video?MediaStore.Video.Media.EXTERNAL_CONTENT_URI:MediaStore.Images.Media.EXTERNAL_CONTENT_URI,cv);if(out==null)throw new IOException("Cannot create a camera roll entry.");
-  try{try(InputStream in=new FileInputStream(f);OutputStream os=resolver.openOutputStream(out)){byte[] buf=new byte[131072];for(int k;(k=in.read(buf))!=-1;)os.write(buf,0,k);}
+  try{try(InputStream in=original;OutputStream os=resolver.openOutputStream(out)){byte[] buf=new byte[131072];for(int k;(k=in.read(buf))!=-1;)os.write(buf,0,k);}
    if(Build.VERSION.SDK_INT>=29){cv.clear();cv.put(MediaStore.MediaColumns.IS_PENDING,0);if(resolver.update(out,cv,null,null)!=1)throw new IOException("Camera roll did not confirm the save.");}
   }catch(Exception e){resolver.delete(out,null,null);throw e;}return out;
+  }
  }
 }

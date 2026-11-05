@@ -51,6 +51,14 @@ partial class Bridge {
         string reply=await StudioRequest(route,device,Encoding.UTF8.GetString(data)).ConfigureAwait(false);
         var json=new JavaScriptSerializer{MaxJsonLength=100000000};
         var envelope=json.Deserialize<System.Collections.Generic.Dictionary<string,object>>(reply);
+        if(envelope.ContainsKey("file")){
+            var file=(System.Collections.Generic.Dictionary<string,object>)envelope["file"];
+            using(var input=new FileStream((string)file["path"],FileMode.Open,FileAccess.Read,FileShare.Read)){
+                await Headers(stream,200,(string)file["mime"],input.Length,null);
+                await input.CopyToAsync(stream);
+            }
+            return;
+        }
         await Reply(stream,Convert.ToInt32(envelope["code"]),json.Serialize(envelope["data"]));
     }
 }

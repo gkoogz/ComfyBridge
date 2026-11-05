@@ -1,12 +1,12 @@
 # ComfyBridge
 
-**[Open the beta 31 release page](https://github.com/gkoogz/ComfyBridge/releases/tag/v0.1.0-beta.31)** · [Download the Android APK](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.30/ComfyBridge-0.1.0-beta.30.apk) · [Download Windows](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.31/ComfyBridge-Windows-0.1.0-beta.31.zip) · [All releases](https://github.com/gkoogz/ComfyBridge/releases)
+**[Open the beta 32 release page](https://github.com/gkoogz/ComfyBridge/releases/tag/v0.1.0-beta.32)** · [Download the Android APK](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.32/ComfyBridge-0.1.0-beta.32.apk) · [Download Windows](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.32/ComfyBridge-Windows-0.1.0-beta.32.zip) · [All releases](https://github.com/gkoogz/ComfyBridge/releases)
 
 <img src="artwork/comfybridge.png" width="128" alt="ComfyBridge white cube and play icon on black">
 
 An Android remote for an existing Windows ComfyUI installation. The phone edits generation settings, uploads images and masks, and views results; the PC does the GPU work. A small Windows tray application wakes its Python worker on demand.
 
-**0.1.0-beta.31 is a personal-workflow beta**, adapted specifically to `Image gen.json` and `Video gen.json` in `E:\ComfyUI-Zluda\user\default\workflows`. It is not a general ComfyUI workflow importer. Models, LoRAs, workflow files, prompts, generated media, pairing credentials, and signing keys are not included in this repository or release.
+**0.1.0-beta.32 is a personal-workflow beta**, adapted specifically to `Image gen.json` and `Video gen.json` in `E:\ComfyUI-Zluda\user\default\workflows`. It is not a general ComfyUI workflow importer. Models, LoRAs, workflow files, prompts, generated media, pairing credentials, and signing keys are not included in this repository or release.
 
 The phone shows **PC connected** as soon as the bridge answers. Loading models and unavailable telemetry have their own messages. If the server or VPN drops, leave the phone app open: it retries automatically using the saved pairing. **Disconnect** or **Cancel reconnect** stops those retries.
 
@@ -23,6 +23,14 @@ The compact header has extra vertical space and borderless window controls. Clic
 **↘** returns to the compact tray panel; **–** hides it; **×** quits the bridge. Collapse or hide disposes the WebView2 browser; the compact tray remains lightweight and queued generations continue. The expanded window can be moved by dragging its title bar. Microsoft Edge WebView2 Runtime is required (normally included with Windows/Edge).
 
 In the desktop Library viewer, **Open file location** selects the original in Windows Explorer. **Save a copy** opens a Windows save dialog. Videos play directly from the PC file with byte-range seeking. Desktop queue controls can manage batches submitted by either phone; phone cancellation ownership rules remain unchanged.
+
+## Generation details and origins
+
+Open a Library or Archive item: media actions are one horizontally scrolling row, with **Generation details & origins** visible beneath it. Scroll down for its prompts, mode, timestamps, elapsed time, model, seed, LoRAs, dimensions, sampler/VAE components when recorded, and video FPS/frame counts/duration. Each earlier generation shows the same details. Branches are collapsed lists; follow a branch to its result or continue scrolling toward the earliest recorded prompt.
+
+**Send to i2i**, **Make video**, **Extend video**, and **Regenerate** record their source relationships in new jobs. An original input or mask can be inspected full size and saved. Library-sourced inputs also link back to their Library item. Reusing an original imported input records another branch from that input. Actions load the editor without automatically generating.
+
+Details already opened are cached for offline reading. Original inputs need the PC connection on Android. Older generations show only recorded relationships: an unknown parent or missing input is not guessed. Update both Windows and Android for this feature; installing Windows preserves the worker and current queue.
 
 ## What is included
 

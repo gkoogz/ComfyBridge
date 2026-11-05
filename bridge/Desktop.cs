@@ -163,9 +163,15 @@ partial class Bridge {
             foreach(var row in rows){row["local"]=row["sha256"];row["recent"]=false;}
             return rows;
         }
-        string path=await DesktopFile(Convert.ToString(args["id"]),false);
+        string path=op=="exportSource"?await DesktopSource(Convert.ToString(args["job"]),Convert.ToString(args["role"])):await DesktopFile(Convert.ToString(args["id"]),false);
+        if(op=="fetch"){
+            var manifest=(Dictionary<string,object>)await DesktopApi("media-index","GET","");
+            var row=((IEnumerable)manifest["items"]).Cast<Dictionary<string,object>>().FirstOrDefault(x=>Convert.ToString(x["id"])==Convert.ToString(args["id"]));
+            if(row==null||!row.ContainsKey("sha256"))throw new IOException("The original file is unavailable.");
+            row["local"]=row["sha256"];row["recent"]=false;return row;
+        }
         if(op=="reveal"){Process.Start("explorer.exe","/select,\""+path+"\"");return true;}
-        if(op=="export"){
+        if(op=="export"||op=="exportSource"){
             using(var dialog=new SaveFileDialog{FileName=Path.GetFileName(path),Filter="Media file|*"+Path.GetExtension(path),OverwritePrompt=true}){
                 if(dialog.ShowDialog(monitor)!=DialogResult.OK)return false;
                 if(String.Equals(Path.GetFullPath(dialog.FileName),Path.GetFullPath(path),StringComparison.OrdinalIgnoreCase))throw new IOException("Choose a different location for the copy.");
@@ -174,6 +180,13 @@ partial class Bridge {
         }
         throw new InvalidOperationException("Unsupported desktop media action.");
     }
+    static async Task<string> DesktopSource(string job,string role){
+        Guid parsed;if(!Guid.TryParse(job,out parsed))throw new IOException("Invalid source generation.");
+        if(!new[]{"upload","mask","extension","upload-thumb","mask-thumb","extension-thumb"}.Contains(role))throw new IOException("Invalid source type.");
+        var reply=DesktopJson().Deserialize<Dictionary<string,object>>(await StudioRequest("source-file/"+job+"/"+role,DesktopDevice(),""));
+        if(!reply.ContainsKey("file"))throw new IOException(Convert.ToString(((Dictionary<string,object>)reply["data"])["error"]));
+        return Convert.ToString(((Dictionary<string,object>)reply["file"])["path"]);
+    }
     async void DesktopResource(WebView2 view,CoreWebView2WebResourceRequestedEventArgs e){
         var deferral=e.GetDeferral();
         try{
@@ -181,9 +194,9 @@ partial class Bridge {
             if(uri.GetLeftPart(UriPartial.Authority)!=DesktopOrigin){e.Response=env.CreateWebResourceResponse(Stream.Null,403,"Forbidden","");return;}
             string path=Uri.UnescapeDataString(uri.AbsolutePath);
             if(path.Contains("..")||path.Contains("\\"))throw new IOException("Invalid resource.");
-            if(path.StartsWith("/local/")){
-                var parts=path.Split('/');if(parts.Length!=5)throw new IOException("Invalid media resource.");
-                string file=await DesktopFile(parts[3],parts[2]=="thumb");
+            if(path.StartsWith("/local/")||path.StartsWith("/source/")){
+                var parts=path.Split('/');bool source=path.StartsWith("/source/");if(parts.Length!=(source?4:5))throw new IOException("Invalid media resource.");
+                string file=source?await DesktopSource(parts[2],parts[3]):await DesktopFile(parts[3],parts[2]=="thumb");
                 var stream=new FileStream(file,FileMode.Open,FileAccess.Read,FileShare.ReadWrite|FileShare.Delete);
                 long start=0,end=stream.Length-1;bool partial=false;
                 if(e.Request.Headers.Contains("Range")){

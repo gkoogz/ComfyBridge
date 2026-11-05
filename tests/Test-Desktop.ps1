@@ -12,13 +12,20 @@ Copy-Item "$root\bridge\*.py" $test -Force
 & $FFmpeg -nostdin -v error -y -f lavfi -i 'color=c=0x99ddcc:s=320x240:r=24:d=3' -c:v libx264 -pix_fmt yuv420p "$test\fixture\root\output\ComfyBridge\fixture.mp4"
 if($LASTEXITCODE){throw 'Fixture video creation failed'}
 @'
-import sqlite3,sys
+import sqlite3,sys,json
+from PIL import Image
 from pathlib import Path
 p=Path(sys.argv[1])/'fixture'
 with sqlite3.connect(p/'ComfyBridge/library.sqlite') as db:
-    db.execute('CREATE TABLE IF NOT EXISTS media(id,path,thumbnail)')
+    db.execute('DROP TABLE IF EXISTS media')
+    db.execute('CREATE TABLE media(id,path,thumbnail,job,kind,created,duration,archived)')
+    db.execute('CREATE TABLE IF NOT EXISTS jobs(id,kind,created,status,settings)')
+    db.execute('DELETE FROM jobs')
+    source=p/'root/input/ComfyBridge/original.png';source.parent.mkdir(parents=True,exist_ok=True)
+    Image.new('RGB',(32,48),'green').save(source)
+    db.execute('INSERT INTO jobs VALUES(?,?,?,?,?)',('11111111-1111-4111-8111-111111111111','image',100,'complete',json.dumps({'upload':'ComfyBridge/original.png','positive':'Fixture prompt'})))
     db.execute('DELETE FROM media')
-    db.execute('INSERT INTO media VALUES(?,?,?)',('3f59770998574a8c80c18ed7d02b5389',str(p/'root/output/ComfyBridge/fixture.mp4'),''))
+    db.execute('INSERT INTO media(id,path,thumbnail) VALUES(?,?,?)',('3f59770998574a8c80c18ed7d02b5389',str(p/'root/output/ComfyBridge/fixture.mp4'),''))
 '@ | & $Python - $test
 if($LASTEXITCODE){throw 'Fixture database creation failed'}
 $files=@('bridge/Tray.cs','bridge/Panel.cs','bridge/Studio.cs','bridge/ReleaseUpdates.cs','bridge/Pairing.cs','bridge/Desktop.cs','tests/DesktopTests.cs') | ForEach-Object {Join-Path $root $_}

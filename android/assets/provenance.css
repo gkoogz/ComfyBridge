@@ -1,0 +1,24 @@
+#viewer{overflow-y:auto;overscroll-behavior:contain}
+.mediaHero{position:relative;height:calc(100dvh - var(--status-inset) - 32px);min-height:260px}
+.desktop .mediaHero{height:calc(100dvh - var(--desktop-top) - 32px)}
+.mediaHero>.asset{height:100%}
+.mediaHero .viewerFoot{padding:20px 8px 8px}
+#viewer .viewerActions{flex-wrap:nowrap;overflow-x:auto;justify-content:flex-start;gap:6px;scrollbar-width:thin}
+#viewer .viewerActions button{flex:0 0 auto;white-space:nowrap;padding:7px 10px;min-height:38px;font-size:12px;border-radius:10px}
+.provenance{background:var(--bg);padding:0 12px 32px;color:var(--text);user-select:text}
+.detailsHint{display:block;text-align:left;width:100%;padding:4px 0 10px;border:0;background:transparent;color:var(--mint);font-size:13px;min-height:32px}
+.lineageNode{background:var(--panel);border:1px solid var(--line);padding:14px;border-radius:12px;overflow-wrap:anywhere}
+.lineageHeading{display:flex;align-items:center;gap:9px}.lineageHeading h3{margin:0;font-size:16px}
+.lineageDot{width:10px;height:10px;border-radius:50%;background:var(--mint);flex:none}
+.recipeFacts{display:grid;grid-template-columns:repeat(auto-fit,minmax(135px,1fr));gap:10px;margin:16px 0}
+.recipeFacts dt{font-size:11px;color:var(--muted)}.recipeFacts dd{margin:0;font-size:13px;white-space:pre-wrap}
+.lineageNode h4{font-size:12px;color:var(--muted);margin:14px 0 5px}.recipePrompt{white-space:pre-wrap;font-size:14px;margin:0;user-select:text}
+.lineageNode li{font-size:12px}.lineageEdge{padding:12px 0 12px 15px;border-left:2px solid #a3f2cc55;margin-left:18px;color:var(--mint);font-size:12px}
+.lineageRoot{color:var(--muted);font-size:12px;padding-left:15px}.recipeSources{display:flex;flex-wrap:wrap;gap:10px;margin-top:12px}
+.sourceCard{display:flex;flex-direction:column;max-width:150px}.sourceCard button{padding:6px;font-size:11px}.sourceCard img{display:block;width:120px;height:90px;object-fit:contain;margin:0 auto 5px}
+.recipeActions{display:flex;gap:6px;overflow:auto;margin-top:12px}.recipeActions button{white-space:nowrap;flex:none;font-size:12px;padding:6px 9px;min-height:36px}
+.recipeBranches>button{display:block;text-align:left;margin:5px 0;font-size:12px;max-width:100%}
+.sourceInspection>img,.sourceInspection>video{display:block;width:100%;height:calc(100dvh - 190px);object-fit:contain}
+.provenance .muted{font-size:12px}.sourceInspection{height:100%;overflow:auto}
+
+.recipeBranches summary{cursor:pointer;color:var(--mint);font-size:12px;margin-top:14px}.branchList{max-height:250px;overflow:auto}.branchList>button{display:block;font-size:12px;text-align:left;width:100%;margin-top:5px}

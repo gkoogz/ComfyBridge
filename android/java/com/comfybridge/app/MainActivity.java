@@ -79,9 +79,9 @@ public class MainActivity extends Activity {
       if(parts[2].equals("video"))return new WebResourceResponse("video/mp4",null,200,"OK",Collections.singletonMap("Content-Length",Long.toString(f.length())),new FileInputStream(f));
       return new WebResourceResponse(thumb?"image/jpeg":"image/png",null,new FileInputStream(f));
      }
-     if(path.startsWith("/thumb/")||path.equals("/preview")||path.startsWith("/preview/")){
+     if(path.startsWith("/source/")||path.startsWith("/thumb/")||path.equals("/preview")||path.startsWith("/preview/")){
       String query=uri.getEncodedQuery();
-      HttpURLConnection c=connection("api"+path+(query==null?"":"?"+query),"GET");String range=r.getRequestHeaders().get("Range");if(range!=null)c.setRequestProperty("Range",range);
+      HttpURLConnection c=connection((path.startsWith("/source/")?"api/studio/source-file/"+path.substring(8):"api"+path)+(query==null?"":"?"+query),"GET");String range=r.getRequestHeaders().get("Range");if(range!=null)c.setRequestProperty("Range",range);
       int code=c.getResponseCode();Map<String,String> headers=new HashMap<>();
       for(String h:new String[]{"Content-Length","Content-Range","Accept-Ranges","Cache-Control","X-Preview-Revision"})if(c.getHeaderField(h)!=null)headers.put(h,c.getHeaderField(h));
       String mime=c.getContentType();if(mime==null)mime="application/octet-stream";mime=mime.split(";")[0];
@@ -90,7 +90,7 @@ public class MainActivity extends Activity {
       return new WebResourceResponse(mime,null,code,c.getResponseMessage()==null?"Response":c.getResponseMessage(),headers,new FilterInputStream(input){@Override public void close()throws IOException{super.close();c.disconnect();}});
      }
      if(path.equals("/"))path="/index.html";
-     if(!Arrays.asList("/index.html","/style.css","/app.js","/profile.js","/gallery.js","/gallery.css","/studio.css","/studio.js","/notepad.js","/live-image.js","/generator-controls.js","/generator.css").contains(path))return response(404,"Not Found","text/plain",new byte[0]);
+     if(!Arrays.asList("/index.html","/style.css","/app.js","/profile.js","/gallery.js","/gallery.css","/studio.css","/studio.js","/notepad.js","/live-image.js","/generator-controls.js","/generator.css","/desktop.js","/desktop.css","/provenance.js","/provenance.css").contains(path))return response(404,"Not Found","text/plain",new byte[0]);
      String mime=path.endsWith("css")?"text/css":path.endsWith("js")?"application/javascript":"text/html";
      return new WebResourceResponse(mime,"UTF-8",getAssets().open(path.substring(1)));
     }catch(Exception e){return response(503,"Unavailable","text/plain",new byte[0]);}
@@ -143,6 +143,7 @@ public class MainActivity extends Activity {
   }
   return c;
  }
+ String exportOperation="export";
  public class NativeApi {
   @JavascriptInterface public boolean pickedVideo(){
    Uri uri=pickedUri;
@@ -231,8 +232,8 @@ public class MainActivity extends Activity {
    runOnUiThread(()->web.evaluateJavascript(js,null));
   });}
   @JavascriptInterface public void localMedia(int request,String op,String args){
-   if(op.equals("export")&&android.os.Build.VERSION.SDK_INT<29&&checkSelfPermission(android.Manifest.permission.WRITE_EXTERNAL_STORAGE)!=android.content.pm.PackageManager.PERMISSION_GRANTED){
-    runOnUiThread(()->{exportRequest=request;exportArgs=args;requestPermissions(new String[]{android.Manifest.permission.WRITE_EXTERNAL_STORAGE},104);});return;
+   if((op.equals("export")||op.equals("exportSource"))&&android.os.Build.VERSION.SDK_INT<29&&checkSelfPermission(android.Manifest.permission.WRITE_EXTERNAL_STORAGE)!=android.content.pm.PackageManager.PERMISSION_GRANTED){
+    runOnUiThread(()->{exportRequest=request;exportArgs=args;exportOperation=op;requestPermissions(new String[]{android.Manifest.permission.WRITE_EXTERNAL_STORAGE},104);});return;
    }
    mediaIO.execute(()->{try{
     MediaShelf m=shelf();JSONObject d=new JSONObject(args);String id=d.optString("id");Object result=new JSONObject();
@@ -244,6 +245,14 @@ public class MainActivity extends Activity {
      case "drop":result=m.discard(id,d.getString("local"));break;
 
      case "export":m.export(MainActivity.this,id);break;
+     case "exportSource":{
+      String job=d.getString("job"),role=d.getString("role");UUID.fromString(job);
+      if(!Arrays.asList("upload","mask","extension").contains(role))throw new IOException("Invalid source type.");
+      HttpURLConnection conn=connection("api/studio/source-file/"+job+"/"+role,"GET");
+      try{if(conn.getResponseCode()!=200)throw new IOException("The saved source is unavailable on the PC.");
+       m.exportStream(MainActivity.this,conn.getInputStream(),role.equals("extension"),"ComfyBridge-source-"+job+"-"+role+(role.equals("extension")?".mp4":".png"));
+      }finally{conn.disconnect();}break;
+     }
      default:throw new IOException("Unknown media action.");
     }callback(request,true,result.toString());
    }catch(Exception e){callback(request,false,friendly(e));}});
@@ -251,7 +260,7 @@ public class MainActivity extends Activity {
  }
  private void readRoute(Intent i){String v=i.getStringExtra("view");if("queue".equals(v)||"library".equals(v))noticeRoute.set(v);i.removeExtra("view");}
  @Override protected void onNewIntent(Intent i){super.onNewIntent(i);setIntent(i);readRoute(i);if(web!=null)web.evaluateJavascript("window.openJobAlert?.()",null);}
- @Override public void onRequestPermissionsResult(int code,String[] names,int[] grants){super.onRequestPermissionsResult(code,names,grants);if(code==105){JobWatch.resume(this);return;}if(code==104&&exportRequest!=-1){int id=exportRequest;exportRequest=-1;if(grants.length>0&&grants[0]==android.content.pm.PackageManager.PERMISSION_GRANTED)new NativeApi().localMedia(id,"export",exportArgs);else new NativeApi().callback(id,false,"Camera roll access denied. Your private copy was kept.");}}
+ @Override public void onRequestPermissionsResult(int code,String[] names,int[] grants){super.onRequestPermissionsResult(code,names,grants);if(code==105){JobWatch.resume(this);return;}if(code==104&&exportRequest!=-1){int id=exportRequest;exportRequest=-1;if(grants.length>0&&grants[0]==android.content.pm.PackageManager.PERMISSION_GRANTED)new NativeApi().localMedia(id,exportOperation,exportArgs);else new NativeApi().callback(id,false,"Camera roll access denied. Your private copy was kept.");}}
  static String read(InputStream input)throws IOException{if(input==null)return "";try(InputStream in=input;ByteArrayOutputStream out=new ByteArrayOutputStream()){byte[] b=new byte[8192];int n;while((n=in.read(b))!=-1)out.write(b,0,n);return out.toString("UTF-8");}}
  private void alerts(boolean explicit){
   JobWatch.channels(this);

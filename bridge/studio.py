@@ -11,6 +11,7 @@ import time
 import uuid
 import urllib.request
 import recipes
+import provenance
 from queue_eta import QueueEta
 
 
@@ -286,6 +287,13 @@ def serve():
                 result=dict(seconds=seconds,observed=bool(row and row['observed']))
             elif route.startswith('replay/'):
                 result=replay(db,Path(config['comfyRoot']),route[7:])
+            elif route.startswith('provenance/'):
+                result=provenance.node(db,route.split('/',1)[1])
+            elif route.startswith('source-file/'):
+                _,job,role=route.split('/')
+                source=provenance.source_file(db,Path(config['comfyRoot']),data,job,role)
+                print(json.dumps(dict(code=200,file=source)),flush=True)
+                continue
             elif route.startswith('extension/'):
                 # Let the editor open while an older worker finishes its queue.
                 import extension

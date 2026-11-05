@@ -66,7 +66,7 @@ function makeVideoButton(item){
    if(!response.ok)throw Error(window.Desktop?'Could not read the original image file.':'Could not read the original image from the phone.');
    const input=await readStartingImage(await response.blob());
    if(session!==epoch||!button.isConnected||viewerClosing)return;
-   setStartingImage('video',input);
+   setStartingImage('video',input);state.settings.video.sourceMedia=item.id;persist('video');
    navigate('video');
    const panel=$('#upload')?.closest('.foldPanel');
    if(panel?.classList.contains('folded'))$('.foldToggle',panel).click();
@@ -91,7 +91,7 @@ function extendVideoButton(item){
    try{source=await api((queueProtocol>=9?'':'studio/')+'extension/'+item.id);}
    catch(error){if(/Unknown workspace request|HTTP 404/.test(error.message))throw Error('Install Windows beta 18 to extend videos.');throw error;}
    if(session!==epoch||!button.isConnected||viewerClosing)return;
-   activateExtension(source);
+   activateExtension(source);state.settings.video.sourceMedia=item.id;persist('video');
   }catch(e){if(button.isConnected)toast(e.message);}
   finally{button.disabled=false;button.textContent='Extend video';}
  };
@@ -100,7 +100,9 @@ function extendVideoButton(item){
 
 function activateExtension(source){
  const settings=state.settings.video;
+
  if(!settings)throw Error('Wait for the PC to load your video settings.');
+ delete settings.sourceMedia;delete settings.sourceOrigin;delete settings.replayOf;
  rememberTextCanvas(settings);
  Object.assign(settings,{extension:source,upload:null,mask:null,scale:0,width:source.width,height:source.height,
   fps:source.fps,seconds:10,exactFrames:true,frames:Math.max(1,Math.round(source.fps*10))});
@@ -197,8 +199,10 @@ function renderResults(){
 }
 function openMedia(item){
  const view=$('#viewer'),work=$('#workspace');if(viewerClosing)return;
+ view.releaseFooter?.();view.releaseProvenance?.();$('video',view)?.pause();
  view.className='';view.hidden=false;work.inert=true;work.classList.add('behind');galleryDirty=false;
- view.innerHTML='<div class="asset"></div><div class="viewerTop"><button id="viewerBack" aria-label="Back to collection">‹</button><div><b>'+esc(item.kind==='video'?'Video':'Image')+'</b><small>'+esc(new Date(item.created*1000).toLocaleString())+'</small></div></div><div class="viewerFoot"><div id="mediaWarning"></div><div class="viewerActions"><button id="saveMedia">↓　Save to camera roll</button><button id="archiveMedia">'+(item.archived?'Unarchive':'Archive')+'</button></div><div id="mediaMessage" role="status"></div></div>';
+ view.scrollTop=0;
+ view.innerHTML='<div class="mediaHero"><div class="asset"></div><div class="viewerTop"><button id="viewerBack" aria-label="Back to collection">‹</button><div><b>'+esc(item.kind==='video'?'Video':'Image')+'</b><small>'+esc(new Date(item.created*1000).toLocaleString())+'</small></div></div><div class="viewerFoot"><div id="mediaWarning"></div><div class="viewerActions"><button id="saveMedia">↓　Save to camera roll</button><button id="archiveMedia">'+(item.archived?'Unarchive':'Archive')+'</button></div><div id="mediaMessage" role="status"></div></div></div>';
  const current=()=>library.find(x=>x.id===item.id)||item;
  const stillHere=()=>viewerOpen()&&$('#viewerBack')===back;
  const back=$('#viewerBack');
@@ -210,17 +214,17 @@ function openMedia(item){
  archive.onclick=async()=>{archive.disabled=true;try{await api('archive',{id:item.id,archived:!item.archived});updateItem({...current(),archived:!item.archived});if(stillHere())closeViewer();await syncShelf(true);}catch(e){msg(e.message);archive.disabled=false;}};
  $('#saveMedia').onclick=async e=>{const b=e.currentTarget;b.disabled=true;try{if(!current().local)throw Error(window.Desktop?'The original file is not available.':'Wait for the phone copy to finish downloading.');const saved=await local('export',{id:item.id});msg(window.Desktop?(saved?'Copy saved.':'Save cancelled.'):'Saved to DCIM/ComfyBridge in your camera roll.');}catch(err){msg(err.message);}finally{b.disabled=false;}};
  if(window.Desktop){$('#saveMedia').textContent='Save a copy';const reveal=document.createElement('button');reveal.id='revealMedia';reveal.textContent='Open file location';reveal.onclick=async()=>{try{await local('reveal',{id:item.id});}catch(e){msg(e.message);}};$('.viewerActions',view).append(reveal);}
- $('#saveMedia').after(item.kind==='image'?makeVideoButton(item):extendVideoButton(item));
+ $('#saveMedia').after(...inputActions(item));
  const regenerate=document.createElement('button');
  regenerate.type='button';regenerate.textContent='↗ Regenerate';
  regenerate.onclick=()=>restoreGeneration(current().job,regenerate,()=>stillHere()&&!viewerClosing);
  $('.viewerActions',view).append(regenerate);
  if(item.warning){const w=$('#mediaWarning');w.textContent=warningText[item.warning]+' ';const b=document.createElement('button');w.append(b);const replace=item.warning==='changed';b.textContent=replace?'Replace…':'Remove copy…';b.disabled=replace&&!connected;b.onclick=()=>{msg('Save to the camera roll first if you want to keep this version.');b.textContent=replace?'Confirm replacement':'Confirm removal';b.onclick=async()=>{b.disabled=true;try{const j=await local(replace?'replace':'drop',{id:item.id,local:item.local,sha256:item.sha256});updateItem(j);if(stillHere())closeViewer();}catch(e){msg(e.message);b.disabled=false;}};};}
- mountAsset($('.asset',view),item,true);
+ mountAsset($('.asset',view),item,true);initProvenance(view,item);
 }
 function closeViewer(immediate=false){
  const view=$('#viewer'),work=$('#workspace');if(view.hidden||viewerClosing)return;viewerClosing=true;
- const finish=()=>{view.releaseFooter?.();view.hidden=true;view.replaceChildren();view.className='';view.style.transform='';work.style.transform='';work.classList.remove('behind');work.inert=false;viewerClosing=false;
+ const finish=()=>{view.releaseFooter?.();view.releaseProvenance?.();view.hidden=true;view.replaceChildren();view.className='';view.style.transform='';work.style.transform='';work.classList.remove('behind');work.inert=false;viewerClosing=false;
  if(galleryDirty&&page==='library')renderLibrary();galleryDirty=false;if(originTile?.isConnected)originTile.focus({preventScroll:true});originTile=null;};
  $('video',view)?.pause();if(window.Desktop||immediate||reduceMotion()){finish();return;}
  const from=view.getBoundingClientRect().left;

@@ -39,6 +39,16 @@ partial class Bridge {
                 await web.ExecuteScriptAsync("window.powerCheck=null;api('ping').then(()=>window.powerCheck=true,e=>window.powerCheck=e.message);");
                 await Until(async()=>await web.ExecuteScriptAsync("window.powerCheck!==null")=="true","power on listener");
                 if(await web.ExecuteScriptAsync("window.powerCheck")!="true"||PhoneCount()!=0)throw new Exception("Desktop power or identity failed");
+                await web.ExecuteScriptAsync(@"window.sourceTest=null;(async()=>{try{
+                    const meta=await api('studio/provenance/11111111-1111-4111-8111-111111111111');
+                    if(meta.settings.positive!=='Fixture prompt')throw Error('Metadata RPC failed');
+                    const r=await fetch('/source/11111111-1111-4111-8111-111111111111/upload');
+                    if(!r.ok)throw Error('Source fetch failed');const blob=await r.blob();const url=URL.createObjectURL(blob);
+                    const image=new Image();image.src=url;await image.decode();URL.revokeObjectURL(url);
+                    if(image.naturalWidth!==32)throw Error('Original image dimensions changed');window.sourceTest=true;
+                }catch(e){window.sourceTest=e.message;}})();");
+                await Until(async()=>await web.ExecuteScriptAsync("window.sourceTest!==null")=="true","source inspection");
+                if(await web.ExecuteScriptAsync("window.sourceTest")!="true")throw new Exception(await web.ExecuteScriptAsync("window.sourceTest"));
                 await web.ExecuteScriptAsync("document.querySelector('#desktopPower').click();");
                 await Until(async()=>!online&&await web.ExecuteScriptAsync("document.querySelector('#desktopPower').getAttribute('aria-pressed')==='false'")=="true","power off");
                 await web.ExecuteScriptAsync(@"window.fixtureResult=null;(async()=>{
