@@ -31,7 +31,7 @@ function renderLibrary(){
    if(tile!==grid.children[i])grid.insertBefore(tile,grid.children[i]||null);
   }
   old.forEach(t=>t.remove());
-  if(!items.length)grid.innerHTML='<p class="galleryEmpty">'+(archived?'No archived items.':'Your phone generations will appear here.')+'</p>';
+  if(!items.length)grid.innerHTML='<p class="galleryEmpty">'+(archived?'No archived items.':(window.Desktop?'Your generations will appear here.':'Your phone generations will appear here.'))+'</p>';
   if(anchor&&anchor.isConnected)w.scrollTop+=anchor.getBoundingClientRect().top-top;
   grid.dataset.version=version;grid.dataset.archive=String(archived);
  }
@@ -63,7 +63,7 @@ function makeVideoButton(item){
     original=await fetchOriginal(item.id);
    }
    const response=await fetch('/local/image/'+original.id+'/'+original.local);
-   if(!response.ok)throw Error('Could not read the original image from the phone.');
+   if(!response.ok)throw Error(window.Desktop?'Could not read the original image file.':'Could not read the original image from the phone.');
    const input=await readStartingImage(await response.blob());
    if(session!==epoch||!button.isConnected||viewerClosing)return;
    setStartingImage('video',input);
@@ -147,7 +147,7 @@ function mountAsset(host,item,isViewer){
    const toggle=async()=>{
     if(!video.paused){video.pause();return;}if(preparing)return;preparing=true;
     try{
-     if(!playbackHandles.has(video)){
+     if(window.Desktop){if(!video.src)video.src='/local/video/'+id+'/'+item.local;}else if(!playbackHandles.has(video)){
       middle.textContent='…';middle.disabled=true;
       // WebView can stall while seeking larger intercepted MP4 streams. A Blob gives
       // the decoder a seekable local source without base64 or an extra native screen.
@@ -165,7 +165,7 @@ function mountAsset(host,item,isViewer){
    video.onplay=()=>{middle.hidden=true;btn.textContent='Ⅱ';btn.setAttribute('aria-label','Pause');chrome(false);};
    video.onpause=video.onended=()=>{middle.hidden=false;btn.textContent='▶';btn.setAttribute('aria-label','Play');chrome(true);};
    video.ontimeupdate=video.onloadedmetadata=tick;tick();
-   video.onerror=()=>{if(host.isConnected){chrome(true);msg('Android could not decode this video. Your phone copy is still available to save.');}};
+   video.onerror=()=>{if(host.isConnected){chrome(true);msg(window.Desktop?'Windows could not decode this video. Use Open file location to play it in another app.':'Android could not decode this video. Your phone copy is still available to save.');}};
    if(play)await toggle();
   }catch(e){if(host.isConnected){msg(e.message);const retry=document.createElement('button');retry.className='assetRetry';retry.textContent='Try again';retry.onclick=()=>load(true,play);host.append(retry);}}
  }
@@ -208,7 +208,8 @@ function openMedia(item){
  $('#viewerBack').onclick=()=>closeViewer();$('#viewerBack').focus({preventScroll:true});
  const archive=$('#archiveMedia');archive.disabled=!connected||item.source==='missing';
  archive.onclick=async()=>{archive.disabled=true;try{await api('archive',{id:item.id,archived:!item.archived});updateItem({...current(),archived:!item.archived});if(stillHere())closeViewer();await syncShelf(true);}catch(e){msg(e.message);archive.disabled=false;}};
- $('#saveMedia').onclick=async e=>{const b=e.currentTarget;b.disabled=true;try{if(!current().local)throw Error('Wait for the phone copy to finish downloading.');await local('export',{id:item.id});msg('Saved to DCIM/ComfyBridge in your camera roll.');}catch(err){msg(err.message);}finally{b.disabled=false;}};
+ $('#saveMedia').onclick=async e=>{const b=e.currentTarget;b.disabled=true;try{if(!current().local)throw Error(window.Desktop?'The original file is not available.':'Wait for the phone copy to finish downloading.');const saved=await local('export',{id:item.id});msg(window.Desktop?(saved?'Copy saved.':'Save cancelled.'):'Saved to DCIM/ComfyBridge in your camera roll.');}catch(err){msg(err.message);}finally{b.disabled=false;}};
+ if(window.Desktop){$('#saveMedia').textContent='Save a copy';const reveal=document.createElement('button');reveal.id='revealMedia';reveal.textContent='Open file location';reveal.onclick=async()=>{try{await local('reveal',{id:item.id});}catch(e){msg(e.message);}};$('.viewerActions',view).append(reveal);}
  $('#saveMedia').after(item.kind==='image'?makeVideoButton(item):extendVideoButton(item));
  const regenerate=document.createElement('button');
  regenerate.type='button';regenerate.textContent='↗ Regenerate';
@@ -221,7 +222,7 @@ function closeViewer(immediate=false){
  const view=$('#viewer'),work=$('#workspace');if(view.hidden||viewerClosing)return;viewerClosing=true;
  const finish=()=>{view.releaseFooter?.();view.hidden=true;view.replaceChildren();view.className='';view.style.transform='';work.style.transform='';work.classList.remove('behind');work.inert=false;viewerClosing=false;
  if(galleryDirty&&page==='library')renderLibrary();galleryDirty=false;if(originTile?.isConnected)originTile.focus({preventScroll:true});originTile=null;};
- $('video',view)?.pause();if(immediate||reduceMotion()){finish();return;}
+ $('video',view)?.pause();if(window.Desktop||immediate||reduceMotion()){finish();return;}
  const from=view.getBoundingClientRect().left;
  const opts={duration:Math.max(65,180*(1-from/innerWidth)),easing:'ease-out',fill:'forwards'};
  work.animate([{transform:getComputedStyle(work).transform},{transform:'translateX(0)'}],opts).onfinish=e=>e.target.cancel();
@@ -250,6 +251,7 @@ function enterGenerator(old){
 let drag=null,swallowUntil=0;
 document.addEventListener('pointerdown',e=>{
  swallowUntil=0;
+ if(window.Desktop)return;
  if(!e.isPrimary||e.button!==0||viewerClosing||e.target.closest('input,textarea,select,canvas,#carousel,[contenteditable]'))return;
  const type=$('#modal').open?'modal':viewerOpen()?'viewer':$('#drawer').classList.contains('open')?'closeDrawer':page==='library'&&archived?'archive':'drawer';
  if(type)drag={id:e.pointerId,type,x:e.clientX,y:e.clientY,t:performance.now(),dx:0,active:false,queue:e.target.closest('.historyCard')};

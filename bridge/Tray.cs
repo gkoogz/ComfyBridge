@@ -21,8 +21,8 @@ using Microsoft.Win32;
 [assembly: System.Reflection.AssemblyTitle("Comfy Bridge")]
 [assembly: System.Reflection.AssemblyDescription("Phone to ComfyUI bridge")]
 [assembly: System.Reflection.AssemblyVersion("0.1.0.0")]
-[assembly: System.Reflection.AssemblyFileVersion("0.1.0.28")]
-[assembly: System.Reflection.AssemblyInformationalVersion("0.1.0-beta.28")]
+[assembly: System.Reflection.AssemblyFileVersion("0.1.0.30")]
+[assembly: System.Reflection.AssemblyInformationalVersion("0.1.0-beta.30")]
 
 partial class Bridge : ApplicationContext {
     static readonly string Home = AppDomain.CurrentDomain.BaseDirectory;
@@ -104,7 +104,7 @@ partial class Bridge : ApplicationContext {
         timer.Tick+=(s,e)=>{
             bool connected=online&&PhoneCount()>0;
             RefreshState();RefreshJobs();
-            if(!connected && (worker==null || worker.HasExited)) { lock(Json){
+            if(!connected && !expanded && (worker==null || worker.HasExited)) { lock(Json){
                 if(cpu!=null){cpu.Dispose();cpu=null;}
                 if(vram!=null){foreach(var c in vram)c.Dispose();vram=null;}
                 if(!trimmed) {GC.Collect();EmptyWorkingSet(Process.GetCurrentProcess().Handle);trimmed=true;}
@@ -206,14 +206,15 @@ partial class Bridge : ApplicationContext {
             string device;Guid guid;bool identified=headers.TryGetValue("X-Bridge-Device",out device)&&Guid.TryParse(device,out guid);
             if(!identified)device=((IPEndPoint)client.Client.RemoteEndPoint).Address.ToString();
             if(path=="/api/disconnect"){lock(phones){phones.Remove(device);watchers.Remove(device);}await Reply(stream,200,"{}");return;}
-            if(path=="/api/ping"){lock(phones)phones[device]=DateTime.UtcNow;await Reply(stream,200,"{\"ok\":true,\"name\":\"Comfy Bridge\"}");return;}
-            if(identified&&path.StartsWith("/api/batch/")){lock(phones)watchers[device]=DateTime.UtcNow;}
+            if(path=="/api/ping"){if(device!=desktopDevice){lock(phones)phones[device]=DateTime.UtcNow;}await Reply(stream,200,"{\"ok\":true,\"name\":\"Comfy Bridge\"}");return;}
+            if(identified&&device!=desktopDevice&&path.StartsWith("/api/batch/")){lock(phones)watchers[device]=DateTime.UtcNow;}
             if(path=="/api/metrics"){await Reply(stream,200,Metrics());return;}
             string lengthText;long length=0;
             bool videoUpload=path=="/api/upload-video";
             long limit=(videoUpload?512L:55L)*1024*1024;
             if(headers.ContainsKey("Transfer-Encoding") || (headers.TryGetValue("Content-Length",out lengthText) && (!long.TryParse(lengthText,out length) || length<0 || length>limit))){await Reply(stream,413,"{\"error\":\"Invalid upload length\"}");return;}
             if(path.StartsWith("/api/studio/")){
+                if(path.StartsWith("/api/studio/desktop-")){await Reply(stream,403,"{}");return;}
                 if(!identified){await Reply(stream,403,"{\"error\":\"A paired phone is required.\"}");return;}
                 await ReplyStudio(stream,path.Substring(12),device,length);return;
             }

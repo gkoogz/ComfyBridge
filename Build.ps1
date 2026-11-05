@@ -7,7 +7,10 @@ $tools=Join-Path $sdk 'build-tools\35.0.1'
 $android=Join-Path $sdk 'platforms\android-35\android.jar'
 $jdk=Split-Path (Get-Command java.exe).Source
 New-Item -ItemType Directory -Force "$build\classes","$build\dex" |Out-Null
-& 'C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe' /nologo /target:winexe /optimize+ "/win32icon:$src\artwork\comfybridge.ico" "/out:$build\ComfyBridge.exe" /reference:System.Numerics.dll /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /reference:System.Web.Extensions.dll "$src\bridge\Tray.cs" "$src\bridge\Panel.cs" "$src\bridge\Studio.cs" "$src\bridge\ReleaseUpdates.cs" "$src\bridge\Pairing.cs"
+. "$src\bridge\WebView2.ps1"
+New-Item -ItemType Directory -Force "$build\desktop-assets" | Out-Null
+Copy-Item "$src\android\assets\*" "$build\desktop-assets" -Force
+& 'C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe' /nologo /target:winexe /platform:x64 /optimize+ @webviewRefs "/win32icon:$src\artwork\comfybridge.ico" "/out:$build\ComfyBridge.exe" /reference:System.Numerics.dll /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /reference:System.Web.Extensions.dll "$src\bridge\Tray.cs" "$src\bridge\Panel.cs" "$src\bridge\Studio.cs" "$src\bridge\ReleaseUpdates.cs" "$src\bridge\Pairing.cs" "$src\bridge\Desktop.cs"
 if($LASTEXITCODE){throw 'Windows bridge compilation failed'}
 & "$jdk\javac.exe" -encoding UTF-8 -source 8 -target 8 -Xlint:-options -classpath $android -d "$build\classes" "$src\android\java\com\comfybridge\app\MainActivity.java" "$src\android\java\com\comfybridge\app\MediaShelf.java" "$src\android\java\com\comfybridge\app\JobWatch.java" "$src\android\java\com\comfybridge\app\ReleaseUpdates.java" "$src\android\java\com\comfybridge\app\Pairing.java"
 if($LASTEXITCODE){throw 'Android Java compilation failed'}

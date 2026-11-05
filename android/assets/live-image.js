@@ -41,7 +41,7 @@ function bindFrame(el,id){
  }
  if(id)paintFrame(id);
 }
-const showsQueue=()=>['bridge','image','video'].includes(page);
+const showsQueue=()=>window.Desktop||['bridge','image','video'].includes(page);
 async function watchFrames(){
  const job=liveJob(active);
  if(!showsQueue()||!connected||document.hidden||!imagePreviewProtocol||job?.status!=='running'){
@@ -87,7 +87,7 @@ function renderLiveImage(box){
   $('.retryImage',box).onclick=()=>{view.error='';renderLiveImage(box);};
  }
  const skip=$('.skipImage',box),retry=$('.retryImage',box);
- skip.hidden=!(connected&&job?.owner===info().device&&job.id===active&&job.status==='running'&&imagePreviewProtocol);
+ skip.hidden=!(connected&&(window.Desktop||job?.owner===info().device)&&job?.id===active&&job.status==='running'&&imagePreviewProtocol);
  skip.disabled=view.skip;skip.textContent=view.skip?'Skipping…':'Skip image';
  retry.hidden=!view.error||!output||!connected;
  const label=view.error||(output||status==='complete'?'Downloading original…':

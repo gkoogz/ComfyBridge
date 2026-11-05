@@ -4,9 +4,11 @@ New-Item -ItemType Directory -Force $target | Out-Null
 $exe = Join-Path $target 'ComfyBridge.exe'
 # Only replace this installation; the Python worker and queued Comfy jobs keep running.
 Get-Process ComfyBridge -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $exe } | ForEach-Object { Stop-Process -Id $_.Id; $_.WaitForExit() }
-foreach($file in 'ComfyBridge.exe','worker.py','workflows.py','extension.py','handoff.py','media_index.py','progress.py','queue_progress.py','queue_eta.py','studio.py','recipes.py'){
+foreach($file in 'ComfyBridge.exe','Microsoft.Web.WebView2.Core.dll','Microsoft.Web.WebView2.WinForms.dll','WebView2Loader.dll','WebView2-LICENSE.txt','worker.py','workflows.py','extension.py','handoff.py','media_index.py','progress.py','queue_progress.py','queue_eta.py','studio.py','recipes.py'){
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot $file) -Destination $target -Force
 }
+New-Item -ItemType Directory -Force (Join-Path $target 'desktop-assets') | Out-Null
+Copy-Item (Join-Path $PSScriptRoot 'desktop-assets/*') (Join-Path $target 'desktop-assets') -Force
 if (-not (Test-Path (Join-Path $target 'config.json'))) { Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'config.json') -Destination $target }
 $studioRoot=(Get-Content -Raw -LiteralPath (Join-Path $target 'config.json')|ConvertFrom-Json).comfyRoot
 $nodeFolder=Join-Path $studioRoot 'custom_nodes/comfybridge_eros_vsa'

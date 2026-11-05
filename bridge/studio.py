@@ -224,6 +224,20 @@ def notes_sync(db, change, device):
     return dict(rev=rev,doc=incoming,conflict=conflict)
 
 
+def desktop_file(db, root, data, body):
+    """Local host only: resolve an indexed result, never a caller-supplied path."""
+    media_id=uuid.UUID(body['id']).hex
+    row=db.execute('SELECT path,thumbnail FROM media WHERE id=?',(media_id,)).fetchone()
+    if row is None:
+        raise ValueError('That item is no longer in the PC library.')
+    thumbnail=body.get('thumbnail',False)
+    path=Path(row[1 if thumbnail else 0]).resolve()
+    allowed=(data/'thumbnails' if thumbnail else root/'output/ComfyBridge').resolve()
+    if not path.is_relative_to(allowed) or not path.is_file():
+        raise ValueError('The file was moved or deleted on the PC.')
+    return dict(path=str(path))
+
+
 def serve():
     sys.stdin.reconfigure(encoding='utf-8')
     data=Path(os.environ['LOCALAPPDATA'])/'ComfyBridge'
@@ -277,6 +291,8 @@ def serve():
                 import extension
                 media_id=route.split('/',1)[1]
                 result=extension.describe(extension.source_path(db,Path(config['comfyRoot']),media_id),media_id)
+            elif route=='desktop-file':
+                result=desktop_file(db,Path(config['comfyRoot']),data,body)
             elif route=='settings':
                 result=settings_sync(db,body,device)
             elif route=='notes':

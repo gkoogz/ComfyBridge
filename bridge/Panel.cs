@@ -81,10 +81,12 @@ partial class Bridge {
             monitor.SizeChanged+=(s,e)=>RoundPanel();RoundPanel();
             monitor.FormClosing+=(s,e)=>{Server(false,false);tray.Visible=false;Application.ExitThread();};
             var grid=new TableLayoutPanel{Padding=new Padding(14,8,14,8),Dock=DockStyle.Fill,ColumnCount=1,AutoScroll=true};grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));monitor.Controls.Add(grid);
-            var head=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=3};head.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));head.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,43));head.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,43));
-            head.Controls.Add(L("ComfyBridge",15,Color.White,true),0,0);
-            var hide=B("–",(s,e)=>HidePanel());hide.MinimumSize=Size.Empty;hide.AccessibleName="Hide to tray";head.Controls.Add(hide,1,0);
-            var quit=B("×",(s,e)=>monitor.Close());quit.MinimumSize=Size.Empty;quit.AccessibleName="Quit ComfyBridge";head.Controls.Add(quit,2,0);Add(grid,head,36);
+            compactPanel=grid;
+            var head=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=4};head.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,43));head.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));head.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,43));head.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,43));
+            var expand=B("↖",(s,e)=>ExpandDesktop());expand.MinimumSize=Size.Empty;expand.AccessibleName="Expand desktop studio";head.Controls.Add(expand,0,0);
+            head.Controls.Add(L("ComfyBridge",15,Color.White,true),1,0);
+            var hide=B("–",(s,e)=>HidePanel());hide.MinimumSize=Size.Empty;hide.AccessibleName="Hide to tray";head.Controls.Add(hide,2,0);
+            var quit=B("×",(s,e)=>monitor.Close());quit.MinimumSize=Size.Empty;quit.AccessibleName="Quit ComfyBridge";head.Controls.Add(quit,3,0);Add(grid,head,36);
             badge=L("",10,Mint,true);badge.Dock=DockStyle.None;badge.Size=new Size(88,30);phone=L("",10,Red);phone.Dock=DockStyle.None;phone.Size=new Size(155,30);
             power=B("",(s,e)=>{try{Server(!online,true);}catch(Exception ex){MessageBox.Show(monitor,ex.Message);}});power.Image=PowerIcon();power.TextImageRelation=TextImageRelation.ImageBeforeText;Add(grid,Row(badge,phone,power),38);
             Add(grid,L("1   PC address",10,Mint,true),23);
@@ -99,10 +101,15 @@ partial class Bridge {
             bar=new ProgressBar{Dock=DockStyle.Fill,Minimum=0,Maximum=100};Add(grid,bar,16);
         }
         if(!monitor.Visible){AddressesList();if(online)Pairing.Issue();monitor.Show();}
-        DockPanel();
+        if(!expanded)DockPanel();
         monitor.WindowState=FormWindowState.Normal;monitor.Activate();timer.Interval=1400;RefreshState();RefreshJobs();
     }
-    void HidePanel(){monitor.Hide();Pairing.Close("Click New code to pair.");timer.Interval=5000;}
+    void HidePanel(){
+        monitor.Hide();ReleaseDesktop();
+        if(expansion!=null){expansion.Stop();expansion.Dispose();expansion=null;}
+        if(expanded){expanded=false;monitor.Bounds=compactBounds;compactPanel.Visible=true;monitor.TopMost=true;monitor.ShowInTaskbar=false;}
+        Pairing.Close("Click New code to pair.");timer.Interval=5000;
+    }
     void RoundPanel(){int w=monitor.Width,h=monitor.Height,r=18;using(var p=new GraphicsPath()){
         p.AddArc(0,0,r,r,180,90);p.AddArc(w-r,0,r,r,270,90);p.AddArc(w-r,h-r,r,r,0,90);p.AddArc(0,h-r,r,r,90,90);p.CloseFigure();
         var old=monitor.Region;monitor.Region=new Region(p);if(old!=null)old.Dispose();

@@ -9,10 +9,10 @@ async function loadNotes(){
 }
 function storeNotes(){
  const tx=db.transaction('data','readwrite');tx.objectStore('data').put(notebook,noteKey);
- tx.onerror=()=>toast('Phone storage is full. Keep Notepad open until it syncs.');
+ tx.onerror=()=>toast(window.Desktop?'PC storage is full. Keep Notepad open until it syncs.':'Phone storage is full. Keep Notepad open until it syncs.');
 }
 function noteChanged(){
- notebook.edit=crypto.randomUUID();storeNotes();setNoteStatus('Saved on this phone');
+ notebook.edit=crypto.randomUUID();storeNotes();setNoteStatus(window.Desktop?'Saved on this PC':'Saved on this phone');
  clearTimeout(noteTimer);noteTimer=setTimeout(syncNotes,1100);
 }
 function setNoteStatus(value){noteStatus=value;if($('#noteStatus'))$('#noteStatus').textContent=value;}
@@ -42,7 +42,7 @@ async function syncNotes(){
   notebook.rev=response.rev;notebook.edit=null;storeNotes();
   if(changed&&page==='notepad')paintNote(true);
   setNoteStatus(response.conflict?'Synced · kept both offline drafts':'Synced with PC');
- }catch(e){setNoteStatus('Saved on phone · sync pending');nextNoteSync=Date.now()+15000;}
+ }catch(e){setNoteStatus(window.Desktop?'Saved locally · sync pending':'Saved on phone · sync pending');nextNoteSync=Date.now()+15000;}
  finally{noteBusy=false;if(notebook.edit&&notebook.edit!==sent){clearTimeout(noteTimer);noteTimer=setTimeout(syncNotes,500);}}
 }
 const rowAt=(text,pos)=>text.slice(0,pos).split('\n').length-1;
@@ -134,7 +134,7 @@ function placeSticky(){
 }
 function renderNotepad(){
  $('#main').innerHTML='<small id="noteStatus"></small><div class="noteCanvas"><div id="notePaper" aria-hidden="true"></div><textarea id="noteText" wrap="soft" aria-label="Notepad" spellcheck="true"></textarea></div><button id="addSticky" class="green">＋ Add sticky</button>';
- const pad=$('#noteText');noteCursor=null;paintNote(true);setNoteStatus(noteStatus||(connected?'Syncing…':'Saved on this phone'));
+ const pad=$('#noteText');noteCursor=null;paintNote(true);setNoteStatus(noteStatus||(connected?'Syncing…':window.Desktop?'Saved on this PC':'Saved on this phone'));
  let old=pad.value,selection=null,restoreDelete=false;
  pad.onbeforeinput=e=>{
   old=pad.value;selection=[pad.selectionStart,pad.selectionEnd];

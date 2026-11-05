@@ -90,7 +90,7 @@ function elapsed(job){
 }
 function updateTimers(){
  $$('.jobElapsed').forEach(el=>{const j=queueHistory.find(row=>row.id===el.dataset.clock);el.textContent=elapsed(j);});
- const span=$('#activeTimer');if(span)span.textContent=queueTiming();
+ for(const span of $$('#activeTimer,#generatorTimer'))span.textContent=queueTiming();
 }
 function etaText(seconds){
  return Number.isFinite(seconds)?'≈ '+clockText(Math.ceil(seconds)):'estimating…';
@@ -112,7 +112,7 @@ function renderQueue(){
  if(box.dataset.touching==='1'){updateTimers();return;}
  if(!$('.queueRows',box)){
   box.innerHTML='<section class="card historyCard"><div class="row spread"><strong>PC Queue</strong><small>Last 24 hours</small></div><small class="historyError" role="status" hidden></small><div class="queueRows"></div></section>';
-  if(page!=='bridge')installFold($('.historyCard',box));
+  if(page!=='bridge'&&!window.Desktop)installFold($('.historyCard',box));
   const rows=$('.queueRows',box);
   rows.addEventListener('touchstart',()=>{box.dataset.touching='1';},{passive:true});
   const ended=e=>{
@@ -133,7 +133,7 @@ function renderQueue(){
   return '<div class="queueJob">'+(j.media?'<button class="jobThumb" data-output="'+j.media+'" aria-label="Open result in Library">'+(cover?'<img src="'+cover+'" loading="lazy" alt="">':'▦')+'</button>':'<span class="jobThumb">'+(j.kind==='video'?'▷':'▧')+(active&&j.id===frameId?'<img class="queuePreview" data-frame-job="'+j.id+'" hidden alt="Live generation preview">':'')+'</span>')+
    '<div class="jobInfo"><b>'+esc(j.kind)+' <small>'+new Date(j.created*1000).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})+'</small></b><small>'+esc(active?j.status:'Finished')+' <span class="jobElapsed" data-clock="'+j.id+'"></span></small></div>'+
    (active?'<i class="spinner jobSpinner" aria-hidden="true"></i>':'')+
-   (active&&j.owner===info().device?'<button data-cancel="'+j.batch+'">Cancel batch</button>':'<small class="outcome '+esc(j.status)+'">'+esc(label)+'</small>')+
+   (active&&(window.Desktop||j.owner===info().device)?'<button data-cancel="'+j.batch+'">Cancel batch</button>':'<small class="outcome '+esc(j.status)+'">'+esc(label)+'</small>')+
    '<button class="jobRecall" data-replay="'+j.id+'" aria-label="Load this generation in the editor">↗</button></div>';
  }).join('')+(items.length?'':'<small>No generations in the last 24 hours.</small>');
  rows.scrollTop=scroll;
@@ -211,7 +211,7 @@ function updateBridgeActivity(error=false){
  const value=ready?pct:0;
  $('i',bar).style.width=value+'%';bar.setAttribute('aria-valuenow',value);
  $('span',bar).textContent=!connected?'Disconnected':error?'Queue status unavailable':!ready?'Checking queue…':label;
- const mine=!!(ready&&job&&job.owner===info().device);
+ const mine=!!(ready&&job&&(window.Desktop||job.owner===info().device));
  $('#bridgeStage').textContent=ready&&job?
   [job.kind,job.current_node||(running?'Preparing workflow':'Waiting in queue'),mine?'':'Other phone'].filter(Boolean).join(' · '):'';
  const controls=$('#bridgeCommands');
@@ -225,7 +225,7 @@ function updateBridgeActivity(error=false){
  stop.disabled=!mine||!!bridgeCommand;
  const all=$('[data-action=all]',controls);
  all.disabled=!ready||!job||queueProtocol<17&&!rollingStopAll||!!bridgeCommand;
- all.title=queueProtocol<17&&!rollingStopAll?'Update Windows to beta 28 to stop all batches':'Cancel all queued and running batches from both phones';
+ all.title=queueProtocol<17&&!rollingStopAll?'Update Windows to beta 28 to stop all batches':'Cancel all queued and running batches from every device';
  const canSkip=queueProtocol>=8||queueProtocol===7&&(job?.kind==='image'||rollingSkip);
  skip.disabled=!mine||!!bridgeCommand||!running||job.status!=='running'||!canSkip;
  if(connected)renderQueue();
@@ -234,7 +234,7 @@ function updateBridgeActivity(error=false){
 }
 async function runBridgeCommand(action,job){
  if(bridgeCommand||!connected||!job)return;
- if(action!=='all'&&job.owner!==info().device)return;
+ if(!window.Desktop&&action!=='all'&&job.owner!==info().device)return;
  if(action==='all'&&queueProtocol<17&&!rollingStopAll)return;
  bridgeCommand=job.id;updateBridgeActivity();
  try{
@@ -246,5 +246,5 @@ async function runBridgeCommand(action,job){
   else{await api('stop',{batch:job.batch});toast('Stopping this batch');}
   await poll();
  }catch(e){toast(e.message);}
- finally{bridgeCommand=null;if(page==='bridge')updateBridgeActivity();}
+ finally{bridgeCommand=null;if(page==='bridge'||window.Desktop)updateBridgeActivity();}
 }

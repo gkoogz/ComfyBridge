@@ -12,6 +12,11 @@ class PanelTests {
 partial class Bridge {
     static void Check(bool ok,string what){if(!ok)throw new Exception("Failed: "+what);}
     internal static int ExercisePanel(string[] args){
+        long first,last;
+        Check(ParseDesktopRange("bytes=20-39",100,out first,out last)&&first==20&&last==39,"video byte range");
+        Check(ParseDesktopRange("bytes=60-",100,out first,out last)&&first==60&&last==99,"video open range");
+        Check(ParseDesktopRange("bytes=-12",100,out first,out last)&&first==88&&last==99,"video suffix range");
+        Check(!ParseDesktopRange("bytes=100-",100,out first,out last)&&!ParseDesktopRange("bytes=4-1",100,out first,out last),"invalid video range rejected");
         Check(NewerRelease("0.1.0-beta.10","0.1.0-beta.9")&&NewerRelease("0.1.0","0.1.0-rc.2")&&!NewerRelease("0.1.0-beta.9","0.1.0"),"numeric release ordering");
         var zip=new PublishedAsset{name="ComfyBridge-Windows-0.1.0-beta.10.zip",state="uploaded",size=20};
         var releases=new[]{
@@ -59,6 +64,8 @@ partial class Bridge {
             app.HidePanel();Check(online&&!app.monitor.Visible,"minimize hides panel and keeps server on");
             app.ShowMonitor();Check(app.monitor.Visible,"reopen panel");
             lock(phones)phones.Clear();
+            using(var http=new System.Net.WebClient()){http.Proxy=null;http.Headers["Authorization"]="Bearer "+token;http.Headers["X-Bridge-Device"]=DesktopDevice();
+                http.DownloadString("http://127.0.0.1:"+loopbackPort+"/api/ping");Check(PhoneCount()==0,"desktop does not count as a phone");}
             using(var http=new System.Net.WebClient()){http.Proxy=null;http.Headers["Authorization"]="Bearer "+token;
                 string baseUrl="http://127.0.0.1:"+loopbackPort+"/api/";
                 http.Headers["X-Bridge-Device"]=Guid.NewGuid().ToString();http.DownloadString(baseUrl+"ping");
