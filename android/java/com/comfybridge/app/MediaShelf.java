@@ -19,6 +19,8 @@ import java.util.*;
 final class MediaShelf {
  interface Network { HttpURLConnection open(String path) throws Exception; }
  final File dir; final SQLiteDatabase db; final Network net;
+ interface DownloadGuard { boolean allowed(); void connection(HttpURLConnection conn); }
+ private final java.util.concurrent.ConcurrentHashMap<String,Object> fileLocks=new java.util.concurrent.ConcurrentHashMap<>();
  MediaShelf(File dir,Network net) throws IOException {
   this.dir=dir;this.net=net;if(!dir.isDirectory()&&!dir.mkdirs())throw new IOException("Cannot open phone storage.");
   db=SQLiteDatabase.openOrCreateDatabase(new File(dir,"index.db"),null);
@@ -57,20 +59,39 @@ final class MediaShelf {
    db.setTransactionSuccessful();
   }finally{db.endTransaction();}
  }
- JSONObject obtain(String id,boolean replace)throws Exception{
+ private Object fileLock(String id){return fileLocks.computeIfAbsent(id,key->new Object());}
+ boolean inPrefetchWindow(String id)throws Exception{
+  JSONArray snapshot=snapshot();List<JSONObject> items=new ArrayList<>();
+  for(int i=0;i<snapshot.length();i++){JSONObject j=snapshot.getJSONObject(i);if(!j.getString("source").equals("missing")||!j.getString("local").isEmpty())items.add(j);}
+  items.sort((a,b)->{int cmp=Double.compare(b.optDouble("created"),a.optDouble("created"));return cmp!=0?cmp:b.optString("id").compareTo(a.optString("id"));});
+  for(int i=0;i<Math.min(20,items.size());i++)if(items.get(i).getString("id").equals(id))return true;
+  return false;
+ }
+ JSONObject obtain(String id,boolean replace)throws Exception{return obtain(id,replace,null);}
+ JSONObject obtain(String id,boolean replace,DownloadGuard guard)throws Exception{
+  synchronized(fileLock(id)){return transfer(id,replace,guard);}
+ }
+ private JSONObject transfer(String id,boolean replace,DownloadGuard guard)throws Exception{
+  if(guard!=null&&(!guard.allowed()||!inPrefetchWindow(id)))throw new InterruptedIOException("Prefetch paused.");
   JSONObject j=get(id);String local=j.getString("local");
   if(!local.isEmpty()&&!replace)return j;
   if(!"available".equals(j.getString("source")))throw new IOException("The PC original is unavailable.");
   String expected=j.getString("sha256");if(expected.equals(local))return j;
-  long size=j.getLong("size");if(dir.getUsableSpace()-size<16L*1024*1024)throw new IOException("Phone storage is too low. Existing copies were kept.");
+  long size=j.getLong("size");if(dir.getUsableSpace()-size<(guard==null?16L:128L)*1024*1024)throw new IOException("Phone storage is too low. Existing copies were kept.");
   File dest=file(id,expected),tmp=new File(dir,id+".partial");HttpURLConnection c=net.open("api/media/"+id);
   try{
+   if(guard!=null){guard.connection(c);if(!guard.allowed())throw new InterruptedIOException("Prefetch paused.");}
    if(c.getResponseCode()!=200)throw new IOException("PC file could not be downloaded (HTTP "+c.getResponseCode()+").");
    MessageDigest digest=MessageDigest.getInstance("SHA-256");long n=0;byte[] buf=new byte[131072];
-   try(InputStream in=c.getInputStream();FileOutputStream out=new FileOutputStream(tmp)){for(int k;(k=in.read(buf))!=-1;){n+=k;if(n>size)throw new IOException("PC file changed during transfer.");digest.update(buf,0,k);out.write(buf,0,k);}out.getFD().sync();}
+   try(InputStream in=c.getInputStream();FileOutputStream out=new FileOutputStream(tmp)){for(int k;(k=in.read(buf))!=-1;){if(guard!=null&&!guard.allowed())throw new InterruptedIOException("Prefetch paused.");n+=k;if(n>size)throw new IOException("PC file changed during transfer.");digest.update(buf,0,k);out.write(buf,0,k);}out.getFD().sync();}
    if(n!=size||!expected.equals(hex(digest.digest())))throw new IOException("Transfer incomplete or PC file changed. The previous copy was kept.");
-   Files.move(tmp.toPath(),dest.toPath(),StandardCopyOption.ATOMIC_MOVE,StandardCopyOption.REPLACE_EXISTING);
-   db.execSQL("UPDATE items SET local=? WHERE id=?",new Object[]{expected,id});
+   if(guard!=null&&!guard.allowed())throw new InterruptedIOException("Prefetch paused.");
+   db.beginTransaction();try{
+    JSONObject latest=get(id);
+    if(!"available".equals(latest.getString("source"))||!expected.equals(latest.optString("sha256")))throw new IOException("PC file changed during transfer. Previous copy kept.");
+    Files.move(tmp.toPath(),dest.toPath(),StandardCopyOption.ATOMIC_MOVE,StandardCopyOption.REPLACE_EXISTING);
+    db.execSQL("UPDATE items SET local=? WHERE id=?",new Object[]{expected,id});db.setTransactionSuccessful();
+   }finally{db.endTransaction();}
    if(!local.isEmpty())removeVersion(id,local);
    makeThumb(dest,j.getString("kind"));
    return get(id);
@@ -78,8 +99,10 @@ final class MediaShelf {
  }
  private void removeVersion(String id,String hash){File f=file(id,hash);f.delete();new File(f+".jpg").delete();}
  JSONObject discard(String id,String hash)throws Exception{
+  synchronized(fileLock(id)){
   JSONObject j=get(id);if(!hash.equals(j.getString("local"))||hash.isEmpty()||!Arrays.asList("older","missing").contains(j.getString("warning")))throw new IOException("Library changed. Review the copy again.");
   db.execSQL("UPDATE items SET local='' WHERE id=?",new Object[]{id});removeVersion(id,hash);return get(id);
+  }
  }
  File existing(String id,String hash,boolean thumb)throws Exception{
   JSONObject j=get(id);if(hash.isEmpty()||!hash.equals(j.getString("local")))throw new IOException("File is not on this phone.");

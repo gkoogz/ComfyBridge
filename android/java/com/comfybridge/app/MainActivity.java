@@ -40,6 +40,14 @@ public class MainActivity extends Activity {
  private ValueCallback<Uri[]> chooser;
  private volatile Uri pickedUri;
  private final ExecutorService mediaIO=Executors.newSingleThreadExecutor();
+ private final ExecutorService prefetchIO=Executors.newSingleThreadExecutor();
+ private volatile boolean foreground=false,prefetchAllowed=false;
+ private final java.util.concurrent.atomic.AtomicLong prefetchEpoch=new java.util.concurrent.atomic.AtomicLong();
+ private volatile HttpURLConnection prefetchConnection;
+ private void stopPrefetch(){
+  prefetchAllowed=false;prefetchEpoch.incrementAndGet();HttpURLConnection c=prefetchConnection;
+  prefetchConnection=null;if(c!=null)new Thread(()->c.disconnect(),"Stop media prefetch").start();
+ }
  private MediaShelf shelf;
  private int exportRequest=-1;private String exportArgs;
  private synchronized MediaShelf shelf()throws Exception{
@@ -145,6 +153,9 @@ public class MainActivity extends Activity {
  }
  String exportOperation="export";
  public class NativeApi {
+  @JavascriptInterface public void prefetchEnabled(boolean enabled){
+   if(enabled&&foreground)prefetchAllowed=true;else if(prefetchAllowed||prefetchConnection!=null)stopPrefetch();
+  }
   @JavascriptInterface public boolean pickedVideo(){
    Uri uri=pickedUri;
    String type=uri==null?null:getContentResolver().getType(uri);
@@ -235,12 +246,21 @@ public class MainActivity extends Activity {
    if((op.equals("export")||op.equals("exportSource"))&&android.os.Build.VERSION.SDK_INT<29&&checkSelfPermission(android.Manifest.permission.WRITE_EXTERNAL_STORAGE)!=android.content.pm.PackageManager.PERMISSION_GRANTED){
     runOnUiThread(()->{exportRequest=request;exportArgs=args;exportOperation=op;requestPermissions(new String[]{android.Manifest.permission.WRITE_EXTERNAL_STORAGE},104);});return;
    }
-   mediaIO.execute(()->{try{
+   final long ticket=prefetchEpoch.get();
+   (op.equals("prefetch")?prefetchIO:mediaIO).execute(()->{try{
     MediaShelf m=shelf();JSONObject d=new JSONObject(args);String id=d.optString("id");Object result=new JSONObject();
     switch(op){
      case "list": result=m.snapshot();break;
      case "sync":m.reconcile(d);result=m.snapshot();break;
      case "fetch":result=m.obtain(id,false);break;
+     case "prefetch":{
+      try{result=m.obtain(id,false,new MediaShelf.DownloadGuard(){
+       public boolean allowed(){return foreground&&prefetchAllowed&&ticket==prefetchEpoch.get();}
+       public void connection(HttpURLConnection c){prefetchConnection=c;c.setReadTimeout(15000);}
+      });}catch(Exception e){if(!foreground||!prefetchAllowed||ticket!=prefetchEpoch.get())throw new InterruptedIOException("Prefetch paused.");throw e;}
+      finally{prefetchConnection=null;}
+      break;
+     }
      case "replace":{JSONObject j=m.get(id);if(!j.getString("local").equals(d.getString("local"))||!j.getString("warning").equals("changed")||!j.getString("sha256").equals(d.getString("sha256")))throw new IOException("PC copy changed again. Check the library.");result=m.obtain(id,true);break;}
      case "drop":result=m.discard(id,d.getString("local"));break;
 
@@ -271,8 +291,8 @@ public class MainActivity extends Activity {
   JobWatch.resume(this);
   if(explicit){Intent i=new Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(android.provider.Settings.EXTRA_APP_PACKAGE,getPackageName());startActivity(i);}
  }
- @Override protected void onResume(){super.onResume();if(prefs!=null)JobWatch.resume(this);updates.foreground(this,io);}
- @Override protected void onPause(){updates.background();super.onPause();}
+ @Override protected void onResume(){super.onResume();foreground=true;if(prefs!=null)JobWatch.resume(this);updates.foreground(this,io);if(web!=null)web.evaluateJavascript("if(typeof prefetchVisibility==='function'){prefetchVisibility();fillShelf();}",null);}
+ @Override protected void onPause(){foreground=false;stopPrefetch();updates.background();super.onPause();}
  @Override protected void onActivityResult(int request,int result,Intent data){super.onActivityResult(request,result,data);
   if(request==100 && chooser!=null){
    pickedUri=result==RESULT_OK&&data!=null?data.getData():null;
@@ -280,5 +300,5 @@ public class MainActivity extends Activity {
   }
  }
  @Override public void onBackPressed(){web.evaluateJavascript("bridgeBack()",null);}
- @Override protected void onDestroy(){heartbeat.shutdownNow();io.shutdownNow();mediaIO.shutdownNow();super.onDestroy();}
+ @Override protected void onDestroy(){foreground=false;stopPrefetch();prefetchIO.shutdownNow();heartbeat.shutdownNow();io.shutdownNow();mediaIO.shutdownNow();super.onDestroy();}
 }

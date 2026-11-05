@@ -37,8 +37,8 @@ function renderLibrary(){
  }
  $('#archiveLink').onclick=()=>{archived=!archived;renderLibrary();$('#workspace').scrollTop=0;};
  $('#shelfInfo').onclick=()=>{
-  const recent=library.filter(j=>j.recent&&j.source==='available');
-  openModal('Phone copies','<section class="card"><strong>'+recent.filter(j=>j.local).length+' / '+recent.length+' recent items on phone</strong><p>We keep the newest 100 images and videos together. '+(connected?'The PC is checked every five minutes.':'Offline · downloaded items still open.')+'</p>'+(shelfError?'<p class="warning">'+esc(shelfError)+'</p>':'')+'<button id="checkShelf" '+(connected?'':'disabled')+'>Check now</button></section>'+review.map(j=>'<button class="reviewItem" data-media="'+j.id+'">'+esc(j.kind)+' · '+esc(new Date(j.created*1000).toLocaleDateString())+'<small>'+esc(warningText[j.warning])+'</small></button>').join(''));
+  const recent=library.slice(0,20).filter(j=>j.source==='available');
+  openModal('Phone copies','<section class="card"><strong>'+recent.filter(j=>j.local).length+' / '+recent.length+' newest items on phone</strong><p>Missing files among the newest 20 images and videos download automatically while the app is open, on every screen. Older items download when opened. '+(connected?'PC files are checked for changes every five minutes.':'Offline · downloaded items still open.')+' Existing copies stay until you choose to remove them.</p>'+(shelfError?'<p class="warning">'+esc(shelfError)+'</p>':'')+'<button id="checkShelf" '+(connected?'':'disabled')+'>Check now</button></section>'+review.map(j=>'<button class="reviewItem" data-media="'+j.id+'">'+esc(j.kind)+' · '+esc(new Date(j.created*1000).toLocaleDateString())+'<small>'+esc(warningText[j.warning])+'</small></button>').join(''));
   $('#checkShelf').onclick=async()=>{await syncShelf(true);closeModal();toast(shelfError||'Phone copies checked');};wireMedia($('#modalBody'));
  };
  wireMedia(main);

@@ -16,9 +16,9 @@ function showShelf(){if(page==='library'){if(!viewerOpen())renderLibrary();else 
 function setShelf(items){library=items.filter(j=>j.source!=='missing'||j.local).sort((a,b)=>b.created-a.created||b.id.localeCompare(a.id));showShelf();notice();}
 function updateItem(j){setShelf(library.filter(x=>x.id!==j.id).concat(j));}
 const originalTransfers=new Map();
-function fetchOriginal(id){
+function fetchOriginal(id,prefetch=false){
  const key=epoch+':'+id;
- if(!originalTransfers.has(key))originalTransfers.set(key,local('fetch',{id}).finally(()=>originalTransfers.delete(key)));
+ if(!originalTransfers.has(key))originalTransfers.set(key,local(prefetch?'prefetch':'fetch',{id}).finally(()=>originalTransfers.delete(key)));
  return originalTransfers.get(key);
 }
 async function syncShelf(force=false){
@@ -29,13 +29,30 @@ async function syncShelf(force=false){
  }catch(e){if(epoch===session){shelfError=(window.Desktop?'Could not read the PC library: ':'Could not check phone copies: ')+e.message+(e.message.includes('404')?' Update the Windows bridge to beta 4.':'');nextSync=Date.now()+30000;showShelf();}}
  finally{syncing=false;}
 }
+const prefetchRetry=new Map();let inventoryProbe=false,nextInventoryProbe=0,prefetchAfter=0;
+function prefetchVisibility(){window.Native?.prefetchEnabled?.(connected&&!document.hidden);}
+document.addEventListener('visibilitychange',()=>{prefetchVisibility();if(!document.hidden){nextInventoryProbe=0;fillShelf();}});
+async function checkNewMedia(){
+ if(window.Desktop||!connected||document.hidden||inventoryProbe||Date.now()<nextInventoryProbe)return;
+ inventoryProbe=true;nextInventoryProbe=Date.now()+2500;const session=epoch;
+ try{const latest=await api('library');if(session!==epoch||!connected||document.hidden)return;
+  if(signature(latest)!==inventory){if(!shelfError||Date.now()>=nextSync)await syncShelf(true);}else fillShelf();
+ }catch{/* Connection status and regular inventory checks report persistent failures. */}
+ finally{inventoryProbe=false;}
+}
 async function fillShelf(){
- if(filling)return;filling=true;const session=epoch;let firstError='';
- try{for(const j of library.filter(j=>j.recent&&!j.local&&j.source==='available')){
-  if(!connected||epoch!==session||document.hidden)break;
-  try{const saved=await fetchOriginal(j.id);if(epoch!==session)break;updateItem(saved);}
-  catch(e){firstError=e.message;if(/storage|space/i.test(firstError))break;}
- }}finally{filling=false;if(firstError&&epoch===session){shelfError='Some phone copies are pending: '+firstError;nextSync=Math.min(nextSync,Date.now()+30000);showShelf();}}
+ if(window.Desktop||filling||!connected||document.hidden||Date.now()<prefetchAfter)return;
+ prefetchVisibility();filling=true;const session=epoch;let firstError='';
+ const eligible=new Set(library.slice(0,20).map(j=>j.id));for(const id of prefetchRetry.keys())if(!eligible.has(id))prefetchRetry.delete(id);
+ try{while(connected&&epoch===session&&!document.hidden){
+  // Re-evaluate after every file, so a just-finished generation jumps to the front.
+  const j=library.slice(0,20).find(j=>!j.local&&j.source==='available'&&(prefetchRetry.get(j.id)||0)<=Date.now());
+  if(!j)break;
+  try{const saved=await fetchOriginal(j.id,true);if(epoch!==session)break;prefetchRetry.delete(j.id);updateItem(saved);}
+  catch(e){if(document.hidden||epoch!==session||/paused/i.test(e.message))break;prefetchRetry.set(j.id,Date.now()+30000);
+   firstError=e.message;if(/storage|space/i.test(firstError)){prefetchAfter=Date.now()+30000;break;}
+  }
+ }}finally{filling=false;if(firstError&&epoch===session){shelfError='Recent downloads pending: '+firstError;nextSync=Math.min(nextSync,Date.now()+30000);showShelf();}}
 }
 function toast(text){$('#toast').textContent=text;$('#toast').classList.add('show');clearTimeout(toast.timer);toast.timer=setTimeout(()=>$('#toast').classList.remove('show'),3800);}
 function persist(section=page){markEdited(section);scheduleBackup();clearTimeout(saveTimer);saveTimer=setTimeout(()=>{if(db){let t=db.transaction('data','readwrite');t.objectStore('data').put(state,'state');t.onerror=()=>toast(window.Desktop?'PC storage is full; settings could not be saved.':'Phone storage is full; settings could not be saved.');}},120);}
@@ -56,7 +73,7 @@ async function init(){
 }
 function drawer(open){if(window.Desktop){$('#drawer').inert=false;return;}document.querySelector('#drawer').inert=!open;$('#drawer').classList.toggle('open',open);$('#shade').hidden=!open;}
 function navigate(to){if(window.Desktop){if(to==='bridge'){$('#desktopPower').focus();return;}localStorage.setItem('desktopPage',to);}if(page!==to&&['image','video'].includes(to))promptExpanded={};if(page!==to&&(page==='image'||!['image','video','bridge'].includes(to)))leaveLiveImage();if(viewerOpen())closeViewer(true);const forward=page==='bridge'&&['image','video'].includes(to),out=forward?outgoingBridge():null;page=to;archived=false;presetName='';drawer(false);render();$('#workspace').scrollTop=0;if(out)enterGenerator(out);if(connected){poll();if(['image','video'].includes(to))syncSettings();if(to==='notepad')syncNotes();}}
-function connection(value){connected=value;$$('.dot').forEach(d=>d.classList.toggle('connected',value));$('#statusDot').setAttribute('aria-label',value?'Connected':'Disconnected');$('#drawerStatus').textContent=value?(window.Desktop?'Local studio':'PC connected'):'Disconnected';}
+function connection(value){connected=value;prefetchVisibility();$$('.dot').forEach(d=>d.classList.toggle('connected',value));$('#statusDot').setAttribute('aria-label',value?'Connected':'Disconnected');$('#drawerStatus').textContent=value?(window.Desktop?'Local studio':'PC connected'):'Disconnected';}
 function render(){
  document.body.dataset.page=page;
  $('#pageTitle').textContent=page[0].toUpperCase()+page.slice(1);$('#presetButton').hidden=!['image','video'].includes(page);$('#presetButton').innerHTML=esc(presetName||'Current settings')+' <span>⌄</span>';
@@ -85,7 +102,7 @@ async function loadCatalog(){
 function reached(){const cameBack=!connected;misses=0;nextProbe=0;bridgeError='';connection(true);
  if(cameBack&&page==='bridge')renderBridge();
  if(cameBack||!profileReady&&!profileLoad&&Date.now()>=retryProfiles)startProfiles(epoch).finally(()=>{if(connected&&!catalog)loadCatalog();});
- syncShelf(cameBack);notice();poll();
+ syncShelf(cameBack);checkNewMedia();notice();poll();
 }
 function unreachable(e){
  queueProtocol=0;
@@ -409,7 +426,7 @@ async function poll(){
  let metricsError='';
  const metrics=(view==='bridge'||window.Desktop)?api('metrics').then(m=>{if(current())showMetrics(m);}).catch(e=>{metricsError='PC telemetry unavailable: '+e.message;}):null;
  try{
-  if(view!=='notepad'||window.Desktop){const [status,latest]=await Promise.all([view==='library'&&!window.Desktop?null:api('status'),view==='bridge'?null:api('library')]);if(!current())return;
+  if(view!=='notepad'||window.Desktop){const [status,latest]=await Promise.all([view==='library'&&!window.Desktop?null:api('status'),window.Desktop?api('library'):null]);if(!current())return;
    if(status){
     const build=status.build||String(status.protocol);if(workerBuild&&workerBuild!==build){catalog=null;loadCatalog();}workerBuild=build;
     jobs=status.jobs;active=status.active;previewAvailable=status.preview;queueProtocol=status.protocol;imagePreviewProtocol=queueProtocol>=7;queueEtaSeconds=status.queueEtaSeconds??null;

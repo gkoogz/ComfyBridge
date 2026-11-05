@@ -1,12 +1,12 @@
 # ComfyBridge
 
-**[Open the beta 32 release page](https://github.com/gkoogz/ComfyBridge/releases/tag/v0.1.0-beta.32)** · [Download the Android APK](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.32/ComfyBridge-0.1.0-beta.32.apk) · [Download Windows](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.32/ComfyBridge-Windows-0.1.0-beta.32.zip) · [All releases](https://github.com/gkoogz/ComfyBridge/releases)
+**[Open the beta 33 release page](https://github.com/gkoogz/ComfyBridge/releases/tag/v0.1.0-beta.33)** · [Download the Android APK](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.33/ComfyBridge-0.1.0-beta.33.apk) · [Download Windows](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.32/ComfyBridge-Windows-0.1.0-beta.32.zip) · [All releases](https://github.com/gkoogz/ComfyBridge/releases)
 
 <img src="artwork/comfybridge.png" width="128" alt="ComfyBridge white cube and play icon on black">
 
 An Android remote for an existing Windows ComfyUI installation. The phone edits generation settings, uploads images and masks, and views results; the PC does the GPU work. A small Windows tray application wakes its Python worker on demand.
 
-**0.1.0-beta.32 is a personal-workflow beta**, adapted specifically to `Image gen.json` and `Video gen.json` in `E:\ComfyUI-Zluda\user\default\workflows`. It is not a general ComfyUI workflow importer. Models, LoRAs, workflow files, prompts, generated media, pairing credentials, and signing keys are not included in this repository or release.
+**0.1.0-beta.33 is a personal-workflow beta**, adapted specifically to `Image gen.json` and `Video gen.json` in `E:\ComfyUI-Zluda\user\default\workflows`. It is not a general ComfyUI workflow importer. Models, LoRAs, workflow files, prompts, generated media, pairing credentials, and signing keys are not included in this repository or release. Beta 33 updates Android only; Windows beta 32 remains the companion and requires no restart.
 
 The phone shows **PC connected** as soon as the bridge answers. Loading models and unavailable telemetry have their own messages. If the server or VPN drops, leave the phone app open: it retries automatically using the saved pairing. **Disconnect** or **Cancel reconnect** stops those retries.
 
@@ -84,7 +84,9 @@ Choose **Video length** or **Time to add** from 1–20 seconds. Changing FPS kee
 
 **Extend video** in Latest result, Library, or Archive opens the Video editor with the source resolution and FPS locked. Enter the number of new frames and describe what happens next. The PC uses the last five source frames as a motion guide, trims the overlap, and publishes a new joined clip. The original stays in the library. The original must still be available on the PC.
 
-**Library** downloads the newest 100 generated images and videos combined, including archived items, while the paired app is open and connected. The count shows how many recent originals are ready. Open an older item while connected to fetch it on demand. Android plays videos from a complete private file after its size and SHA-256 match the PC; you can then play it or view an image offline, even after relaunching the app. A failed transfer or low storage leaves existing copies intact.
+The app starts fetching missing originals among the **newest 20 generated images and videos combined**, including archived items, as soon as it connects. This works from Bridge, Notepad, or any other screen, before visiting Library. New results are detected during foreground connection checks and join the front of the download list. Already-local originals are skipped. Only one automatic file downloads at a time; an item you open uses a separate transfer lane, and opening the same item shares its existing transfer. Automatic downloads stop when the app leaves the foreground and resume when it returns.
+
+**Library → Phone copies** shows how many of those newest items are ready. Open an older item while connected to fetch it on demand. Android plays videos from a complete private file after its size and SHA-256 match the PC; you can then play it or view an image offline, even after relaunching the app. A failed transfer or low storage leaves existing copies intact. Automatic downloads reserve at least 128 MiB of free space when starting each file.
 
 The phone checks the PC on connection, about every five minutes while open, and when you tap **Check now**. **Library → Phone copies** lists files that changed or disappeared, plus older copies that have left the recent 100. They stay available until you decide. Tap one, choose **Save to camera roll** to export the existing bytes to **DCIM/ComfyBridge**, and optionally confirm replacement or removal. Keeping the private copy requires no action; protected or on-demand copies can temporarily take the total above 100. Archiving only changes where an item is displayed.
 
