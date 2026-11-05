@@ -11,6 +11,18 @@ import time
 import uuid
 import urllib.request
 import recipes
+from queue_eta import QueueEta
+
+
+def stop_all_batches(db,token):
+    batches=db.execute(f"SELECT DISTINCT batch,owner FROM jobs WHERE status IN {LIVE}").fetchall()
+    for batch,owner in batches:
+        request=urllib.request.Request('http://127.0.0.1:18766/api/stop',
+            data=json.dumps({'batch':batch}).encode('utf-8'),
+            headers={'Authorization':'Bearer '+token,'X-Bridge-Device':owner,'Content-Type':'application/json'})
+        with urllib.request.urlopen(request,timeout=15) as response:
+            json.load(response)
+    return dict(ok=True,batches=len(batches))
 
 NOW_SQL = "(julianday('now')-2440587.5)*86400"
 LIVE = "('pending','running','submitting','cancelling')"
@@ -220,6 +232,7 @@ def serve():
     db.row_factory=sqlite3.Row
     prepare(db)
     recovered=False
+    estimates=QueueEta()
     for line in sys.stdin:
         try:
             msg=json.loads(line);route=msg['route'];device=msg['device'];body=msg.get('body') or {}
@@ -234,6 +247,14 @@ def serve():
                         recovered=True
                 result=history_rows(db) if recovered else dict(now=time.time(),jobs=[])
                 result['supportsRollingSkip']=True
+                remaining,total={},0
+                if recovered:
+                    active=db.execute("SELECT id FROM jobs WHERE status IN ('running','submitting','cancelling') ORDER BY rowid LIMIT 1").fetchone()
+                    remaining,total=estimates.snapshot(db,active[0] if active else None,None)
+                result.update(eta=remaining,queueEtaSeconds=total,supportsStopAll=True)
+            elif route=='stop-all':
+                uuid.UUID(device)
+                result=stop_all_batches(db,(data/'token.txt').read_text().strip())
             elif route=='rolling-skip':
                 # The beta 11 worker already reconciles durable per-job cancellations.
                 # Use its active ID so an upgrade never has to restart a live render.

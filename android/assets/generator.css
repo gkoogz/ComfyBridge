@@ -16,6 +16,8 @@ body:is([data-page=image],[data-page=video]) .modeRow{margin:2px 0 7px}
 .foldBody .lora{padding:7px 0}.foldBody .lora .row{margin-bottom:3px}.foldBody .controlrow{gap:8px}
 .foldPanel:has(.prompttools){padding-inline:7px}.foldPanel:has(.prompttools) .foldHead{padding-inline:4px}
 .foldBody .prompttools{margin-bottom:5px}.foldBody textarea{display:block;min-height:118px;padding:8px;line-height:1.4}
+.foldBody .promptEntry{height:118px;resize:vertical}
+.promptHeight{display:block;min-width:36px;min-height:28px;padding:0 6px;margin-top:2px;font-size:22px}
 .foldBody .togglelabel{margin:6px 0 0}
 #latestPanel>.foldHead{margin:2px 0 4px}
 .canvasFields{display:grid;grid-template-columns:minmax(0,1fr) 36px minmax(0,1fr);align-items:end;gap:6px}

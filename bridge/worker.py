@@ -28,6 +28,8 @@ from queue_progress import LIVE_JOBS, positions, prepare
 from studio import prepare as prepare_studio, mark_skipping
 from workflows import Workflows, EROS_BETA7, H3_AUDIO_VAE
 from progress import Progress
+from queue_eta import QueueEta
+ETA = QueueEta()
 IMPORT_LOCK = asyncio.Lock()
 MAX_VIDEO_UPLOAD = 512*1024*1024
 
@@ -484,12 +486,14 @@ async def api(request):
                       "(SELECT rowid FROM jobs ORDER BY rowid DESC LIMIT 100) ORDER BY rowid DESC")
         else:jobs=rows(f'SELECT {fields} FROM jobs WHERE batch=? AND owner=? ORDER BY ordinal',(str(uuid.UUID(path[6:])),device))
         counts = positions(DB) if jobs else {}
+        estimates,total_eta=ETA.snapshot(DB,ACTIVE,TRACKER)
         for j in jobs:
+            j['etaSeconds']=estimates.get(j['id'])
             if j['id'] in counts:
                 j['queuePosition'], j['queueTotal'] = counts[j['id']]
             if j['id']==ACTIVE and TRACKER and j['status'] not in ('complete','cancelled','error'):
                 j['progress'],j['current_node']=TRACKER.sample()
-        return web.json_response(dict(protocol=16,build='0.1.0-beta.26',jobs=jobs, active=ACTIVE, preview=bool(PREVIEW), previewRevision=PREVIEW_REV,ownedComfy=bool(OWNED)))
+        return web.json_response(dict(protocol=17,build='0.1.0-beta.28',jobs=jobs, active=ACTIVE, preview=bool(PREVIEW), previewRevision=PREVIEW_REV,ownedComfy=bool(OWNED),queueEtaSeconds=total_eta))
     if path.startswith('preview/'):
         job=str(uuid.UUID(path[8:]))
         after=int(request.query.get('after','-1'))
@@ -641,6 +645,17 @@ async def api(request):
         if interrupt:
             await cancel_ids({job})
         return web.json_response({'ok':True})
+    if path == 'stop-all' and request.method == 'POST':
+        if device=='legacy':
+            raise web.HTTPForbidden()
+        # Capture this queue before awaiting ComfyUI. Later submissions form a new queue.
+        targets=rows(f"SELECT id,batch,status FROM jobs WHERE {LIVE_JOBS}")
+        STOPPING.update(j['batch'] for j in targets)
+        with DB:
+            DB.execute("UPDATE jobs SET status='cancelled' WHERE status='pending'")
+            DB.execute("UPDATE jobs SET status='cancelling' WHERE status IN ('running','submitting')")
+        await cancel_ids({j['id'] for j in targets})
+        return web.json_response({'ok':True,'cancelled':len(targets)})
     if path == 'stop' and request.method == 'POST':
         d = await request.json(); batch = str(uuid.UUID(d['batch']))
         owner=rows('SELECT owner FROM jobs WHERE batch=? LIMIT 1',(batch,))

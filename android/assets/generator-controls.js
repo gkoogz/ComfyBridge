@@ -1,6 +1,34 @@
 'use strict';
 const pixelBudget=768*1152;
 const stepLimit=kind=>kind==='image'?50:20;
+let promptExpanded={},promptResizeObserver;
+function sizePrompt(field,expanded){
+ const key=field.dataset.setting,button=$('[data-prompt-height="'+key+'"]');
+ promptExpanded[key]=expanded;
+ button.textContent=expanded?'⌃':'⌄';
+ button.setAttribute('aria-expanded',String(expanded));
+ button.setAttribute('aria-label',(expanded?'Collapse ':'Show all ')+key+' prompt');
+ field.style.height='118px';
+ if(expanded&&field.clientWidth)field.style.height=Math.max(118,field.scrollHeight+2)+'px';
+}
+function bindPromptSizing(){
+ promptResizeObserver?.disconnect();
+ promptResizeObserver=new ResizeObserver(entries=>{
+  for(const {target,contentRect} of entries){
+   if(target.dataset.fitWidth!==String(contentRect.width)){
+    target.dataset.fitWidth=String(contentRect.width);
+    if(promptExpanded[target.dataset.setting])sizePrompt(target,true);
+   }
+  }
+ });
+ for(const field of $$('textarea.promptEntry')){
+  const key=field.dataset.setting;
+  sizePrompt(field,!!promptExpanded[key]);
+  field.addEventListener('input',()=>sizePrompt(field,true));
+  $('[data-prompt-height="'+key+'"]').onclick=()=>sizePrompt(field,!promptExpanded[key]);
+  promptResizeObserver.observe(field);
+ }
+}
 const limit=(n,min,max)=>Math.min(max,Math.max(min,n));
 function aspect(w,h){
  if(!Number.isInteger(w)||!Number.isInteger(h)||w<1||h<1)return '—';

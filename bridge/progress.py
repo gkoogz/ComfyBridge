@@ -93,3 +93,18 @@ class Progress:
             work+=expected*frac
         self.last=max(self.last,min(.99,.99*work/max(.01,sum(w for _,w in self.nodes.values()))))
         return self.last,label
+
+    def remaining(self,total_seconds,elapsed):
+        expected=sum(weight for _,weight in self.nodes.values())
+        scale=total_seconds/expected if total_seconds is not None and expected else 1.
+        if self.node and self.node not in self.done and self.value>0 and self.maximum>self.value:
+            interval=max(0,self.tick-self.start)/self.value
+            if interval>0:
+                current=interval*(self.maximum-self.value)-max(0,self.clock()-self.tick)
+                tail=sum(weight for node,(_,weight) in self.nodes.items()
+                         if node not in self.done and node!=self.node)*scale
+                # An overdue step has no trustworthy countdown until another event arrives.
+                return max(1,current+tail) if current>0 else None
+        if total_seconds is not None and elapsed<total_seconds:
+            return max(1,total_seconds-elapsed)
+        return None

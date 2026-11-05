@@ -9,13 +9,17 @@ body[data-page=bridge] #main{display:flex;flex-direction:column;width:100%;flex:
 #bridgeCommands{display:flex;gap:6px}
 #bridgeCommands button{min-height:32px;padding:4px 9px;font-size:12px}
 #bridgeCommands button:not(:disabled){color:var(--red)}
+#bridgeActivity>.row{flex-wrap:wrap;gap:4px}
+#bridgeActivity>.row>strong{font-size:13px}
+#bridgeCommands button{padding-inline:6px;font-size:11px}
+#activeTimer{display:block}
 #bridgeActivity .progress{margin:5px 0}
 .bridgeStage{font-size:12px;color:var(--muted)}
 body[data-page=bridge] #queueList{display:flex;flex:1 0 110px;min-height:110px}
 body[data-page=bridge] .historyCard{display:flex;flex:1;min-width:0;flex-direction:column;margin:7px 0 0;padding:7px 9px 0}
 body[data-page=bridge] .queueRows{height:0;min-height:0;max-height:none;flex:1}
 @media(max-height:740px){
- .bridgePanes:has(#bridgeOptions){max-height:max(80px,calc(100dvh - 288px));overflow-y:auto;overflow-x:hidden;overscroll-behavior-y:contain;touch-action:pan-y pinch-zoom}
+ .bridgePanes:has(#bridgeOptions){max-height:max(80px,calc(100dvh - 306px));overflow-y:auto;overflow-x:hidden;overscroll-behavior-y:contain;touch-action:pan-y pinch-zoom}
  .bridgePanes .pairCard:has(.orb.connected){grid-template-columns:36px 1fr auto;padding:7px 9px}
  .bridgePanes .pairCard:has(.orb.connected) .orb{width:34px;height:34px}
  .bridgePanes .pairCard:has(.orb.connected) .connectbutton{grid-column:3;grid-row:1;width:auto;height:auto;min-height:36px;padding:5px 10px}

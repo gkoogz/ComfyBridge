@@ -31,13 +31,25 @@ const path=require('node:path');
   await page.evaluate(()=>{rollingSkip=true;updateBridgeActivity()});
   await page.locator('[data-action=skip]').click();
   assert.deepEqual(await page.evaluate(()=>commands.at(-1)),{route:'studio/rolling-skip',data:{id:'video1'}});
+  await page.evaluate(()=>{
+   queueProtocol=17;queueEtaSeconds=420;jobs[0].etaSeconds=120;jobs[0].owner='two';
+   queueHistory[0].started=Date.now()/1000-60;updateBridgeActivity();
+  });
+  assert((await page.locator('#bridgeActivity .progress span').innerText()).includes('ETA ≈ 2:00'));
+  assert((await page.locator('#activeTimer').innerText()).includes('Elapsed 1:00 · Total ETA ≈ 7:00'));
+  assert(await page.locator('[data-action=stop]').isDisabled());
+  await page.locator('[data-action=all]').click();
+  assert.deepEqual(await page.evaluate(()=>commands.at(-1)),{route:'stop-all',data:{}});
+  await page.evaluate(()=>{queueProtocol=16;rollingStopAll=true;updateBridgeActivity();});
+  await page.locator('[data-action=all]').click();
+  assert.deepEqual(await page.evaluate(()=>commands.at(-1)),{route:'studio/stop-all',data:{}});
   for(const [width,height] of [[460,956],[360,640],[844,390]]){
    await page.setViewportSize({width,height});
    const size=await page.evaluate(()=>{const rows=$('.queueRows'),outer=$('#workspace');rows.scrollTop=84;return {outer:outer.scrollHeight,viewport:outer.clientHeight,list:rows.clientHeight,scroll:rows.scrollTop,bottom:rows.getBoundingClientRect().bottom};});
    console.log(width,height,size);assert(size.scroll>0&&size.list>=52);
    assert(size.outer<=size.viewport+1);assert(Math.abs(size.bottom-size.viewport)<2);
   }
-  await page.evaluate(()=>{connected=false;renderBridge();});assert(await page.locator('[data-action=stop]').isDisabled());assert(await page.locator('[data-action=skip]').isDisabled());
+  await page.evaluate(()=>{connected=false;renderBridge();});assert(await page.locator('[data-action=stop]').isDisabled());assert(await page.locator('[data-action=skip]').isDisabled());assert(await page.locator('[data-action=all]').isDisabled());
   console.log('Progress, Skip and Stop targets, ownership and independent scrolling passed.');
  }finally{await browser.close();}
 })().catch(e=>{console.error(e.message);process.exitCode=1;});

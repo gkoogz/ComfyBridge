@@ -76,7 +76,7 @@ async function syncSettings(){
 }
 
 let queueHistory=[],historyOffset=0,historyFailure='';
-let queueProtocol=0,rollingSkip=false,bridgeCommand=null;
+let queueProtocol=0,rollingSkip=false,rollingStopAll=false,bridgeCommand=null,queueEtaSeconds=null;
 const liveStatus=s=>['running','pending','cancelling','submitting'].includes(s);
 function clockText(seconds){
  seconds=Math.max(0,Math.floor(seconds));
@@ -90,7 +90,16 @@ function elapsed(job){
 }
 function updateTimers(){
  $$('.jobElapsed').forEach(el=>{const j=queueHistory.find(row=>row.id===el.dataset.clock);el.textContent=elapsed(j);});
- const span=$('#activeTimer');if(span)span.textContent=active?elapsed(queueHistory.find(j=>j.id===active)):'';
+ const span=$('#activeTimer');if(span)span.textContent=queueTiming();
+}
+function etaText(seconds){
+ return Number.isFinite(seconds)?'≈ '+clockText(Math.ceil(seconds)):'estimating…';
+}
+function queueTiming(){
+ if(!connected)return '';
+ const job=queueProgress().job;if(!job)return '';
+ const spent=elapsed(queueHistory.find(j=>j.id===job.id));
+ return (spent?'Elapsed '+spent:'Waiting')+(queueProtocol>=17||rollingStopAll?' · Total ETA '+etaText(queueEtaSeconds):'');
 }
 setInterval(()=>{if(!document.hidden&&$('#queueList'))updateTimers();},1000);
 function renderQueue(){
@@ -167,8 +176,15 @@ async function restoreGeneration(job,button,stillHere=()=>true){
   }catch(e){if(page===origin&&stillHere())toast(e.message);}finally{button.disabled=false;}
 }
 async function refreshHistory(){
- try{const h=await api('studio/history');queueHistory=h.jobs;historyOffset=h.now-Date.now()/1000;historyFailure='';rollingSkip=h.supportsRollingSkip===true;}
- catch(e){historyFailure='Queue history unavailable · '+e.message;}
+ try{
+  const h=await api('studio/history');queueHistory=h.jobs;historyOffset=h.now-Date.now()/1000;historyFailure='';rollingSkip=h.supportsRollingSkip===true;
+  rollingStopAll=h.supportsStopAll===true;
+  if(queueProtocol<17&&rollingStopAll){
+   queueEtaSeconds=h.queueEtaSeconds;
+   for(const job of jobs)job.etaSeconds=h.eta?.[job.id]??null;
+  }
+ }
+ catch(e){rollingStopAll=false;historyFailure='Queue history unavailable · '+e.message;}
 }
 
 function queueProgress(){
@@ -177,7 +193,8 @@ function queueProgress(){
  const job=pending.find(j=>j.id===active)||pending[0];
  const running=!!job&&job.id===active;
  const pct=running?Math.max(0,Math.min(99,Math.round(job.progress*100))):0;
- const label=job?'Queue '+(job.queuePosition??job.ordinal)+'/'+(job.queueTotal??job.total)+' · '+(running?pct+'%':'Queued'):'Queue empty';
+ const label=job?'Queue '+(job.queuePosition??job.ordinal)+'/'+(job.queueTotal??job.total)+' · '+(running?pct+'%':'Queued')+
+  (queueProtocol>=17||rollingStopAll?' · ETA '+etaText(job.etaSeconds):''):'Queue empty';
  return {pending,job,running,pct,label};
 }
 function addBridgeActivity(scroll){
@@ -201,11 +218,14 @@ function updateBridgeActivity(error=false){
  // A gesture started on a finished job must not click its successor's controls.
  const key=ready&&job?job.id:'';
  if(controls.dataset.job!==key){
-  controls.dataset.job=key;controls.innerHTML='<button data-action="skip">Skip</button><button data-action="stop">Stop batch</button>';
+  controls.dataset.job=key;controls.innerHTML='<button data-action="skip">Skip</button><button data-action="stop">Stop batch</button><button data-action="all">Stop all</button>';
   for(const button of controls.children)button.onclick=()=>runBridgeCommand(button.dataset.action,job);
  }
  const stop=$('[data-action=stop]',controls),skip=$('[data-action=skip]',controls);
  stop.disabled=!mine||!!bridgeCommand;
+ const all=$('[data-action=all]',controls);
+ all.disabled=!ready||!job||queueProtocol<17&&!rollingStopAll||!!bridgeCommand;
+ all.title=queueProtocol<17&&!rollingStopAll?'Update Windows to beta 28 to stop all batches':'Cancel all queued and running batches from both phones';
  const canSkip=queueProtocol>=8||queueProtocol===7&&(job?.kind==='image'||rollingSkip);
  skip.disabled=!mine||!!bridgeCommand||!running||job.status!=='running'||!canSkip;
  if(connected)renderQueue();
@@ -213,13 +233,16 @@ function updateBridgeActivity(error=false){
  updateTimers();
 }
 async function runBridgeCommand(action,job){
- if(bridgeCommand||!connected||!job||job.owner!==info().device)return;
+ if(bridgeCommand||!connected||!job)return;
+ if(action!=='all'&&job.owner!==info().device)return;
+ if(action==='all'&&queueProtocol<17&&!rollingStopAll)return;
  bridgeCommand=job.id;updateBridgeActivity();
  try{
   if(action==='skip'){
    const route=job.kind==='video'&&queueProtocol===7?'studio/rolling-skip':'skip';
    await api(route,{id:job.id});toast('Skipping this '+job.kind);
   }
+  else if(action==='all'){await api(queueProtocol>=17?'stop-all':'studio/stop-all',{});toast('Stopping all batches');}
   else{await api('stop',{batch:job.batch});toast('Stopping this batch');}
   await poll();
  }catch(e){toast(e.message);}

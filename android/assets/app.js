@@ -55,7 +55,7 @@ async function init(){
  };window.openJobAlert();
 }
 function drawer(open){document.querySelector('#drawer').inert=!open;$('#drawer').classList.toggle('open',open);$('#shade').hidden=!open;}
-function navigate(to){if(page!==to&&(page==='image'||!['image','video','bridge'].includes(to)))leaveLiveImage();if(viewerOpen())closeViewer(true);const forward=page==='bridge'&&['image','video'].includes(to),out=forward?outgoingBridge():null;page=to;archived=false;presetName='';drawer(false);render();$('#workspace').scrollTop=0;if(out)enterGenerator(out);if(connected){poll();if(['image','video'].includes(to))syncSettings();if(to==='notepad')syncNotes();}}
+function navigate(to){if(page!==to&&['image','video'].includes(to))promptExpanded={};if(page!==to&&(page==='image'||!['image','video','bridge'].includes(to)))leaveLiveImage();if(viewerOpen())closeViewer(true);const forward=page==='bridge'&&['image','video'].includes(to),out=forward?outgoingBridge():null;page=to;archived=false;presetName='';drawer(false);render();$('#workspace').scrollTop=0;if(out)enterGenerator(out);if(connected){poll();if(['image','video'].includes(to))syncSettings();if(to==='notepad')syncNotes();}}
 function connection(value){connected=value;$$('.dot').forEach(d=>d.classList.toggle('connected',value));$('#statusDot').setAttribute('aria-label',value?'Connected':'Disconnected');$('#drawerStatus').textContent=value?'PC connected':'Disconnected';}
 function render(){
  document.body.dataset.page=page;
@@ -68,7 +68,7 @@ let editPair=false,pairAddress=null,bridgeError="";
 let wanted=false,epoch=0,probing=false,nextProbe=0,misses=0,catalogLoading=false,retryCatalogAt=0,workerBuild='',serviceNote='',pollNote='';
 function notice(){const el=$('#linkNotice'),n=library.filter(j=>['missing','changed'].includes(j.warning)).length;const review=n?n+' PC file(s) changed or disappeared. Open Library to review your protected phone copies.':'';el.textContent=[wanted&&!connected?'Reconnecting to your PC. '+bridgeError+' Accepted jobs continue on the PC.':connected?(/after the previous worker goes idle/i.test(serviceNote+' '+pollNote)?'PC connected. The Windows bridge is updating; retrying automatically.':[serviceNote,pollNote].filter(Boolean).join(' ')):'',page==='library'?'':review].filter(Boolean).join(' ');el.hidden=!el.textContent;}
 function clearSession(){leaveLiveImage();imagePreviewProtocol=false;
- queueProtocol=0;rollingSkip=false;jobs=[];active=null;queueHistory=[];historyFailure='';
+ queueProtocol=0;rollingSkip=false;rollingStopAll=false;queueEtaSeconds=null;jobs=[];active=null;queueHistory=[];historyFailure='';
  ++epoch;profileReady=false;clearTimeout(profileTimer);wanted=false;misses=0;nextProbe=0;catalogLoading=false;retryCatalogAt=0;workerBuild='';serviceNote=pollNote=bridgeError='';connection(false);notice();
 }
 async function loadCatalog(){
@@ -151,14 +151,15 @@ function renderGenerator(){
  if(kind==='image')bindCanvas(s);else if(textVideo)bindCanvas(s,32);else{bindVideoScale(s,inp);updateVideo(false);}
  if(kind==='video')bindVideoTime(s);
  $$('#main > section.card,#latestPanel').forEach(installFold);
+ bindPromptSizing();
  renderResults();updateProgress();
 }
-function promptField(key,label){return `<section class="card"><div class="promptlabel"><label>${label}</label><button data-expand="${key}" class="textbutton" aria-label="Expand ${label}">⛶</button></div><div class="prompttools"><select data-prompt-library="${key}"><option value="">Saved prompts…</option>${state.prompts.map((p,i)=>`<option value="${i}">${esc(p.name)}</option>`).join('')}</select><button data-save-prompt="${key}" aria-label="Save prompt">＋</button><button data-delete-prompt="${key}" class="danger" aria-label="Delete selected prompt">×</button></div><textarea data-setting="${key}" placeholder="${key==='negative'?'What should the model avoid?':'Describe your idea…'}">${esc(state.settings[page][key]??'')}</textarea>${page==='video'&&key==='negative'?'<small>Optional. Adding text uses extra sampling time. Leave blank for the standard H3 workflow.</small>':''}</section>`;}
+function promptField(key,label){return `<section class="card"><div class="promptlabel"><label>${label}</label><button data-expand="${key}" class="textbutton" aria-label="Expand ${label}">⛶</button></div><div class="prompttools"><select data-prompt-library="${key}"><option value="">Saved prompts…</option>${state.prompts.map((p,i)=>`<option value="${i}">${esc(p.name)}</option>`).join('')}</select><button data-save-prompt="${key}" aria-label="Save prompt">＋</button><button data-delete-prompt="${key}" class="danger" aria-label="Delete selected prompt">×</button></div><textarea class="promptEntry" rows="5" data-setting="${key}" placeholder="${key==='negative'?'What should the model avoid?':'Describe your idea…'}">${esc(state.settings[page][key]??'')}</textarea><button type="button" class="textbutton promptHeight" data-prompt-height="${key}" aria-expanded="false" aria-label="Show all ${label}">⌄</button>${page==='video'&&key==='negative'?'<small>Optional. Adding text uses extra sampling time. Leave blank for the standard H3 workflow.</small>':''}</section>`;}
 function wirePrompts(){
  $$('textarea[data-setting]').forEach(el=>el.oninput=()=>{state.settings[page][el.dataset.setting]=el.value;persist();});
  $$('[data-expand]').forEach(b=>b.onclick=()=>{let k=b.dataset.expand,kind=page;openModal(k==='positive'?'Positive prompt':'Negative prompt','<textarea id="fullPrompt"></textarea>','<button class="green" id="applyPrompt">Done</button>');$('#fullPrompt').value=state.settings[kind][k];$('#fullPrompt').oninput=()=>{state.settings[kind][k]=$('#fullPrompt').value;persist();};$('#applyPrompt').onclick=()=>{closeModal();renderGenerator();};});
  $$('[data-save-prompt]').forEach(b=>b.onclick=async()=>{let name=await askName('Save prompt');if(!name)return;state.prompts.push({name,text:state.settings[page][b.dataset.savePrompt]});persist('prompts');renderGenerator();});
- $$('[data-prompt-library]').forEach(el=>el.onchange=()=>{if(el.value==='')return;let key=el.dataset.promptLibrary;state.settings[page][key]=state.prompts[+el.value].text;$(`textarea[data-setting="${key}"]`).value=state.settings[page][key];persist();});
+ $$('[data-prompt-library]').forEach(el=>el.onchange=()=>{if(el.value==='')return;let key=el.dataset.promptLibrary;state.settings[page][key]=state.prompts[+el.value].text;$(`textarea[data-setting="${key}"]`).value=state.settings[page][key];sizePrompt($(`textarea[data-setting="${key}"]`),true);persist();});
  $$('[data-delete-prompt]').forEach(b=>b.onclick=()=>{let sel=$(`[data-prompt-library="${b.dataset.deletePrompt}"]`);if(sel.value==='')return toast('Choose a saved prompt first.');state.prompts.splice(+sel.value,1);persist('prompts');renderGenerator();});
 }
 const erosModel='10Eros_Max_h3_8stepTURBO_beta7_int8HQ.safetensors';
@@ -408,7 +409,7 @@ async function poll(){
   if(view!=='notepad'){const [status,latest]=await Promise.all([view==='library'?null:api('status'),view==='bridge'?null:api('library')]);if(!current())return;
    if(status){
     const build=status.build||String(status.protocol);if(workerBuild&&workerBuild!==build){catalog=null;loadCatalog();}workerBuild=build;
-    jobs=status.jobs;active=status.active;previewAvailable=status.preview;queueProtocol=status.protocol;imagePreviewProtocol=queueProtocol>=7;
+    jobs=status.jobs;active=status.active;previewAvailable=status.preview;queueProtocol=status.protocol;imagePreviewProtocol=queueProtocol>=7;queueEtaSeconds=status.queueEtaSeconds??null;
     if(view==='bridge')updateBridgeActivity();
     await refreshHistory();if(!current())return;
    }
@@ -431,7 +432,7 @@ function updateProgress(){if(!$('#play'))return;
   $('#progressText').textContent=label;
   $('#jobMessage').textContent=(j.kind===page?'':j.kind+' · ')+(j.current_node||(running?'Preparing workflow':'Waiting in PC queue'));
   const timer=document.createElement('span');timer.id='activeTimer';
-  timer.textContent=elapsed(queueHistory.find(row=>row.id===j.id));$('#jobMessage').append(' ',timer);
+  timer.textContent=queueTiming();$('#jobMessage').append(' ',timer);
   const mini=$('#livePreview');
   if(imagePreviewProtocol){
    bindFrame(mini,running?j.id:null);

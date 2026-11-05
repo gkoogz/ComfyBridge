@@ -162,6 +162,81 @@ class BridgeTests(unittest.IsolatedAsyncioTestCase):
         r,_ = await self.request('monitor', headers={})
         self.assertEqual(r.status, 401)
 
+    async def test_stop_all_cancels_both_phones_and_preserves_later_submissions(self):
+        one,two=str(uuid.uuid4()),str(uuid.uuid4())
+        headers=lambda owner:{'Authorization':'Bearer integration-test-key','X-Bridge-Device':owner}
+        async def submit(owner):
+            return await self.request('generate',dict(kind='image',count=2,settings=self.settings,
+                                      requestId=str(uuid.uuid4())),headers(owner))
+        _,first=await submit(one)
+        _,second=await submit(two)
+        running=first['ids'][0]
+        w.update(running,status='running')
+        base=w.comfy
+        async def with_active(path,data=None):
+            if path=='/queue' and data is None:
+                return {'queue_running':[[0,running,{},{}],self.desktop],'queue_pending':[]}
+            return await base(path,data)
+        w.comfy=with_active
+        denied=await self.client.post('/api/stop-all',json={},headers={'Authorization':'Bearer integration-test-key'})
+        self.assertEqual(denied.status,403)
+        await denied.read()
+        response,_=await self.request('stop-all',{},headers(two))
+        self.assertEqual(response.status,200)
+        self.assertEqual(w.rows("SELECT status FROM jobs WHERE id=?",(running,))[0]['status'],'cancelling')
+        self.assertEqual(len(w.rows("SELECT id FROM jobs WHERE status='cancelled'")),3)
+        self.assertEqual([body for route,body in self.calls if route=='/interrupt'],[{'prompt_id':running}])
+        _,later=await submit(one)
+        self.assertNotIn(later['batch'],w.STOPPING)
+        self.assertEqual(len(w.rows("SELECT id FROM jobs WHERE status='pending'")),2)
+
+    async def test_stop_all_during_upgrade_uses_each_batch_owner(self):
+        from studio import stop_all_batches
+        from unittest.mock import patch
+        owners=[str(uuid.uuid4()),str(uuid.uuid4())]
+        for owner in owners:
+            await self.request('generate',dict(kind='image',count=2,settings=self.settings,requestId=str(uuid.uuid4())),
+                               {'Authorization':'Bearer integration-test-key','X-Bridge-Device':owner})
+        called=[]
+        def respond(request,timeout):
+            called.append((request.get_header('X-bridge-device'),json.loads(request.data)))
+            return io.BytesIO(b'{"ok":true}')
+        with patch('studio.urllib.request.urlopen',side_effect=respond):
+            result=stop_all_batches(w.DB,'test-token')
+        self.assertEqual(result['batches'],2)
+        self.assertEqual({owner for owner,_ in called},set(owners))
+        self.assertEqual(len({data['batch'] for _,data in called}),2)
+
+    async def test_queue_eta_tracks_history_and_live_steps(self):
+        from queue_eta import QueueEta
+        _,first=await self.submit()
+        historical=first['ids'][0]
+        w.update(historical,status='complete')
+        now=w.time.time()
+        w.DB.execute('UPDATE job_times SET started=?,ended=?,observed=0 WHERE job=?',(now-200,now-100,historical))
+        w.DB.commit()
+        _,batch=await self.submit(2)
+        estimate=QueueEta()
+        remaining,total=estimate.snapshot(w.DB,None,None)
+        self.assertEqual(total,200)
+        running=batch['ids'][0]
+        w.update(running,status='running')
+        w.DB.execute('UPDATE job_times SET started=? WHERE job=?',(now-25,running));w.DB.commit()
+        clock=[0.]
+        tracker=w.Progress('image',{'3':{'class_type':'KSampler'}},self.settings,lambda:clock[0])
+        tracker.enter('3');clock[0]=25;tracker.step('3',{'value':1,'max':4})
+        remaining,total=estimate.snapshot(w.DB,running,tracker)
+        self.assertEqual(remaining[running],75)
+        self.assertEqual(total,175)
+        clock[0]=30
+        remaining,total=estimate.snapshot(w.DB,running,tracker)
+        self.assertEqual(total,170)
+        clock[0]=110
+        self.assertIsNone(estimate.snapshot(w.DB,running,tracker)[1])
+        w.update(batch['ids'][1],status='cancelled')
+        clock[0]=30
+        self.assertEqual(estimate.snapshot(w.DB,running,tracker)[1],70)
+
     async def test_two_phone_queue_and_private_stops(self):
         one,two=str(uuid.uuid4()),str(uuid.uuid4())
         def headers(owner):return {'Authorization':'Bearer integration-test-key','X-Bridge-Device':owner}
