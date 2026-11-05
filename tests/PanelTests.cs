@@ -31,6 +31,11 @@ partial class Bridge {
         var app=new Bridge();
         try{
             app.ShowMonitor();Application.DoEvents();
+            var header=(TableLayoutPanel)((TableLayoutPanel)app.compactPanel).GetControlFromPosition(0,0);
+            foreach(Control control in header.Controls){
+                Check(control.Height>=TextRenderer.MeasureText(control.Text,control.Font).Height+4,"header text has vertical clearance");
+                if(control is Button)Check(((Button)control).FlatAppearance.BorderSize==0,"window controls are borderless");
+            }
             Check(app.monitor.Visible && online && app.codeLabel.Text.Length==6,"pairing panel opened");
             Check(app.addressBox.Text=="https://203.0.113.10:15294","remote address shown first");
             int port=((System.Net.IPEndPoint)tlsServer.LocalEndpoint).Port;

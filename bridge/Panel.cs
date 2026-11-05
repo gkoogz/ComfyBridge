@@ -23,6 +23,12 @@ partial class Bridge {
     static Label L(string s,float pt,Color color,bool bold=false){return new Label{Text=s,UseMnemonic=false,ForeColor=color,Font=new Font("Segoe UI",pt,bold?FontStyle.Bold:FontStyle.Regular),Dock=DockStyle.Fill,TextAlign=ContentAlignment.MiddleLeft,AutoEllipsis=true};}
     static Image PowerIcon(){var bmp=new Bitmap(20,20);using(var g=Graphics.FromImage(bmp))using(var pen=new Pen(Mint,2.2f)){g.SmoothingMode=System.Drawing.Drawing2D.SmoothingMode.AntiAlias;g.DrawArc(pen,3,4,14,14,-55,290);g.DrawLine(pen,10,1,10,10);}return bmp;}
     static Button B(string s,EventHandler action){var b=new Button{Text=s,AutoSize=true,MinimumSize=new Size(70,32),FlatStyle=FlatStyle.Flat,ForeColor=Color.White,BackColor=Panel,Font=new Font("Segoe UI",9)};b.FlatAppearance.BorderColor=Color.FromArgb(73,88,95);b.Click+=action;return b;}
+    static Button WindowButton(string text,string name,EventHandler action){
+        var button=B(text,action);button.AutoSize=false;button.MinimumSize=Size.Empty;button.Dock=DockStyle.Fill;
+        button.Margin=new Padding(2);button.Padding=Padding.Empty;button.BackColor=Ink;
+        button.Font=new Font("Segoe UI",14);button.FlatAppearance.BorderSize=0;
+        button.FlatAppearance.MouseOverBackColor=Panel;button.AccessibleName=name;return button;
+    }
     static FlowLayoutPanel Row(params Control[] cs){var row=new FlowLayoutPanel{Dock=DockStyle.Fill,WrapContents=false,Margin=Padding.Empty};foreach(var c in cs)row.Controls.Add(c);return row;}
     static void Add(TableLayoutPanel t,Control c,int height){int i=t.RowCount++;t.RowStyles.Add(new RowStyle(SizeType.Absolute,height));t.Controls.Add(c,0,i);}
     void Server(bool on,bool remember){
@@ -77,16 +83,16 @@ partial class Bridge {
     }}
     void ShowMonitor(){
         if(monitor==null){
-            monitor=new Form{Text="ComfyBridge",Icon=tray.Icon,ClientSize=new Size(438,340),BackColor=Ink,ForeColor=Color.White,ShowInTaskbar=false,TopMost=true,StartPosition=FormStartPosition.Manual,FormBorderStyle=FormBorderStyle.None,AutoScaleMode=AutoScaleMode.Dpi};
+            monitor=new Form{Text="ComfyBridge",Icon=tray.Icon,ClientSize=new Size(438,348),BackColor=Ink,ForeColor=Color.White,ShowInTaskbar=false,TopMost=true,StartPosition=FormStartPosition.Manual,FormBorderStyle=FormBorderStyle.None,AutoScaleMode=AutoScaleMode.Dpi};
             monitor.SizeChanged+=(s,e)=>RoundPanel();RoundPanel();
             monitor.FormClosing+=(s,e)=>{Server(false,false);tray.Visible=false;Application.ExitThread();};
             var grid=new TableLayoutPanel{Padding=new Padding(14,8,14,8),Dock=DockStyle.Fill,ColumnCount=1,AutoScroll=true};grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));monitor.Controls.Add(grid);
             compactPanel=grid;
-            var head=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=4};head.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,43));head.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));head.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,43));head.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,43));
-            var expand=B("↖",(s,e)=>ExpandDesktop());expand.MinimumSize=Size.Empty;expand.AccessibleName="Expand desktop studio";head.Controls.Add(expand,0,0);
-            head.Controls.Add(L("ComfyBridge",15,Color.White,true),1,0);
-            var hide=B("–",(s,e)=>HidePanel());hide.MinimumSize=Size.Empty;hide.AccessibleName="Hide to tray";head.Controls.Add(hide,2,0);
-            var quit=B("×",(s,e)=>monitor.Close());quit.MinimumSize=Size.Empty;quit.AccessibleName="Quit ComfyBridge";head.Controls.Add(quit,3,0);Add(grid,head,36);
+            var head=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=4,RowCount=1,Margin=Padding.Empty,Padding=Padding.Empty};head.RowStyles.Add(new RowStyle(SizeType.Percent,100));head.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,43));head.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));head.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,43));head.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,43));
+            head.Controls.Add(WindowButton("↖","Expand desktop studio",(s,e)=>ExpandDesktop()),0,0);
+            var title=L("ComfyBridge",15,Color.White,true);title.Margin=Padding.Empty;head.Controls.Add(title,1,0);
+            head.Controls.Add(WindowButton("–","Hide to tray",(s,e)=>HidePanel()),2,0);
+            head.Controls.Add(WindowButton("×","Quit ComfyBridge",(s,e)=>monitor.Close()),3,0);Add(grid,head,44);
             badge=L("",10,Mint,true);badge.Dock=DockStyle.None;badge.Size=new Size(88,30);phone=L("",10,Red);phone.Dock=DockStyle.None;phone.Size=new Size(155,30);
             power=B("",(s,e)=>{try{Server(!online,true);}catch(Exception ex){MessageBox.Show(monitor,ex.Message);}});power.Image=PowerIcon();power.TextImageRelation=TextImageRelation.ImageBeforeText;Add(grid,Row(badge,phone,power),38);
             Add(grid,L("1   PC address",10,Mint,true),23);
