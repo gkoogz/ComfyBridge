@@ -12,6 +12,7 @@ if(window.Desktop){
   request:(id,path,method,body)=>forward(id,desktopCall('request',{path,method,body})),
   localMedia:(id,action,value)=>forward(id,desktopCall('local',{action,value:JSON.parse(value)})),
   notificationRoute:()=>'',watchBatch:()=>{},haptic:()=>{},
+  copyText:text=>desktopCall('copyText',{text}),
   enableAlerts:()=>toast('Keep the desktop studio open to follow generation progress.')
  };
  document.documentElement.classList.add('desktop');
@@ -28,6 +29,24 @@ async function initDesktop(){
  const left=document.createElement('aside');left.id='desktopBridge';
  left.innerHTML='<div class="desktopServer"><div class="row spread"><h2>Bridge</h2><button id="desktopPower" aria-label="Toggle server power">⏻</button></div><strong id="desktopServerState">Checking server…</strong><small id="desktopPhones"></small><label for="desktopAddress">PC address · enter on your phone</label><div class="row"><select id="desktopAddress"></select><button id="desktopCopy" title="Copy address">Copy</button><button id="desktopEdit" title="Edit remote address">✎</button></div><label>Pairing code</label><div class="row spread"><strong id="desktopCode">—</strong><button id="desktopNewCode">New code</button></div><small id="desktopPairHint"></small><div id="desktopError" role="alert" hidden></div></div><div class="sectionline"><h2>Machine pulse</h2><span class="pill" id="liveLabel">LOCAL</span></div><div class="telemetry">'+['CPU','GPU','RAM','VRAM','SYSTEM COMMIT'].map((m,i)=>'<div class="metric" '+(i===4?'style="grid-column:1/-1"':'')+'><label>'+m+'</label><strong id="m'+i+'">—</strong><small id="ms'+i+'">Waiting for bridge</small><div class="meter"><i id="mb'+i+'"></i></div></div>').join('')+'</div><section id="bridgeActivity" aria-label="Generation progress"><div class="row spread"><strong>Generation</strong></div><div id="bridgeCommands"></div><div class="progress" role="progressbar" aria-label="Current generation" aria-valuemin="0" aria-valuemax="100"><i></i><span></span></div><div class="bridgeStage"><span id="bridgeStage"></span><span id="activeTimer"></span></div></section><div id="queueList"></div>';
  title.after(left);
+ const chatControls=document.createElement('div');chatControls.className='desktopChatControls';chatControls.innerHTML='<label for="desktopChatModel">Local chat model</label><select id="desktopChatModel" aria-label="Local chat model"></select><small id="desktopChatHint">Checking installed models…</small>';
+ $('.desktopServer').append(chatControls);
+ let chatLoading=false,chatModelChanged=false;
+ const refreshChatModels=async()=>{
+  if(chatLoading||document.hidden)return;chatLoading=true;
+  try{const data=await desktopCall('chatModels'),select=$('#desktopChatModel');
+   const choices=data.models||[],signature=JSON.stringify(choices);
+   if(select.dataset.models!==signature){select.replaceChildren(...choices.map(m=>new Option(m.name,m.id)));select.dataset.models=signature;}
+   select.value=data.selected||'';select.disabled=!choices.length;
+   if(!chatModelChanged)$('#desktopChatHint').textContent=choices.length?'Loads on demand · releases memory after replying':'Run Setup-Chat.ps1 on this PC to install a model.';
+  }catch(e){$('#desktopChatHint').textContent=e.message;}finally{chatLoading=false;}
+ };
+ $('#desktopChatModel').onchange=async()=>{const select=$('#desktopChatModel');select.disabled=true;
+  try{await desktopCall('chatSelect',{id:select.value});chatModelChanged=false;}
+  catch(e){chatModelChanged=true;$('#desktopChatHint').textContent=e.message;}
+  finally{await refreshChatModels();}
+ };
+ refreshChatModels();setInterval(refreshChatModels,5000);
  $('#desktopPower').innerHTML=powerIcon;
  $('#drawer').inert=false;$('#drawer').classList.add('open');$('[data-nav=bridge]').remove();
  $('.drawerfoot small').textContent='Made on this PC. Shared with your phones.';

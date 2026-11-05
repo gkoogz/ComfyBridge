@@ -256,7 +256,8 @@ let drag=null,swallowUntil=0;
 document.addEventListener('pointerdown',e=>{
  swallowUntil=0;
  if(window.Desktop)return;
- if(!e.isPrimary||e.button!==0||viewerClosing||e.target.closest('input,textarea,select,canvas,#carousel,[contenteditable]'))return;
+ if(!e.isPrimary||e.button!==0||viewerClosing||e.target.closest('input,textarea,select,canvas,#carousel,#chatGrab,[contenteditable]'))return;
+ if(e.target.closest('.chatWords')&&window.getSelection()?.type==='Range')return;
  const type=$('#modal').open?'modal':viewerOpen()?'viewer':$('#drawer').classList.contains('open')?'closeDrawer':page==='library'&&archived?'archive':'drawer';
  if(type)drag={id:e.pointerId,type,x:e.clientX,y:e.clientY,t:performance.now(),dx:0,active:false,queue:e.target.closest('.historyCard')};
 });

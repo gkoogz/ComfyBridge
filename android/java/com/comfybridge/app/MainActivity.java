@@ -98,7 +98,7 @@ public class MainActivity extends Activity {
       return new WebResourceResponse(mime,null,code,c.getResponseMessage()==null?"Response":c.getResponseMessage(),headers,new FilterInputStream(input){@Override public void close()throws IOException{super.close();c.disconnect();}});
      }
      if(path.equals("/"))path="/index.html";
-     if(!Arrays.asList("/index.html","/style.css","/app.js","/profile.js","/gallery.js","/gallery.css","/studio.css","/studio.js","/notepad.js","/live-image.js","/generator-controls.js","/generator.css","/desktop.js","/desktop.css","/provenance.js","/provenance.css").contains(path))return response(404,"Not Found","text/plain",new byte[0]);
+     if(!Arrays.asList("/index.html","/style.css","/app.js","/profile.js","/gallery.js","/gallery.css","/studio.css","/studio.js","/notepad.js","/live-image.js","/generator-controls.js","/generator.css","/desktop.js","/desktop.css","/provenance.js","/chat.js","/chat.css","/provenance.css").contains(path))return response(404,"Not Found","text/plain",new byte[0]);
      String mime=path.endsWith("css")?"text/css":path.endsWith("js")?"application/javascript":"text/html";
      return new WebResourceResponse(mime,"UTF-8",getAssets().open(path.substring(1)));
     }catch(Exception e){return response(503,"Unavailable","text/plain",new byte[0]);}
@@ -153,6 +153,7 @@ public class MainActivity extends Activity {
  }
  String exportOperation="export";
  public class NativeApi {
+  @JavascriptInterface public void copyText(String text){if(text==null||text.length()>1000000)return;runOnUiThread(()->{android.content.ClipboardManager clipboard=(android.content.ClipboardManager)getSystemService(CLIPBOARD_SERVICE);clipboard.setPrimaryClip(android.content.ClipData.newPlainText("ComfyBridge response",text));});}
   @JavascriptInterface public void prefetchEnabled(boolean enabled){
    if(enabled&&foreground)prefetchAllowed=true;else if(prefetchAllowed||prefetchConnection!=null)stopPrefetch();
   }

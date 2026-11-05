@@ -4,7 +4,7 @@ New-Item -ItemType Directory -Force $target | Out-Null
 $exe = Join-Path $target 'ComfyBridge.exe'
 # Only replace this installation; the Python worker and queued Comfy jobs keep running.
 Get-Process ComfyBridge -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $exe } | ForEach-Object { Stop-Process -Id $_.Id; $_.WaitForExit() }
-foreach($file in 'ComfyBridge.exe','Microsoft.Web.WebView2.Core.dll','Microsoft.Web.WebView2.WinForms.dll','WebView2Loader.dll','WebView2-LICENSE.txt','worker.py','workflows.py','extension.py','handoff.py','media_index.py','progress.py','queue_progress.py','queue_eta.py','studio.py','recipes.py','provenance.py'){
+foreach($file in 'ComfyBridge.exe','Microsoft.Web.WebView2.Core.dll','Microsoft.Web.WebView2.WinForms.dll','WebView2Loader.dll','WebView2-LICENSE.txt','worker.py','workflows.py','extension.py','handoff.py','media_index.py','progress.py','queue_progress.py','queue_eta.py','studio.py','recipes.py','provenance.py','chat.py','install_chat.py','Setup-Chat.ps1'){
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot $file) -Destination $target -Force
 }
 New-Item -ItemType Directory -Force (Join-Path $target 'desktop-assets') | Out-Null

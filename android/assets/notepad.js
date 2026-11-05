@@ -156,4 +156,5 @@ function renderNotepad(){
  pad.onselect=pad.onpointerup=pad.onkeyup=pad.onfocus=rememberCursor;
  $('#addSticky').onpointerdown=e=>{rememberCursor();e.preventDefault();};
  $('#addSticky').onclick=placeSticky;
+ mountChat();
 }

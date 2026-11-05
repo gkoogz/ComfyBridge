@@ -21,8 +21,8 @@ using Microsoft.Win32;
 [assembly: System.Reflection.AssemblyTitle("Comfy Bridge")]
 [assembly: System.Reflection.AssemblyDescription("Phone to ComfyUI bridge")]
 [assembly: System.Reflection.AssemblyVersion("0.1.0.0")]
-[assembly: System.Reflection.AssemblyFileVersion("0.1.0.32")]
-[assembly: System.Reflection.AssemblyInformationalVersion("0.1.0-beta.32")]
+[assembly: System.Reflection.AssemblyFileVersion("0.1.0.34")]
+[assembly: System.Reflection.AssemblyInformationalVersion("0.1.0-beta.34")]
 
 partial class Bridge : ApplicationContext {
     static readonly string Home = AppDomain.CurrentDomain.BaseDirectory;
@@ -217,6 +217,10 @@ partial class Bridge : ApplicationContext {
                 if(path.StartsWith("/api/studio/desktop-")){await Reply(stream,403,"{}");return;}
                 if(!identified){await Reply(stream,403,"{\"error\":\"A paired phone is required.\"}");return;}
                 await ReplyStudio(stream,path.Substring(12),device,length);return;
+            }
+            if(path=="/api/generate"&&first[0]=="POST"){
+                var chatReply=new JavaScriptSerializer().Deserialize<Dictionary<string,object>>(await StudioRequest("desktop-chat-yield","panel",""));
+                if(Convert.ToInt32(chatReply["code"])!=200){await Reply(stream,503,new JavaScriptSerializer().Serialize(chatReply["data"]));return;}
             }
             await Wake();
             try {

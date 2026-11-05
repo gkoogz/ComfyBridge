@@ -100,10 +100,13 @@ partial class Bridge {
             case "request":result=await DesktopApi(Convert.ToString(args["path"]),Convert.ToString(args["method"]),Convert.ToString(args["body"]));break;
             case "local":result=await DesktopMedia(Convert.ToString(args["action"]),(Dictionary<string,object>)args["value"]);break;
             case "status":result=DesktopStatus();break;
+            case "chatModels":result=await ChatControl("models","");break;
+            case "chatSelect":result=await ChatControl("select",DesktopJson().Serialize(args));break;
             case "power":Server(Convert.ToBoolean(args["on"]),true);result=DesktopStatus();break;
             case "code":if(online)Pairing.Issue();RefreshState();result=DesktopStatus();break;
             case "address":SetRemote();result=DesktopStatus();break;
             case "copy":if(addressBox.Items.Contains(Convert.ToString(args["address"])))Clipboard.SetText(Convert.ToString(args["address"]));result=true;break;
+            case "copyText":{string text=Convert.ToString(args["text"]);if(text.Length>1000000)throw new IOException("Text is too long to copy.");if(text.Length>0)Clipboard.SetText(text);result=true;break;}
             case "collapse":CollapseDesktop();return;
             case "hide":HidePanel();return;
             case "quit":monitor.Close();return;

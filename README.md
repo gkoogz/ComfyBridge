@@ -1,12 +1,22 @@
 # ComfyBridge
 
-**[Open the beta 33 release page](https://github.com/gkoogz/ComfyBridge/releases/tag/v0.1.0-beta.33)** · [Download the Android APK](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.33/ComfyBridge-0.1.0-beta.33.apk) · [Download Windows](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.32/ComfyBridge-Windows-0.1.0-beta.32.zip) · [All releases](https://github.com/gkoogz/ComfyBridge/releases)
+**[Open the beta 34 release page](https://github.com/gkoogz/ComfyBridge/releases/tag/v0.1.0-beta.34)** · [Download the Android APK](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.34/ComfyBridge-0.1.0-beta.34.apk) · [Download Windows](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.34/ComfyBridge-Windows-0.1.0-beta.34.zip) · [All releases](https://github.com/gkoogz/ComfyBridge/releases)
 
 <img src="artwork/comfybridge.png" width="128" alt="ComfyBridge white cube and play icon on black">
 
 An Android remote for an existing Windows ComfyUI installation. The phone edits generation settings, uploads images and masks, and views results; the PC does the GPU work. A small Windows tray application wakes its Python worker on demand.
 
-**0.1.0-beta.33 is a personal-workflow beta**, adapted specifically to `Image gen.json` and `Video gen.json` in `E:\ComfyUI-Zluda\user\default\workflows`. It is not a general ComfyUI workflow importer. Models, LoRAs, workflow files, prompts, generated media, pairing credentials, and signing keys are not included in this repository or release. Beta 33 updates Android only; Windows beta 32 remains the companion and requires no restart.
+**Notepad chat** talks to a local model on the PC. **Chat about this** under any positive or negative prompt copies it into the Notepad composer without sending it. Drag its handle between tucked-away, composer-only, half-screen and nearly full-screen positions. Send with the up arrow (or Ctrl+Enter on PC). Newest messages appear nearest the composer; replies stream into grey bubbles with a copy button. The restart button asks before clearing the current conversation. It does not change the notes or stickies.
+
+Short conversations and the empty tray surface can also be dragged. Longer conversations scroll with momentum; pulling beyond an edge gently moves the tray with resistance and springs back to a resting position. Text entry, long-press selection and response-copy controls stay separate from the drag gesture.
+
+The active conversation and shared draft are stored on the PC; each app also keeps an offline copy and protects unsent edits when devices disagree. A reply can finish after the app closes. Only the active conversation is retained when starting a new chat. **Add sticky** stays above the chat tray.
+
+Run **Setup-Chat.ps1** in the Windows package once to install the pinned llama.cpp Vulkan runtime and Qwen3.5-9B Q5_K_M weights (about 7.1 GB download) under `E:\ComfyBridge-LLM`. The installer resumes completed byte ranges and verifies SHA-256 before activating the model. It does not install a separate GUI or change ComfyUI's Python environment. Choose an installed GGUF in the compact PC panel or the desktop Bridge column; the phone has no model selector. Additional compatible GGUF files can be placed in the same `models` folder.
+
+Chat starts its model process only for a message and releases it after the reply. It uses the Radeon GPU when generations are idle. Generation submissions first ask chat to release GPU memory; with sufficient RAM, chat continues on CPU while ComfyUI runs. If memory is tight, the message waits with an explanation. A loopback-only server with an ephemeral access key serves inference; phone requests use the existing encrypted, authenticated bridge. Prompts and replies are not sent to a cloud model. The latest conversation turns are used within the model's context budget; older turns remain visible in the active chat.
+
+**0.1.0-beta.34 is a personal-workflow beta**, adapted specifically to `Image gen.json` and `Video gen.json` in `E:\ComfyUI-Zluda\user\default\workflows`. It is not a general ComfyUI workflow importer. Models, LoRAs, workflow files, prompts, generated media, pairing credentials, and signing keys are not included in this repository or release. Beta 34 requires the updated Windows companion for local chat. Existing generation queues survive the tray update.
 
 The phone shows **PC connected** as soon as the bridge answers. Loading models and unavailable telemetry have their own messages. If the server or VPN drops, leave the phone app open: it retries automatically using the saved pairing. **Disconnect** or **Cancel reconnect** stops those retries.
 

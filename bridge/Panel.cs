@@ -19,7 +19,28 @@ partial class Bridge {
     readonly string remoteFile=Path.Combine(Data,"remote-address.txt"), offFile=Path.Combine(Data,"server-off");
     Label badge,phone,codeLabel,codeHint,jobText; Button power,newCode;
     string powerError;
-    ComboBox addressBox; ProgressBar bar; bool reading;
+    ComboBox addressBox,chatModels; Label chatHint; string chatModelError; ProgressBar bar; bool reading,readingChat,paintingChat;
+    sealed class ChatChoice{public string Id,Name;public override string ToString(){return Name;}}
+    static async Task<Dictionary<string,object>> ChatControl(string action,string body){
+        var json=new System.Web.Script.Serialization.JavaScriptSerializer();
+        var response=json.Deserialize<Dictionary<string,object>>(await StudioRequest("desktop-chat-"+action,"panel",body));
+        var data=(Dictionary<string,object>)response["data"];
+        if(Convert.ToInt32(response["code"])!=200)throw new IOException(Convert.ToString(data["error"]));
+        return data;
+    }
+    async void RefreshChatModels(){
+        if(readingChat||chatModels==null||monitor==null||!monitor.Visible)return;readingChat=true;
+        try{
+            var data=await ChatControl("models","");if(monitor.IsDisposed)return;paintingChat=true;
+            string selected=Convert.ToString(data["selected"]);
+            var entries=((IEnumerable)data["models"]).Cast<Dictionary<string,object>>().ToArray();
+            string names=String.Join("|",entries.Select(x=>Convert.ToString(x["id"])));
+            if(Convert.ToString(chatModels.Tag)!=names){chatModels.Items.Clear();foreach(var item in entries)chatModels.Items.Add(new ChatChoice{Id=Convert.ToString(item["id"]),Name=Convert.ToString(item["name"])});chatModels.Tag=names;}
+            foreach(ChatChoice item in chatModels.Items)if(item.Id==selected)chatModels.SelectedItem=item;
+            chatModels.Enabled=entries.Length>0;chatHint.Text=chatModelError??(entries.Length>0?"Loads on demand · releases memory after replying":"Run Setup-Chat.ps1 to install a local model.");
+        }catch(Exception e){if(chatHint!=null&&!chatHint.IsDisposed)chatHint.Text=e.Message;}
+        finally{paintingChat=false;readingChat=false;}
+    }
     static Label L(string s,float pt,Color color,bool bold=false){return new Label{Text=s,UseMnemonic=false,ForeColor=color,Font=new Font("Segoe UI",pt,bold?FontStyle.Bold:FontStyle.Regular),Dock=DockStyle.Fill,TextAlign=ContentAlignment.MiddleLeft,AutoEllipsis=true};}
     static Image PowerIcon(){var bmp=new Bitmap(20,20);using(var g=Graphics.FromImage(bmp))using(var pen=new Pen(Mint,2.2f)){g.SmoothingMode=System.Drawing.Drawing2D.SmoothingMode.AntiAlias;g.DrawArc(pen,3,4,14,14,-55,290);g.DrawLine(pen,10,1,10,10);}return bmp;}
     static Button B(string s,EventHandler action){var b=new Button{Text=s,AutoSize=true,MinimumSize=new Size(70,32),FlatStyle=FlatStyle.Flat,ForeColor=Color.White,BackColor=Panel,Font=new Font("Segoe UI",9)};b.FlatAppearance.BorderColor=Color.FromArgb(73,88,95);b.Click+=action;return b;}
@@ -83,7 +104,7 @@ partial class Bridge {
     }}
     void ShowMonitor(){
         if(monitor==null){
-            monitor=new Form{Text="ComfyBridge",Icon=tray.Icon,ClientSize=new Size(438,348),BackColor=Ink,ForeColor=Color.White,ShowInTaskbar=false,TopMost=true,StartPosition=FormStartPosition.Manual,FormBorderStyle=FormBorderStyle.None,AutoScaleMode=AutoScaleMode.Dpi};
+            monitor=new Form{Text="ComfyBridge",Icon=tray.Icon,ClientSize=new Size(438,428),BackColor=Ink,ForeColor=Color.White,ShowInTaskbar=false,TopMost=true,StartPosition=FormStartPosition.Manual,FormBorderStyle=FormBorderStyle.None,AutoScaleMode=AutoScaleMode.Dpi};
             monitor.SizeChanged+=(s,e)=>RoundPanel();RoundPanel();
             monitor.FormClosing+=(s,e)=>{Server(false,false);tray.Visible=false;Application.ExitThread();};
             var grid=new TableLayoutPanel{Padding=new Padding(14,8,14,8),Dock=DockStyle.Fill,ColumnCount=1,AutoScroll=true};grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));monitor.Controls.Add(grid);
@@ -103,12 +124,16 @@ partial class Bridge {
             codeLabel=L("",20,Color.White,true);codeLabel.Dock=DockStyle.None;codeLabel.Size=new Size(158,35);
             newCode=B("New code",(s,e)=>{if(online){Pairing.Issue();RefreshState();}});Add(grid,Row(codeLabel,newCode),39);
             codeHint=L("",9,Muted);Add(grid,codeHint,24);
+            Add(grid,L("Local chat model",10,Mint,true),23);
+            chatModels=new ComboBox{DropDownStyle=ComboBoxStyle.DropDownList,Font=new Font("Segoe UI",10),Dock=DockStyle.Fill,AccessibleName="Local chat model"};Add(grid,chatModels,31);
+            chatModels.SelectedIndexChanged+=async(s,e)=>{if(paintingChat||chatModels.SelectedItem==null)return;chatModels.Enabled=false;try{await ChatControl("select",new System.Web.Script.Serialization.JavaScriptSerializer().Serialize(new{id=((ChatChoice)chatModels.SelectedItem).Id}));chatModelError=null;}catch(Exception error){chatModelError=error.Message;chatHint.Text=error.Message;}RefreshChatModels();};
+            chatHint=L("Checking local models…",9,Muted);Add(grid,chatHint,24);
             Add(grid,L("Generation",11,Color.White,true),23);jobText=L("No active generation",10,Muted);Add(grid,jobText,42);
             bar=new ProgressBar{Dock=DockStyle.Fill,Minimum=0,Maximum=100};Add(grid,bar,16);
         }
         if(!monitor.Visible){AddressesList();if(online)Pairing.Issue();monitor.Show();}
         if(!expanded)DockPanel();
-        monitor.WindowState=FormWindowState.Normal;monitor.Activate();timer.Interval=1400;RefreshState();RefreshJobs();
+        monitor.WindowState=FormWindowState.Normal;monitor.Activate();timer.Interval=1400;RefreshState();RefreshJobs();RefreshChatModels();
     }
     void HidePanel(){
         monitor.Hide();ReleaseDesktop();

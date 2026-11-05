@@ -16,6 +16,10 @@ import sqlite3,sys,json
 from PIL import Image
 from pathlib import Path
 p=Path(sys.argv[1])/'fixture'
+models=p/'models';models.mkdir(exist_ok=True)
+for name in ('fixture-one.gguf','fixture-two.gguf'):(models/name).write_bytes(b'fixture, never used for inference')
+(p/'runtime.exe').touch()
+(p/'ComfyBridge/chat-runtime.json').write_text(json.dumps(dict(modelDir=str(models),executable=str(p/'runtime.exe'),selected='fixture-one.gguf')))
 with sqlite3.connect(p/'ComfyBridge/library.sqlite') as db:
     db.execute('DROP TABLE IF EXISTS media')
     db.execute('CREATE TABLE media(id,path,thumbnail,job,kind,created,duration,archived)')

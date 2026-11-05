@@ -33,6 +33,10 @@ partial class Bridge {
                 app.ExpandDesktop();
                 await Until(async()=>app.desktop!=null&&app.desktop.CoreWebView2!=null&&await app.desktop.CoreWebView2.ExecuteScriptAsync("!!document.querySelector('#desktopPower')")=="true","desktop startup");
                 var web=app.desktop.CoreWebView2;
+                await Until(async()=>await web.ExecuteScriptAsync("document.querySelector('#desktopChatModel').options.length===2")=="true","installed local chat models");
+                if(app.chatModels.Items.Count!=2)throw new Exception("Compact panel chat models missing");
+                await web.ExecuteScriptAsync("document.querySelector('#desktopChatModel').value='fixture-two.gguf';document.querySelector('#desktopChatModel').dispatchEvent(new Event('change'));");
+                await Until(async()=>Convert.ToString((await ChatControl("models",""))["selected"])=="fixture-two.gguf","chat model selection persisted");
                 if(await web.ExecuteScriptAsync("document.querySelector('#desktopServerState').textContent.includes('off')")!="true")throw new Exception("Server off UI missing");
                 await web.ExecuteScriptAsync("heartbeat=async()=>{};document.querySelector('#desktopPower').click();");
                 await Until(async()=>online&&await web.ExecuteScriptAsync("document.querySelector('#desktopPower').getAttribute('aria-pressed')==='true'")=="true","power on");
@@ -74,7 +78,7 @@ partial class Bridge {
                 app.ExpandDesktop();
                 await Until(async()=>app.desktop!=null&&app.desktop.CoreWebView2!=null&&await app.desktop.CoreWebView2.ExecuteScriptAsync("!!document.querySelector('#desktopPower')")=="true","reopen");
                 app.HidePanel();if(app.desktop!=null||app.expanded||app.monitor.Visible)throw new Exception("Hide did not release studio");
-                Console.WriteLine("Native WebView power on/off, authenticated ping, identity, local range playback, seeking, collapse, browser process release, reopen and hide passed.");
+                Console.WriteLine("Native WebView chat model selectors and persistence, power on/off, authenticated ping, identity, local range playback, seeking, collapse, browser process release, reopen and hide passed.");
                 Environment.ExitCode=0;
                 if(inspect){
                     app.ShowMonitor();app.ExpandDesktop();
