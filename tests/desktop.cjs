@@ -11,7 +11,7 @@ const assert=require('node:assert/strict'),path=require('node:path');
    window.Desktop=true;window.desktopConfiguration={device:'pc',name:'This PC',paired:true};window.calls=[];
    const listeners=[];let on=false;
    const config=()=>({online:on,phones:on?2:0,code:on?'123456':'—',hint:on?'Enter this code on your phone.':'Turn the server on to pair a phone.',addresses:['https://example.test:18764'],address:'https://example.test:18764'});
-   window.chrome.webview={addEventListener:(name,fn)=>listeners.push(fn),postMessage:msg=>{
+   window.chrome??={};window.chrome.webview={addEventListener:(name,fn)=>listeners.push(fn),postMessage:msg=>{
     calls.push(msg);let value;
     if(msg.op==='power')on=msg.args.on;
     if(['status','power','code','address'].includes(msg.op))value=config();
@@ -41,7 +41,11 @@ const assert=require('node:assert/strict'),path=require('node:path');
   assert(await p.locator('#bridgeCommands [data-action=skip]').isEnabled());
   assert(await p.locator('#bridgeCommands [data-action=stop]').isEnabled());
   await p.evaluate(()=>{library=[{id:'fixture',job:'job',local:'hash',kind:'image',created:100,source:'available',archived:false}];navigate('library');});
-  await p.locator('.libraryitem').click();await p.locator('#revealMedia').click();
+  await p.locator('.libraryitem').click();
+  await p.waitForFunction(()=>$('#viewer .original')?.naturalWidth>0);
+  assert(await p.evaluate(()=>Number(getComputedStyle($('#workspace')).zIndex)<Number(getComputedStyle($('#viewer')).zIndex)),'Library must be painted below the opened media viewer');
+  assert.equal(await p.locator('#viewer').getAttribute('data-id'),'fixture');
+  await p.locator('#revealMedia').click();
   assert(await p.evaluate(()=>calls.some(x=>x.op==='local'&&x.args.action==='reveal'&&x.args.value.id==='fixture')));
   assert.equal(await p.locator('#saveMedia').textContent(),'Save a copy');
   await p.locator('#viewerBack').click();assert(await p.locator('#viewer').isHidden());

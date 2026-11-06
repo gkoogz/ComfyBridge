@@ -40,7 +40,7 @@
 .desktop #drawer .drawerfoot{left:12px;right:10px;bottom:16px;font-size:11px}.desktop #drawer .drawerfoot small{font-size:10px}
 .desktop #shade,.desktop #hamburger{display:none!important}
 .desktop #workspace{inset:var(--desktop-top) 0 0 var(--desktop-left);transform:none!important}
-.desktop #workspace.behind{transform:none;transition:none}
+.desktop #workspace.behind{transform:none;transition:none;z-index:0}
 .desktop #main{max-width:none}.desktop #workspace header{padding-left:16px}
 .desktop #viewer{inset:var(--desktop-top) 0 0 var(--desktop-left);transition:none}
 .desktop #viewer .viewerActions{flex-wrap:wrap;gap:6px}.desktop #viewer .viewerActions button{font-size:12px;min-height:34px;padding:6px 10px}
