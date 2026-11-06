@@ -1,6 +1,8 @@
 param([switch]$DebugBuild)
 $ErrorActionPreference='Stop'
 $src=$PSScriptRoot
+& node (Join-Path $src 'tests/android-assets.cjs')
+if($LASTEXITCODE){throw 'Android asset routing validation failed'}
 $build=Join-Path $src 'build'
 $sdk=Join-Path $env:LOCALAPPDATA 'Android\Sdk'
 $tools=Join-Path $sdk 'build-tools\35.0.1'

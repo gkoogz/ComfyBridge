@@ -26,6 +26,13 @@ const assert=require('node:assert/strict'),path=require('node:path');
    navigate('image');
   });
   assert.equal(await p.locator('[data-chat-prompt]').count(),2);
+  await p.waitForTimeout(400); // Finish the page transition before measuring both edges.
+  const actions=await p.locator('.promptActions').first().boundingBox();
+  const chatButton=await p.locator('[data-chat-prompt]').first().boundingBox();
+  const caret=await p.locator('[data-prompt-height]').first().boundingBox();
+  assert(Math.abs(chatButton.x-actions.x)<2,'Chat belongs at the left edge');
+  assert(Math.abs(caret.x+caret.width-actions.x-actions.width)<2,'Caret belongs at the right edge');
+
   await p.locator('[data-chat-prompt=positive]').click();await p.waitForSelector('#chatText');
   assert.equal(await p.evaluate(()=>page),'notepad');
   assert.equal(await p.locator('#chatText').inputValue(),'A mountain valley at sunrise.\nSoft mist and natural colors.');
@@ -100,3 +107,4 @@ const assert=require('node:assert/strict'),path=require('node:path');
   console.log('Prompt handoff, persistent draft, growth cap, newest-first bubbles, streaming reveal, four snap positions, sticky anchoring, reset confirmation, note preservation, stale responses and draft conflicts passed.');
  }finally{await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;});
+
