@@ -95,9 +95,6 @@ body[data-page=bridge] .sectionline,.departing .sectionline{margin:6px 0}
 /* The collection returns above a stationary viewer. */
 #workspace.behind{z-index:33;pointer-events:none}
 .mediaRating{display:flex;align-items:center;gap:4px;flex:none}
-.mediaRating button,.viewerTop .mediaRating button{width:30px;height:32px;min-height:32px;min-width:30px;padding:0;border-radius:7px;font-size:13px;line-height:1;display:grid;place-items:center;background:#192027e8;color:#c2cbd0;border:1px solid #ffffff33}
-.mediaRating button[aria-pressed=true]{color:#101418;font-weight:750;border-color:var(--rating-color);background:var(--rating-color)}
-.mediaRating button[data-rating="1"]{--rating-color:#ed6d78}.mediaRating button[data-rating="2"]{--rating-color:#eca064}.mediaRating button[data-rating="3"]{--rating-color:#e4cf71}.mediaRating button[data-rating="4"]{--rating-color:#b4d97b}.mediaRating button[data-rating="5"]{--rating-color:#70dca0}
 .viewerTop{gap:8px;padding:10px}
 .viewerTop>div:not(.mediaRating){display:none}
 .viewerTop .mediaRating{margin-left:auto;pointer-events:auto}
@@ -110,10 +107,15 @@ body[data-page=bridge] .sectionline,.departing .sectionline{margin:6px 0}
 .galleryAsset video{height:calc(100% - var(--action-height,72px));}
 .galleryAsset .transport{left:var(--content-left,0px);right:var(--content-right,0px);bottom:var(--content-bottom,var(--action-height,72px));gap:6px;padding:8px 6px}
 .mediaHero .viewerFoot{background:transparent}
-@media(max-width:350px){.mediaRating{gap:3px}.mediaRating button,.viewerTop .mediaRating button{width:27px;min-width:27px}}
 
 .galleryAsset .bigPlay{top:calc((100% - var(--action-height,72px))/2)}
 
 .galleryAsset .transport{display:grid;grid-template-columns:38px minmax(0,1fr);row-gap:2px}
 .galleryAsset .transport small{grid-column:1/-1;text-align:center;font-size:11px}
 
+
+.mediaRating button,.viewerTop .mediaRating button{width:40px;height:40px;min-width:40px;min-height:40px;padding:9px;display:grid;place-items:center;background:#192027cc;border:1px solid #ffffff33;border-radius:50%;color:#d4dce0}
+.mediaRating svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linejoin:round}
+.mediaRating button[aria-pressed=true]{color:#f4788c}.mediaRating button[aria-pressed=true] svg{fill:currentColor}
+
+#carousel .thumb[aria-current=true]::after{content:"";position:absolute;inset:0;border:3px solid var(--mint);border-radius:inherit;pointer-events:none;z-index:2}

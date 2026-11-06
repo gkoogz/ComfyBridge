@@ -472,6 +472,15 @@ function updateProgress(){if(!$('#play'))return;
  }
  renderCarousel();
 }
+function refreshCarouselSelection(){
+ const box=$('#result');if(!box)return;
+ const live=box.querySelector('.watchImage')?box.dataset.live:null;
+ const selected=live?null:box.querySelector('.asset')?.dataset.id;
+ $$('#carousel .thumb').forEach(tile=>{
+  const current=tile.classList.contains('inflightThumb')?!!live&&tile.querySelector('img')?.dataset.frameJob===live:!!selected&&tile.dataset.media===selected;
+  tile.setAttribute('aria-current',String(current));
+ });
+}
 function renderCarousel(){
  const carousel=$('#carousel');if(!carousel)return;
  const items=library.filter(x=>x.kind===page&&!x.archived).slice(0,20);
@@ -500,7 +509,7 @@ function renderCarousel(){
    if(!image.hidden)image.src='/preview?t='+Date.now();
   }
  }
- pruneFrames();
+ refreshCarouselSelection();pruneFrames();
 }
 function duration(n){return Math.floor(n/60)+':'+String(Math.floor(n%60)).padStart(2,'0');}
 const warningText={changed:'The PC file changed. Your original phone copy is protected.',missing:'The PC file was deleted. Your phone copy is still here.',older:'Outside the newest 100. You can keep this copy, save it to the camera roll, or remove it from the app.'};

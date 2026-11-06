@@ -46,20 +46,20 @@ function renderLibrary(){
 }
 function wireMedia(root){$$('[data-media]',root).forEach(b=>b.onclick=()=>{
  const item=library.find(x=>x.id===b.dataset.media);if(!item)return;
- if(root.id==='carousel'){liveSelection=null;delete $('#result').dataset.live;mountResult(item);pruneFrames();return;}
+ if(root.id==='carousel'){liveSelection=null;delete $('#result').dataset.live;mountResult(item);refreshCarouselSelection();pruneFrames();return;}
  if($('#modal').open)closeModal();originTile=b;openMedia(item);
 });}
 
 function ratingButtons(item){
- const group=document.createElement('div');group.className='mediaRating';group.dataset.ratingId=item.id;group.setAttribute('aria-label','Rate this generation');
- for(let n=1;n<=5;n++){
-  const b=document.createElement('button');b.type='button';b.textContent=n;b.dataset.rating=n;b.setAttribute('aria-label','Rate '+n+' out of 5');
+ const group=document.createElement('div');group.className='mediaRating';group.dataset.ratingId=item.id;group.setAttribute('aria-label','Favorite');
+ for(const n of [5]){
+  const b=document.createElement('button');b.type='button';b.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8Z"/></svg>';b.dataset.rating=n;b.setAttribute('aria-label','Add to favorites');
   b.onclick=async()=>{
-   if(!connected){toast('Connect to the PC to save a rating.');return;}
+   if(!connected){toast('Connect to the PC to save a favorite.');return;}
    group.querySelectorAll('button').forEach(x=>x.disabled=true);
    try{
     const current=library.find(x=>x.id===item.id)||item;
-    const saved=await api('studio/rating',{id:item.id,rating:current.rating===n?0:n});
+    const saved=await api('studio/rating',{id:item.id,rating:current.rating>=4?0:n});
     updateItem({...current,rating:saved.rating});refreshRatings();
     await syncShelf(true);
    }catch(e){toast(e.message);}finally{group.querySelectorAll('button').forEach(x=>x.disabled=false);}
@@ -70,7 +70,7 @@ function ratingButtons(item){
 function refreshRatings(){
  $$('.mediaRating').forEach(group=>{
   const value=library.find(x=>x.id===group.dataset.ratingId)?.rating||0;
-  $$('button',group).forEach(b=>b.setAttribute('aria-pressed',String(+b.dataset.rating===value)));
+  $$('button',group).forEach(b=>{b.setAttribute('aria-pressed',String(value>=4));b.setAttribute('aria-label',value>=4?'Remove from favorites':'Add to favorites');});
  });
 }
 const mediaChevron=direction=>'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="'+(direction<0?'M15 5l-7 7 7 7':'M9 5l7 7-7 7')+'"/></svg>';
