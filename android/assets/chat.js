@@ -1,6 +1,6 @@
 'use strict';
 let chat={snapshot:null,draft:'',edit:null,source:'',snap:1,send:null},chatKey='',chatBusy=false,chatSubmitting=false,chatDraftTimer,chatNext=0,chatError='';
-const chatShown=new Map();let chatAnimation=0,chatDragging=false;
+const chatShown=new Map();let chatAnimation=0,chatDragging=false,chatTimingAt=performance.now();
 async function loadChat(){
  const key='chat:'+(info().fingerprint||'local');if(key===chatKey)return;
  const unsaved=chatKey==='chat:local'&&chat.edit?chat:null;
@@ -15,7 +15,7 @@ function chatChanged(){chat.edit=crypto.randomUUID();chat.send=null;chat.conflic
 function receiveChat(data,sentEdit=null){
  if(data.unchanged)return;
  if(chat.snapshot&&data.revision<chat.snapshot.revision)return;
- const before=chat.snapshot;chat.snapshot=data;
+ const before=chat.snapshot;chat.snapshot=data;chatTimingAt=performance.now();
  if(chat.send&&data.messages?.some(m=>m.id===chat.send.id)){
   if(chat.draft===chat.send.text){chat.draft='';chat.edit=null;}
   chat.send=null;
@@ -88,6 +88,18 @@ function animateChatText(){
  };
  chatAnimation=setTimeout(frame,25);
 }
+function paintChatTimers(){
+ const delta=Math.max(0,(performance.now()-chatTimingAt)/1000);
+ for(const item of chatDisplayMessages(chat.snapshot?.messages||[])){
+  if(item.role!=='assistant')continue;
+  const timer=$('[data-chat-id="'+item.id+'"] .chatElapsed');if(!timer)continue;
+  const known=typeof item.elapsedSeconds==='number'&&Number.isFinite(item.elapsedSeconds);
+  const seconds=known?Math.floor(Math.max(0,item.elapsedSeconds+(item.elapsedRunning?delta:0))):null;
+  timer.textContent=seconds===null?'—':Math.floor(seconds/60)+':'+String(seconds%60).padStart(2,'0');
+  timer.title=seconds===null?'Duration was not recorded for this earlier reply':item.elapsedRunning?'Elapsed including waiting, loading and generating':'Total reply time including waiting and loading';
+  timer.setAttribute('aria-label',seconds===null?'Reply duration unavailable':timer.textContent+' elapsed');
+ }
+}
 function paintChat(){
  if(!$('#chatTray'))return;
  const list=$('#chatMessages'),items=chatDisplayMessages(chat.snapshot?.messages||[]).reverse();
@@ -101,7 +113,8 @@ function paintChat(){
     if(item.role==='assistant'){
      const dots=document.createElement('div');dots.className='chatDots';dots.setAttribute('aria-label','Waiting for a reply');dots.innerHTML='<i></i><i></i><i></i>';bubble.append(dots);
      const copy=document.createElement('button');copy.className='chatCopy';copy.title=item.prompt?'Copy prompt':'Copy response';copy.setAttribute('aria-label',copy.title);copy.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="12" height="13" rx="2"/><path d="M15 5V3H3v13h2"/></svg>';
-     copy.onclick=async()=>{const current=chatDisplayMessages(chat.snapshot.messages).find(m=>m.id===item.id);try{const text=current?.content||'';if(window.Native?.copyText)await Native.copyText(text);else await navigator.clipboard.writeText(text);toast('Response copied');}catch{toast('Could not copy. You can select the response text.');}};bubble.append(copy);
+     copy.onclick=async()=>{const current=chatDisplayMessages(chat.snapshot.messages).find(m=>m.id===item.id);try{const text=current?.content||'';if(window.Native?.copyText)await Native.copyText(text);else await navigator.clipboard.writeText(text);toast('Response copied');}catch{toast('Could not copy. You can select the response text.');}};const footer=document.createElement('div');footer.className='chatMessageFooter';footer.append(copy);
+     const elapsed=document.createElement('span');elapsed.className='chatElapsed';footer.append(elapsed);bubble.append(footer);
     }else $('.chatWords',bubble).textContent=item.content;
    }
    if(bubble!==list.children[index])list.insertBefore(bubble,list.children[index]||null);
@@ -117,7 +130,7 @@ function paintChat(){
   old.forEach(n=>{chatShown.delete(n.dataset.chatId);n.remove();});
   if(!items.length)list.innerHTML='<p class="chatEmpty">Talk through an idea, refine a prompt, or ask a question.<br>Your current conversation is shared with your devices.</p>';
  });
- animateChatText();paintChatStatus();sizeChat();
+ animateChatText();paintChatTimers();paintChatStatus();sizeChat();
 }
 async function sendChat(){
  if(chatSubmitting||!connected||!chat.draft.trim()||chat.snapshot?.busy)return;
@@ -221,4 +234,4 @@ async function chatAboutPrompt(key){
  $('#chatText').focus({preventScroll:true});$('#chatText').setSelectionRange(text.length,text.length);sizeChat();
 }
 window.addEventListener('resize',sizeChat);window.visualViewport?.addEventListener('resize',sizeChat);window.visualViewport?.addEventListener('scroll',sizeChat);
-setInterval(()=>{if(page==='notepad'&&!document.hidden){syncChat();animateChatText();}},400);
+setInterval(()=>{if(page==='notepad'&&!document.hidden){syncChat();animateChatText();paintChatTimers();}},400);

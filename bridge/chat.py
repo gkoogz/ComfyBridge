@@ -45,6 +45,16 @@ def database(data):
     if 'last_activity' not in {r[1] for r in db.execute('PRAGMA table_info(chat_meta)')}:
         db.execute('ALTER TABLE chat_meta ADD COLUMN last_activity REAL DEFAULT 0')
         db.execute('UPDATE chat_meta SET last_activity=COALESCE((SELECT MAX(created) FROM chat_messages),0)')
+    if 'finished' not in {r[1] for r in db.execute('PRAGMA table_info(chat_messages)')}:
+        db.execute('ALTER TABLE chat_messages ADD COLUMN finished REAL')
+    # Capture terminal transitions even if a reply was started by the previous app version.
+    # Old completed messages have no measured end time and deliberately remain unknown.
+    db.execute('''CREATE TRIGGER IF NOT EXISTS chat_reply_finished
+        AFTER UPDATE OF status ON chat_messages
+        WHEN NEW.role='assistant' AND NEW.status IN ('complete','error') AND NEW.finished IS NULL
+        BEGIN
+          UPDATE chat_messages SET finished=(julianday('now')-2440587.5)*86400.0 WHERE id=NEW.id;
+        END''')
     db.commit()
     return db
 
@@ -60,6 +70,13 @@ def snapshot(db, after=None):
     if after == row['revision']:
         return dict(unchanged=True, busy=result['busy'], revision=row['revision'])
     result['messages'] = [dict(r) for r in db.execute('SELECT * FROM chat_messages ORDER BY created,rowid')]
+    now=time.time()
+    for item in result['messages']:
+        if item['role'] != 'assistant':
+            continue
+        item['elapsedRunning']=item['status'] in BUSY
+        end=now if item['elapsedRunning'] else item['finished']
+        item['elapsedSeconds']=max(0,end-item['created']) if end is not None else None
     return result
 
 
@@ -189,8 +206,8 @@ def request(data, route, body, device, comfy, launch=True):
                 source = ''
             reply_id = str(uuid.uuid4())
             now = time.time()
-            db.execute('INSERT INTO chat_messages VALUES(?,?,?,?,?,?,?)', (message_id, 'user', text, now, source, model.name, 'complete'))
-            db.execute('INSERT INTO chat_messages VALUES(?,?,?,?,?,?,?)', (reply_id, 'assistant', '', now + .0001, '', model.name, 'queued'))
+            db.execute('INSERT INTO chat_messages(id,role,content,created,source,model,status) VALUES(?,?,?,?,?,?,?)', (message_id, 'user', text, now, source, model.name, 'complete'))
+            db.execute('INSERT INTO chat_messages(id,role,content,created,source,model,status) VALUES(?,?,?,?,?,?,?)', (reply_id, 'assistant', '', now + .0001, '', model.name, 'queued'))
             db.execute("UPDATE chat_meta SET active=?,status='queued',detail='Preparing local chat…',revision=revision+1,runner_at=? WHERE id=1", (reply_id, time.time() if launch else 0))
             if body.get('draft_revision') == row['draft_revision']:
                 db.execute("UPDATE chat_meta SET draft='',draft_revision=draft_revision+1,draft_device=? WHERE id=1", (device,))

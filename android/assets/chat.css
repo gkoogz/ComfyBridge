@@ -19,7 +19,9 @@ body:not([data-page=notepad]) #chatTray{display:none}
 .chatMessage.user{align-self:flex-end;align-items:flex-end}
 .chatWords{border-radius:18px;padding:10px 13px;background:#35424e;color:#f5f7fa;white-space:pre-wrap;overflow-wrap:anywhere;font:15px/1.45 system-ui,sans-serif;user-select:text;-webkit-user-select:text}
 .chatWords:empty{display:none}.user .chatWords{background:#0879ee;border-bottom-right-radius:5px}.assistant .chatWords{border-bottom-left-radius:5px}
-.chatCopy{min-height:26px;width:32px;padding:4px 7px;margin-top:3px;background:transparent;border:0;border-radius:6px;color:#b4c4cf}.chatCopy svg{width:18px;height:18px;stroke:currentColor;stroke-width:1.6;fill:none}
+.chatMessageFooter{display:flex;align-items:center;gap:6px;margin-top:3px;min-height:26px}
+.chatElapsed{font-size:11px;color:#9eaebb;font-variant-numeric:tabular-nums;white-space:nowrap}
+.chatCopy{min-height:26px;width:32px;padding:4px 7px;margin-top:0;background:transparent;border:0;border-radius:6px;color:#b4c4cf}.chatCopy svg{width:18px;height:18px;stroke:currentColor;stroke-width:1.6;fill:none}
 .chatDots{display:flex;align-items:center;gap:5px;padding:16px 17px;background:#35424e;border-radius:18px 18px 18px 5px;min-height:41px}.chatDots[hidden]{display:none}.chatDots i{width:6px;height:6px;border-radius:50%;background:#bdc8d1;animation:chatBounce 1.2s ease-in-out infinite}.chatDots i:nth-child(2){animation-delay:.15s}.chatDots i:nth-child(3){animation-delay:.3s}
 @keyframes chatBounce{0%,60%,100%{transform:translateY(0);opacity:.5}30%{transform:translateY(-5px);opacity:1}}
 .chatEmpty{color:#8e9fab;text-align:center;font-size:13px;line-height:1.7;margin:20px 8px}

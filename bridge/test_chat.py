@@ -2,6 +2,9 @@ import json
 import io
 from pathlib import Path
 import tempfile
+import time
+import sqlite3
+from contextlib import closing
 import unittest
 from unittest.mock import patch
 import uuid
@@ -16,8 +19,8 @@ class ChatTests(unittest.TestCase):
             self.assertEqual(chat.json_request('http://fixture/health'),{'status':'ok'})
 
     def test_idle_expiry_preserves_draft_and_does_not_count_polling(self):
-        with chat.database(self.root) as db:
-            db.execute("INSERT INTO chat_messages VALUES('old','assistant','A forest.',100,'','test','complete')")
+        with closing(chat.database(self.root)) as db, db:
+            db.execute("INSERT INTO chat_messages(id,role,content,created,source,model,status) VALUES('old','assistant','A forest.',100,'','test','complete')")
             db.execute("UPDATE chat_meta SET last_activity=100,draft='Unsent idea' WHERE id=1")
             db.commit()
             old=chat.meta(db)['conversation']
@@ -31,12 +34,45 @@ class ChatTests(unittest.TestCase):
             self.assertEqual(chat.snapshot(db)['messages'],[])
 
     def test_idle_expiry_never_interrupts_active_reply(self):
-        with chat.database(self.root) as db:
-            db.execute("INSERT INTO chat_messages VALUES('old','assistant','',100,'','test','loading')")
+        with closing(chat.database(self.root)) as db, db:
+            db.execute("INSERT INTO chat_messages(id,role,content,created,source,model,status) VALUES('old','assistant','',100,'','test','loading')")
             db.execute("UPDATE chat_meta SET last_activity=100,active='old',status='loading' WHERE id=1")
             db.commit()
             chat.expire_idle_chat(db,9000)
             self.assertEqual(len(chat.snapshot(db)['messages']),1)
+
+    def test_reply_timer_counts_waiting_and_freezes_on_success_or_failure(self):
+        for status in ('complete','error'):
+            with self.subTest(status=status), closing(chat.database(self.root)) as db, db:
+                started=time.time()-70
+                db.execute("INSERT INTO chat_messages(id,role,content,created,source,model,status) VALUES(?,'assistant','',?,'','test','queued')",(status,started))
+                db.commit()
+                with patch.object(chat.time,'time',return_value=started+75):
+                    item=next(m for m in chat.snapshot(db)['messages'] if m['id']==status)
+                self.assertEqual(item['elapsedSeconds'],75)
+                self.assertTrue(item['elapsedRunning'])
+                db.execute("UPDATE chat_messages SET status=? WHERE id=?",(status,status));db.commit()
+                item=next(m for m in chat.snapshot(db)['messages'] if m['id']==status)
+                duration=item['elapsedSeconds']
+                self.assertFalse(item['elapsedRunning'])
+                self.assertGreaterEqual(duration,69)
+                self.assertLess(duration,80)
+                # Further writes and a different phone's later read must not extend the duration.
+                db.execute("UPDATE chat_messages SET status=? WHERE id=?",(status,status));db.commit()
+            with closing(chat.database(self.root)) as reopened, patch.object(chat.time,'time',return_value=started+1000):
+                item=next(m for m in chat.snapshot(reopened)['messages'] if m['id']==status)
+                self.assertEqual(item['elapsedSeconds'],duration)
+
+    def test_legacy_completed_reply_has_no_invented_duration(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder)
+            with closing(sqlite3.connect(root/'chat.sqlite')) as db, db:
+                db.execute('CREATE TABLE chat_messages(id TEXT PRIMARY KEY,role TEXT,content TEXT,created REAL,source TEXT,model TEXT,status TEXT)')
+                db.execute("INSERT INTO chat_messages VALUES('old','assistant','A forest.',100,'','test','complete')")
+            with closing(chat.database(root)) as db, db:
+                item=chat.snapshot(db)['messages'][0]
+                self.assertIsNone(item['elapsedSeconds'])
+                self.assertFalse(item['elapsedRunning'])
 
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory()
@@ -56,7 +92,8 @@ class ChatTests(unittest.TestCase):
     def send(self,text='Discuss a landscape prompt.',id=None):
         return self.call('send',dict(conversation=self.state['conversation'],text=text,id=id or str(uuid.uuid4()),draft_revision=self.state['draft_revision'],source='image positive'))
 
-    def test_shared_active_chat_and_idempotent_send(self):
+    @patch.object(chat.time,'time',return_value=10000)
+    def test_shared_active_chat_and_idempotent_send(self, clock):
         identity=str(uuid.uuid4())
         first=self.send(id=identity)
         again=self.send(id=identity)

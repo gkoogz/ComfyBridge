@@ -15,7 +15,7 @@ const assert=require('node:assert/strict'),path=require('node:path');
     if(route==='studio/chat/state')return structuredClone(remote);
     if(route==='studio/chat/draft'){remote.draft=body.text;remote.draft_revision++;remote.revision++;return structuredClone(remote);}
     if(route==='studio/chat/send'){
-     remote.messages.push({id:body.id,role:'user',content:body.text,status:'complete'},{id:'answer',role:'assistant',content:'',status:'loading'});
+     remote.messages.push({id:body.id,role:'user',content:body.text,status:'complete'},{id:'answer',role:'assistant',content:'',status:'loading',elapsedSeconds:12,elapsedRunning:true});
      remote.active='answer';remote.busy=true;remote.status='loading';remote.draft='';remote.draft_revision++;remote.revision++;return structuredClone(remote);
     }
     if(route==='studio/chat/reset'){remote.messages=[];remote.active=null;remote.busy=false;remote.status='idle';remote.conversation='two';remote.draft='';remote.revision++;return structuredClone(remote);}
@@ -46,14 +46,22 @@ const assert=require('node:assert/strict'),path=require('node:path');
   await p.locator('#chatText').fill('Suggest a concise landscape prompt.');
   await p.locator('#chatSend').click();await p.waitForSelector('.chatDots:not([hidden])');
   assert.equal(await p.evaluate(()=>chat.snap),2);
+  assert.equal(await p.locator('.user .chatElapsed').count(),0);
+  await p.evaluate(()=>{chatTimingAt=performance.now()-2300;paintChatTimers();});
+  assert.equal(await p.locator('.chatElapsed').textContent(),'0:14');
   assert.equal(await p.locator('#chatText').inputValue(),'');
   assert.deepEqual(await p.locator('[data-chat-id]').evaluateAll(nodes=>nodes.map(n=>n.classList.contains('assistant')?'assistant':'user')),['assistant','user']);
   assert(await p.evaluate(()=>$('#addSticky').getBoundingClientRect().bottom<$('#chatTray').getBoundingClientRect().top));
   await p.evaluate(()=>{remote.messages[1].content='Sunrise over a mountain valley, soft mist, warm rim light and natural colors.';remote.messages[1].status='responding';remote.revision++;receiveChat(structuredClone(remote));});
   await p.waitForFunction(()=>$('.assistant .chatWords').textContent.length>0);
   await p.waitForFunction(()=>$('.assistant .chatWords').textContent===remote.messages[1].content);
-  await p.evaluate(()=>{remote.messages[1].status='complete';remote.active=null;remote.status='idle';remote.busy=false;remote.revision++;receiveChat(structuredClone(remote));});
+  await p.evaluate(()=>{remote.messages[1].status='complete';remote.messages[1].elapsedSeconds=75;remote.messages[1].elapsedRunning=false;remote.active=null;remote.status='idle';remote.busy=false;remote.revision++;receiveChat(structuredClone(remote));});
   assert(await p.locator('.chatCopy').isVisible());
+  await p.evaluate(()=>{chatTimingAt=performance.now()-60000;paintChatTimers();});
+  assert.equal(await p.locator('.chatElapsed').textContent(),'1:15');
+  const copyBox=await p.locator('.chatCopy').boundingBox(),timerBox=await p.locator('.chatElapsed').boundingBox();
+  assert(timerBox.x>=copyBox.x+copyBox.width,'Timer is next to copy');
+  assert(Math.abs(timerBox.y+timerBox.height/2-copyBox.y-copyBox.height/2)<2,'Timer and copy are vertically aligned');
   // Four magnetic positions, smooth handle drag, and no accidental sidebar gesture.
   await p.evaluate(()=>setChatSnap(0));await p.waitForTimeout(300);assert.equal(await p.locator('#chatGrab').getAttribute('aria-valuenow'),'0');
   assert(await p.evaluate(()=>$('#chatTray').offsetHeight===28));
@@ -86,6 +94,7 @@ const assert=require('node:assert/strict'),path=require('node:path');
    remote.revision++;chatShown.clear();receiveChat(structuredClone(remote));
   });
   assert.equal(await p.locator('.chatMessage.assistant').count(),3);
+  assert.deepEqual(await p.locator('.chatElapsed').allTextContents(),['1:15','1:15','1:15']);
   await p.locator('[aria-label="Copy prompt"]').click();
   assert.equal(await p.evaluate(()=>copiedChat),'A forest at sunrise.');
   assert(!(await p.locator('#chatMessages').innerText()).includes('**'));
