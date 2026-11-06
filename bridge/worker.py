@@ -29,8 +29,10 @@ from studio import prepare as prepare_studio, mark_skipping
 from workflows import Workflows, EROS_BETA7, H3_AUDIO_VAE
 from progress import Progress
 from queue_eta import QueueEta
+from cancel_recovery import can_recover
 ETA = QueueEta()
 IMPORT_LOCK = asyncio.Lock()
+COMFY_START_LOCK = asyncio.Lock()
 MAX_VIDEO_UPLOAD = 512*1024*1024
 
 BASE = Path(__file__).resolve().parent
@@ -77,6 +79,7 @@ CATALOG = None
 CATALOG_EROS_ON_DISK = None
 CATALOG_LOCK = asyncio.Lock()
 STOPPING = set()
+CANCEL_STARTED = {}
 
 
 def rows(sql, args=()):
@@ -98,10 +101,30 @@ async def comfy(path, data=None):
 
 
 async def ensure_comfy():
+    async with COMFY_START_LOCK:
+        await _ensure_comfy()
+
+
+async def _ensure_comfy():
     global OWNED
+    node=ROOT/'custom_nodes/comfybridge_eros_vsa/__init__.py'
+    revision=hashlib.sha256(node.read_bytes()).hexdigest() if node.is_file() else ''
+    marker=DATA/'comfy-node-version.json'
     try:
         await comfy('/system_stats')
-        return
+        try:loaded=json.loads(marker.read_text())
+        except (OSError,ValueError):loaded={}
+        if not revision or OWNED is None or OWNED.poll() is not None or loaded==dict(pid=OWNED.pid,revision=revision):
+            return
+        queue=await comfy('/queue')
+        if queue['queue_running'] or queue['queue_pending']:
+            return
+        # The queue is idle: apply custom-node updates without interrupting work.
+        result=await asyncio.to_thread(subprocess.run,['taskkill','/PID',str(OWNED.pid),'/T','/F'],
+                                      creationflags=subprocess.CREATE_NO_WINDOW,capture_output=True,timeout=20)
+        if result.returncode!=0:
+            raise OSError('Could not reload the updated Eros node safely.')
+        OWNED=None
     except (aiohttp.ClientError, asyncio.TimeoutError):
         pass
     if OWNED is None or OWNED.poll() is not None:
@@ -115,13 +138,16 @@ async def ensure_comfy():
         OWNED = subprocess.Popen([str(ROOT/'zluda/zluda.exe'), '--', str(ROOT/'venv/Scripts/python.exe'),
             'main.py', '--listen', '127.0.0.1', '--port', '8188', '--use-quad-cross-attention',
             '--reserve-vram', '2', '--disable-async-offload', '--disable-pinned-memory', '--force-fp16',
-            '--preview-method', 'auto'], cwd=ROOT, env=env, stdout=log, stderr=log,
+            # Release consumed encoder/model outputs instead of retaining tens of GB between stages.
+            '--cache-none', '--preview-method', 'auto'], cwd=ROOT, env=env, stdout=log, stderr=log,
             creationflags=subprocess.CREATE_NO_WINDOW)
         log.close()
     for _ in range(180):
         await asyncio.sleep(1)
         try:
             await comfy('/system_stats')
+            if OWNED is not None:
+                marker.write_text(json.dumps(dict(pid=OWNED.pid,revision=revision)))
             return
         except (aiohttp.ClientError, asyncio.TimeoutError):
             if OWNED.poll() is not None:
@@ -336,6 +362,8 @@ async def run_jobs():
                     break
                 if current=='cancelling':
                     await cancel_ids({j['id']})
+                    if DB.execute('SELECT status FROM jobs WHERE id=?',(j['id'],)).fetchone()[0]=='cancelled':
+                        break
                 q = await comfy('/queue')
                 progress,stage=TRACKER.sample()
                 update(j['id'],progress=progress,current_node=stage)
@@ -363,11 +391,16 @@ async def run_jobs():
         except (ValueError, OSError, sqlite3.Error, aiohttp.ClientError, asyncio.TimeoutError) as e:
             logging.exception('Job %s failed', j['id'])
             # A transport failure after submission is ambiguous: reconcile before changing state.
-            if rows('SELECT status FROM jobs WHERE id=?', (j['id'],))[0]['status'] in ('submitting','running','cancelling') and isinstance(e, (aiohttp.ClientError, asyncio.TimeoutError)):
+            status=rows('SELECT status FROM jobs WHERE id=?', (j['id'],))[0]['status']
+            if status in ('complete','cancelled','error'):
+                pass
+            elif status in ('submitting','running','cancelling') and isinstance(e, (aiohttp.ClientError, asyncio.TimeoutError)):
                 await asyncio.sleep(5)
             else:
                 update(j['id'], status='error', error=str(e)[:5000])
         finally:
+            if DB.execute('SELECT status FROM jobs WHERE id=?',(j['id'],)).fetchone()[0] in ('complete','cancelled','error'):
+                CANCEL_STARTED.pop(j['id'],None)
             if json.loads(j['settings']).get('extension') and DB.execute('SELECT status FROM jobs WHERE id=?',(j['id'],)).fetchone()[0] in ('complete','cancelled','error'):
                 for name in extension.guide_names(j['id']):
                     (ROOT/'input'/name).unlink(missing_ok=True)
@@ -418,6 +451,12 @@ async def cancel_submitted(batch):
 
 
 async def cancel_ids(ids):
+    async with COMFY_START_LOCK:
+        await _cancel_ids(ids)
+
+
+async def _cancel_ids(ids):
+    global OWNED
     if not ids:return
     q=await comfy('/queue')
     queued=[j[1] for j in q['queue_pending'] if j[1] in ids]
@@ -433,7 +472,23 @@ async def cancel_ids(ids):
             with DB:
                 changed=DB.execute("UPDATE jobs SET status='cancelling' WHERE id=? AND status IN ('running','submitting','cancelling')",(j[1],)).rowcount
             if changed:
+                CANCEL_STARTED.setdefault(j[1],time.monotonic())
                 await comfy('/interrupt',{'prompt_id':j[1]})
+    elapsed=min((time.monotonic()-CANCEL_STARTED.get(j[1],time.monotonic()) for j in q['queue_running']),default=0)
+    if can_recover(OWNED is not None and OWNED.poll() is None,elapsed,q,ids):
+        logging.warning('Cancellation exceeded 120 seconds; recycling owned ComfyUI for jobs %s',sorted(ids))
+        try:
+            result=await asyncio.to_thread(subprocess.run,['taskkill','/PID',str(OWNED.pid),'/T','/F'],
+                                          creationflags=subprocess.CREATE_NO_WINDOW,capture_output=True,timeout=20)
+        except subprocess.TimeoutExpired:
+            logging.warning('Timed out stopping owned ComfyUI; cancellation will retry.')
+            return
+        if result.returncode==0:
+            OWNED=None
+            for id in ids:
+                if id in CANCEL_STARTED:
+                    update(id,status='cancelled',current_node='Cancelled; unresponsive ComfyUI stopped safely')
+                    CANCEL_STARTED.pop(id,None)
 
 
 async def api(request):
@@ -493,7 +548,7 @@ async def api(request):
                 j['queuePosition'], j['queueTotal'] = counts[j['id']]
             if j['id']==ACTIVE and TRACKER and j['status'] not in ('complete','cancelled','error'):
                 j['progress'],j['current_node']=TRACKER.sample()
-        return web.json_response(dict(protocol=17,build='0.1.0-beta.36',jobs=jobs, active=ACTIVE, preview=bool(PREVIEW), previewRevision=PREVIEW_REV,ownedComfy=bool(OWNED),queueEtaSeconds=total_eta))
+        return web.json_response(dict(protocol=17,build='0.1.0-beta.37',jobs=jobs, active=ACTIVE, preview=bool(PREVIEW), previewRevision=PREVIEW_REV,ownedComfy=bool(OWNED),queueEtaSeconds=total_eta))
     if path.startswith('preview/'):
         job=str(uuid.UUID(path[8:]))
         after=int(request.query.get('after','-1'))

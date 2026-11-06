@@ -6,6 +6,17 @@ from comfybridge_eros_vsa import tiled_vsa
 
 
 class ErosSparseTests(unittest.TestCase):
+    def test_cancellation_is_checked_inside_attention_not_only_between_steps(self):
+        q=torch.zeros(1,1,128,8)
+        plan=dict(src=torch.arange(128),inv=torch.arange(128),block_len=torch.tensor([64,64]),n_prefix=1)
+        calls=[]
+        def stop():
+            calls.append(1)
+            if len(calls)==3:raise InterruptedError('requested cancellation')
+        with self.assertRaises(InterruptedError):
+            tiled_vsa(q,q,q,plan,check_interrupt=stop)
+        self.assertEqual(len(calls),3)
+
     def test_partial_tiles_exact_prefix_diagonal_ties_and_multiple_heads(self):
         torch.manual_seed(17)
         lengths=torch.tensor([13,64,54,64,21,64,64,32,64,19,64,64],dtype=torch.int32)

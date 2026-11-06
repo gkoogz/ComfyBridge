@@ -91,6 +91,8 @@ class Progress:
             else:
                 frac=.84*(1-math.exp(-max(0,self.clock()-self.start)/max(.2,expected)))
             work+=expected*frac
+        if self.node and self.clock()-self.tick > 600:
+            label+=' · no new progress for '+str(int((self.clock()-self.tick)//60))+' min; Stop is available'
         self.last=max(self.last,min(.99,.99*work/max(.01,sum(w for _,w in self.nodes.values()))))
         return self.last,label
 

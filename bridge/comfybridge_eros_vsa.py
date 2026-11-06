@@ -11,13 +11,15 @@ def _attention(query, key, value, scale, valid=None):
     return torch.matmul(weights,value)
 
 
-def tiled_vsa(q,k,v,plan,keep=.1):
+def tiled_vsa(q,k,v,plan,keep=.1,check_interrupt=None):
     """Exact prefix attention and per-head top-k video cubes, in bounded groups.
 
     q/k/v are the H3 model's already-normalized, rotary-embedded tensors (1,H,T,D).
     The upstream tile plan maps each 4x4x4 video cube to 64 rows. Never gather
     all heads' selected keys or materialize a token-by-token square score matrix.
     """
+    check_interrupt = check_interrupt or (lambda: None)
+    check_interrupt()
     if q.ndim!=4 or q.shape[0]!=1 or q.shape!=k.shape or k.shape!=v.shape:
         raise ValueError('H3 tiled attention requires one packed sequence of matching Q/K/V tensors.')
     index=plan['src'].reshape(-1,64)
@@ -35,6 +37,7 @@ def tiled_vsa(q,k,v,plan,keep=.1):
     video_ids=torch.arange(prefix,count,device=q.device)
     neighbors=(video_ids[:,None]-video_ids).abs()<=1
     for start in range(0,q.shape[1],4):
+        check_interrupt()
         qh,kh,vh=[x[0,start:start+4] for x in (q,k,v)]
         heads=qh.shape[0]
         qt,kt,vt=[x[:,safe] for x in (qh,kh,vh)]
@@ -50,10 +53,12 @@ def tiled_vsa(q,k,v,plan,keep=.1):
         chosen=mask.to(torch.float32).topk(nkeep,dim=-1).indices
         out=torch.empty_like(qt)
         for tile in range(prefix):
+            check_interrupt()
             out[:,tile]=_attention(qt[:,tile],kh,vh,scale)
         batch=max(1,min(8,4194304//(heads*nkeep*64*width)))
         head_index=torch.arange(heads,device=q.device)[:,None,None]
         for first in range(0,videos,batch):
+            check_interrupt()
             last=min(first+batch,videos)
             ids=chosen[:,first:last]
             live=mask[:,first:last].gather(-1,ids)[...,None] & valid[ids]
@@ -103,9 +108,10 @@ class ComfyBridgeErosVSA:
             layout=options.get('minimax_h3_layout')
             if layout is None or q.ndim!=4 or q.shape[0]!=1 or q.shape[2]!=layout.seq_len or kwargs.get('mask') is not None:
                 return func(q,k,v,heads,**kwargs)
-            result=tiled_vsa(q,k,v,patch.vsa_plan(layout,q.device))
+            result=tiled_vsa(q,k,v,patch.vsa_plan(layout,q.device),check_interrupt=mm.throw_exception_if_processing_interrupted)
             return result if kwargs.get('skip_output_reshape') else result.transpose(1,2).reshape(1,q.shape[2],-1)
         def patch_block(args,extra):
+            mm.throw_exception_if_processing_interrupted()
             options=args['transformer_options']
             if args['img'].shape[0]>=min_tokens:
                 # Override only the attention call in this model's selected block.
