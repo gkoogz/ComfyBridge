@@ -99,6 +99,21 @@ const assert=require('node:assert/strict'),path=require('node:path');
   assert.equal(await p.evaluate(()=>copiedChat),'A forest at sunrise.');
   assert(!(await p.locator('#chatMessages').innerText()).includes('**'));
   await p.evaluate(()=>{remote.messages[1].content=shortReply;remote.revision++;chatShown.clear();receiveChat(structuredClone(remote));});
+  // An expired conversation must refresh before a dirty draft upload, not loop on HTTP 400.
+  await p.evaluate(()=>{
+   chat.draft='A quiet forest';chat.edit=crypto.randomUUID();chat.send={id:crypto.randomUUID(),text:chat.draft,conversation:remote.conversation};
+   remote.conversation='expired-new';remote.messages=[];remote.revision++;remote.draft='';
+   const original=api;api=async(route,body)=>{
+    if((route.endsWith('/draft')||route.endsWith('/send'))&&body.conversation!==remote.conversation)throw Error('HTTP 400: The chat was restarted on another device.');
+    return original(route,body);
+   };
+  });
+  await p.evaluate(()=>syncChat(true));
+  assert.equal(await p.evaluate(()=>chat.snapshot.conversation),'expired-new');
+  assert.equal(await p.locator('#chatText').inputValue(),'A quiet forest');
+  await p.locator('#chatSend').click();
+  assert.equal(await p.evaluate(()=>remote.messages.filter(m=>m.role==='user').length),1);
+  assert.equal(await p.evaluate(()=>chatError),'');
   // Reset requires confirmation, only clears the active chat, and leaves Notepad intact.
   await p.locator('#chatNew').click();assert.equal(await p.locator('#modalTitle').textContent(),'New chat');
   assert.equal(await p.evaluate(()=>remote.messages.length),2);await p.locator('#keepChat').click();

@@ -15,7 +15,14 @@ function chatChanged(){chat.edit=crypto.randomUUID();chat.send=null;chat.conflic
 function receiveChat(data,sentEdit=null){
  if(data.unchanged)return;
  if(chat.snapshot&&data.revision<chat.snapshot.revision)return;
- const before=chat.snapshot;chat.snapshot=data;chatTimingAt=performance.now();
+ const before=chat.snapshot;
+ const restarted=before?.conversation&&before.conversation!==data.conversation;
+ if(restarted){
+  if(chat.draft&&!chat.edit)chat.edit=crypto.randomUUID();
+  chat.conflict=false;
+  if(chat.send)chat.send={...chat.send,conversation:data.conversation};
+ }
+ chat.snapshot=data;chatTimingAt=performance.now();
  if(chat.send&&data.messages?.some(m=>m.id===chat.send.id)){
   if(chat.draft===chat.send.text){chat.draft='';chat.edit=null;}
   chat.send=null;
@@ -25,7 +32,7 @@ function receiveChat(data,sentEdit=null){
   if($('#chatText')&&$('#chatText').value!==chat.draft)$('#chatText').value=chat.draft;
  }
  if(data.draftConflict){chat.conflict=true;chatError='Another device edited the draft. Your text is kept here; sending uses your text.';}
- else if(before?.conversation&&before.conversation!==data.conversation&&chat.edit){chatError='Chat restarted on another device. Your unsent draft is kept.';}
+ else if(restarted){chatError='';}
  storeChat();paintChat();
 }
 async function syncChat(force=false){
@@ -33,7 +40,7 @@ async function syncChat(force=false){
  chatBusy=true;const session=epoch;let sent=null;
  try{
   await loadChat();if(epoch!==session)return;
-  if(!chat.snapshot){const initial=await api('studio/chat/state');if(epoch!==session)return;receiveChat(initial);}
+  const initial=await api('studio/chat/state',{after:chat.snapshot?.revision});if(epoch!==session)return;receiveChat(initial);
   sent=chat.conflict?null:chat.edit;
   const data=sent?await api('studio/chat/draft',{conversation:chat.snapshot.conversation,base:chat.snapshot.draft_revision,edit:sent,text:chat.draft}):await api('studio/chat/state',{after:chat.snapshot?.revision});
   if(epoch!==session)return;
@@ -142,7 +149,15 @@ async function sendChat(){
   if(!chat.snapshot)throw Error('Connect to the PC to start local chat.');
   if(epoch!==session)return;
   chat.send??={id:crypto.randomUUID(),text,conversation:chat.snapshot.conversation};storeChat();
-  const response=await api('studio/chat/send',{...chat.send,source:chat.source,draft_revision:chat.snapshot.draft===text?chat.snapshot.draft_revision:-1});
+  let response;
+  for(let attempt=0;attempt<2;attempt++){
+   try{response=await api('studio/chat/send',{...chat.send,source:chat.source,draft_revision:chat.snapshot.draft===text?chat.snapshot.draft_revision:-1});break;}
+   catch(error){
+    if(attempt||!error.message.includes('chat was restarted'))throw error;
+    const fresh=await api('studio/chat/state');if(epoch!==session)return;
+    receiveChat(fresh);chat.send={...chat.send,conversation:fresh.conversation};storeChat();
+   }
+  }
   if(epoch!==session)return;
   if(chat.draft===text&&(chat.edit===edit||!chat.edit)){chat.draft='';chat.edit=null;chat.source='';$('#chatText')&&($('#chatText').value='');}
   chat.send=null;receiveChat(response);chatNext=0;
