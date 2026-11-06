@@ -76,7 +76,7 @@ function animateChatText(){
   chatAnimation=0;if(page!=='notepad'||document.hidden)return;
   let pending=false;
   preserveChatScroll(()=>{
-   for(const item of chat.snapshot?.messages||[]){
+   for(const item of chatDisplayMessages(chat.snapshot?.messages||[])){
     if(item.role!=='assistant')continue;
     const node=$('[data-chat-id="'+item.id+'"] .chatWords');if(!node)continue;
     let shown=chatShown.get(item.id)||'',full=item.content||'';
@@ -90,7 +90,7 @@ function animateChatText(){
 }
 function paintChat(){
  if(!$('#chatTray'))return;
- const list=$('#chatMessages'),items=[...(chat.snapshot?.messages||[])].reverse();
+ const list=$('#chatMessages'),items=chatDisplayMessages(chat.snapshot?.messages||[]).reverse();
  preserveChatScroll(()=>{
   const old=new Map($$('[data-chat-id]',list).map(n=>[n.dataset.chatId,n]));
   $('.chatEmpty',list)?.remove();
@@ -100,12 +100,13 @@ function paintChat(){
     const words=document.createElement('div');words.className='chatWords';bubble.append(words);
     if(item.role==='assistant'){
      const dots=document.createElement('div');dots.className='chatDots';dots.setAttribute('aria-label','Waiting for a reply');dots.innerHTML='<i></i><i></i><i></i>';bubble.append(dots);
-     const copy=document.createElement('button');copy.className='chatCopy';copy.title='Copy response';copy.setAttribute('aria-label','Copy response');copy.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="12" height="13" rx="2"/><path d="M15 5V3H3v13h2"/></svg>';
-     copy.onclick=async()=>{const current=chat.snapshot.messages.find(m=>m.id===item.id);try{const text=current?.content||'';if(window.Native?.copyText)await Native.copyText(text);else await navigator.clipboard.writeText(text);toast('Response copied');}catch{toast('Could not copy. You can select the response text.');}};bubble.append(copy);
+     const copy=document.createElement('button');copy.className='chatCopy';copy.title=item.prompt?'Copy prompt':'Copy response';copy.setAttribute('aria-label',copy.title);copy.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="12" height="13" rx="2"/><path d="M15 5V3H3v13h2"/></svg>';
+     copy.onclick=async()=>{const current=chatDisplayMessages(chat.snapshot.messages).find(m=>m.id===item.id);try{const text=current?.content||'';if(window.Native?.copyText)await Native.copyText(text);else await navigator.clipboard.writeText(text);toast('Response copied');}catch{toast('Could not copy. You can select the response text.');}};bubble.append(copy);
     }else $('.chatWords',bubble).textContent=item.content;
    }
    if(bubble!==list.children[index])list.insertBefore(bubble,list.children[index]||null);
    if(item.role==='assistant'){
+    const copy=$('.chatCopy',bubble);copy.title=item.prompt?'Copy prompt':'Copy response';copy.setAttribute('aria-label',copy.title);
     const waiting=['queued','waiting','loading','responding'].includes(item.status)&&!item.content;
     $('.chatDots',bubble).hidden=!waiting;$('.chatCopy',bubble).hidden=!item.content;
     bubble.classList.toggle('chatInterrupted',item.status==='error');

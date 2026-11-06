@@ -15,6 +15,29 @@ class ChatTests(unittest.TestCase):
         with patch.object(chat.urllib.request,'urlopen',return_value=io.BytesIO(b'{"status":"ok"}')):
             self.assertEqual(chat.json_request('http://fixture/health'),{'status':'ok'})
 
+    def test_idle_expiry_preserves_draft_and_does_not_count_polling(self):
+        with chat.database(self.root) as db:
+            db.execute("INSERT INTO chat_messages VALUES('old','assistant','A forest.',100,'','test','complete')")
+            db.execute("UPDATE chat_meta SET last_activity=100,draft='Unsent idea' WHERE id=1")
+            db.commit()
+            old=chat.meta(db)['conversation']
+            chat.expire_idle_chat(db,7299)
+            self.assertEqual(chat.meta(db)['conversation'],old)
+            chat.snapshot(db)
+            self.assertEqual(chat.meta(db)['last_activity'],100)
+            chat.expire_idle_chat(db,7300)
+            self.assertNotEqual(chat.meta(db)['conversation'],old)
+            self.assertEqual(chat.meta(db)['draft'],'Unsent idea')
+            self.assertEqual(chat.snapshot(db)['messages'],[])
+
+    def test_idle_expiry_never_interrupts_active_reply(self):
+        with chat.database(self.root) as db:
+            db.execute("INSERT INTO chat_messages VALUES('old','assistant','',100,'','test','loading')")
+            db.execute("UPDATE chat_meta SET last_activity=100,active='old',status='loading' WHERE id=1")
+            db.commit()
+            chat.expire_idle_chat(db,9000)
+            self.assertEqual(len(chat.snapshot(db)['messages']),1)
+
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory()
         self.root=Path(self.temp.name)

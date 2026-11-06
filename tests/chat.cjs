@@ -72,6 +72,17 @@ const assert=require('node:assert/strict'),path=require('node:path');
   await p.locator('#chatGrab').focus();await p.keyboard.press('End');await p.waitForTimeout(300);assert.equal(await p.evaluate(()=>chat.snap),3);
   assert(await p.evaluate(()=>$('#chatTray').getBoundingClientRect().top>=$('header').getBoundingClientRect().bottom+60));
   if(process.env.CHAT_SHOT)await p.screenshot({path:process.env.CHAT_SHOT});
+  // Prompt bubbles copy only their own plain text, including older labelled replies.
+  await p.evaluate(()=>{
+   Native.copyText=text=>{window.copiedChat=text;};
+   remote.messages[1].content='A suggestion.\n<prompt>**A forest** at sunrise.</prompt>\nUse soft light.';
+   remote.revision++;chatShown.clear();receiveChat(structuredClone(remote));
+  });
+  assert.equal(await p.locator('.chatMessage.assistant').count(),3);
+  await p.locator('[aria-label="Copy prompt"]').click();
+  assert.equal(await p.evaluate(()=>copiedChat),'A forest at sunrise.');
+  assert(!(await p.locator('#chatMessages').innerText()).includes('**'));
+  await p.evaluate(()=>{remote.messages[1].content=shortReply;remote.revision++;chatShown.clear();receiveChat(structuredClone(remote));});
   // Reset requires confirmation, only clears the active chat, and leaves Notepad intact.
   await p.locator('#chatNew').click();assert.equal(await p.locator('#modalTitle').textContent(),'New chat');
   assert.equal(await p.evaluate(()=>remote.messages.length),2);await p.locator('#keepChat').click();

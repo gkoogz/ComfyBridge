@@ -20,7 +20,11 @@ BUSY = ('queued', 'waiting', 'loading', 'responding')
 SYSTEM = ('You are a helpful creative assistant in ComfyBridge. Help discuss ideas and refine '
           'image and video prompts. Be clear, practical and concise. Preserve the user\'s intent; '
           'ask when a key detail is ambiguous. You can discuss prompts but cannot run generations, '
-          'change settings or inspect images. Do not claim to have done those things.')
+          'change settings or inspect images. Do not claim to have done those things. '
+          'Use plain text, without Markdown headings, bold, italics or backticks. '
+          'When proposing a ready-to-use generation prompt, put only the prompt inside '
+          '<prompt> and </prompt> tags. Put explanations outside those tags. '
+          'Use a separate tagged block for each proposed prompt; these become independently copyable messages.')
 
 
 def database(data):
@@ -38,6 +42,9 @@ def database(data):
         created REAL, source TEXT, model TEXT, status TEXT);
     ''')
     db.execute('INSERT OR IGNORE INTO chat_meta(id,conversation) VALUES(1,?)', (str(uuid.uuid4()),))
+    if 'last_activity' not in {r[1] for r in db.execute('PRAGMA table_info(chat_meta)')}:
+        db.execute('ALTER TABLE chat_meta ADD COLUMN last_activity REAL DEFAULT 0')
+        db.execute('UPDATE chat_meta SET last_activity=COALESCE((SELECT MAX(created) FROM chat_messages),0)')
     db.commit()
     return db
 
@@ -54,6 +61,20 @@ def snapshot(db, after=None):
         return dict(unchanged=True, busy=result['busy'], revision=row['revision'])
     result['messages'] = [dict(r) for r in db.execute('SELECT * FROM chat_messages ORDER BY created,rowid')]
     return result
+
+
+def expire_idle_chat(db, now=None):
+    now=time.time() if now is None else now
+    with db:
+        db.execute('BEGIN IMMEDIATE')
+        row=meta(db)
+        if row['active'] or row['status'] in BUSY or now-row['last_activity']<7200:
+            return
+        if not db.execute('SELECT 1 FROM chat_messages LIMIT 1').fetchone():
+            return
+        db.execute('DELETE FROM chat_messages')
+        db.execute("UPDATE chat_meta SET conversation=?,status='idle',detail='',revision=revision+1,last_activity=? WHERE id=1",
+                   (str(uuid.uuid4()),now))
 
 
 def runtime_config(data):
@@ -96,6 +117,7 @@ def request(data, route, body, device, comfy, launch=True):
     with contextlib.closing(database(data)) as db:
         if route == 'models':
             return models(data)
+        expire_idle_chat(db)
         if route == 'state':
             row = meta(db)
             if launch and row['active'] and time.time() - row['runner_at'] > 15:
@@ -174,6 +196,7 @@ def request(data, route, body, device, comfy, launch=True):
                 db.execute("UPDATE chat_meta SET draft='',draft_revision=draft_revision+1,draft_device=? WHERE id=1", (device,))
         else:
             raise ValueError('Unknown chat request.')
+        db.execute('UPDATE chat_meta SET last_activity=? WHERE id=1',(time.time(),))
         db.commit()
         result = snapshot(db)
         if route == 'send' and launch:
@@ -426,6 +449,7 @@ def run(data, comfy):
                     db.execute('BEGIN IMMEDIATE')
                     if meta(db)['active'] == reply_id:
                         db.execute("UPDATE chat_messages SET content=?,status='complete' WHERE id=?", (text, reply_id))
+                        db.execute("UPDATE chat_meta SET last_activity=? WHERE id=1", (time.time(),))
                         db.execute("UPDATE chat_meta SET active=NULL,status='idle',detail='',revision=revision+1 WHERE id=1")
             except Exception as error:
                 if reason and reason[0] == 'yield':
