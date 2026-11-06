@@ -1,6 +1,6 @@
 # ComfyBridge
 
-**[Open the beta 42 release page](https://github.com/gkoogz/ComfyBridge/releases/tag/v0.1.0-beta.42)** · [Download the Android APK](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.42/ComfyBridge-0.1.0-beta.42.apk) · [Download Windows](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.42/ComfyBridge-Windows-0.1.0-beta.42.zip) · [All releases](https://github.com/gkoogz/ComfyBridge/releases)
+**[Open the beta 43 release page](https://github.com/gkoogz/ComfyBridge/releases/tag/v0.1.0-beta.43)** · [Download the Android APK](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.43/ComfyBridge-0.1.0-beta.43.apk) · [Download Windows](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.43/ComfyBridge-Windows-0.1.0-beta.43.zip) · [All releases](https://github.com/gkoogz/ComfyBridge/releases)
 
 <img src="artwork/comfybridge.png" width="128" alt="ComfyBridge white cube and play icon on black">
 
@@ -16,7 +16,7 @@ Run **Setup-Chat.ps1** in the Windows package once to install the pinned llama.c
 
 Chat starts its model process only for a message and releases it after the reply. It uses the Radeon GPU when generations are idle. Generation submissions first ask chat to release GPU memory; with sufficient RAM, chat continues on CPU while ComfyUI runs. If memory is tight, the message waits with an explanation. A loopback-only server with an ephemeral access key serves inference; phone requests use the existing encrypted, authenticated bridge. Prompts and replies are not sent to a cloud model. The latest conversation turns are used within the model's context budget; older turns remain visible in the active chat.
 
-**0.1.0-beta.42 is a personal-workflow beta**, adapted specifically to `Image gen.json` and `Video gen.json` in `E:\ComfyUI-Zluda\user\default\workflows`. It is not a general ComfyUI workflow importer. Models, LoRAs, workflow files, prompts, generated media, pairing credentials, and signing keys are not included in this repository or release. Beta 37 requires the updated Windows companion for local chat. Existing generation queues survive the tray update.
+**0.1.0-beta.43 is a personal-workflow beta**, adapted specifically to `Image gen.json` and `Video gen.json` in `E:\ComfyUI-Zluda\user\default\workflows`. It is not a general ComfyUI workflow importer. Models, LoRAs, workflow files, prompts, generated media, pairing credentials, and signing keys are not included in this repository or release. Beta 37 requires the updated Windows companion for local chat. Existing generation queues survive the tray update.
 
 The phone shows **PC connected** as soon as the bridge answers. Loading models and unavailable telemetry have their own messages. If the server or VPN drops, leave the phone app open: it retries automatically using the saved pairing. **Disconnect** or **Cancel reconnect** stops those retries.
 

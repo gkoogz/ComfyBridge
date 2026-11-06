@@ -322,23 +322,27 @@ let drag=null,swallowUntil=0;
 document.addEventListener('pointerdown',e=>{
  swallowUntil=0;
  if(window.Desktop)return;
- if(!e.isPrimary||e.button!==0||viewerClosing||e.target.closest('input,textarea,select,canvas,#carousel,#chatGrab,[contenteditable]'))return;
+ const note=e.target.closest('#noteText');
+ const noteSwipe=note&&e.pointerType!=='mouse'&&note.selectionStart===note.selectionEnd;
+ if(!e.isPrimary||e.button!==0||viewerClosing||(!noteSwipe&&e.target.closest('input,textarea,select,canvas,#carousel,#chatGrab,[contenteditable]')))return;
  if(e.target.closest('.chatWords')&&window.getSelection()?.type==='Range')return;
  const type=$('#modal').open?'modal':viewerOpen()?'viewer':$('#drawer').classList.contains('open')?'closeDrawer':page==='library'&&archived?'archive':'drawer';
- if(type)drag={id:e.pointerId,type,x:e.clientX,y:e.clientY,t:performance.now(),dx:0,active:false,queue:e.target.closest('.historyCard')};
+ if(type)drag={id:e.pointerId,type,x:e.clientX,y:e.clientY,t:performance.now(),dx:0,active:false,note:noteSwipe?note:null,queue:e.target.closest('.historyCard')};
 });
 document.addEventListener('pointermove',e=>{
  if(!drag||drag.id!==e.pointerId)return;
  const d=drag,closingDrawer=d.type==='closeDrawer';
  const dx=closingDrawer?d.x-e.clientX:e.clientX-d.x,dy=e.clientY-d.y;
  if(!d.active){
+  if(d.note&&(performance.now()-d.t>450||d.note.selectionStart!==d.note.selectionEnd)){drag=null;return;}
   if(Math.abs(dx)<8&&Math.abs(dy)<8)return;
   if(dx<0||Math.abs(dy)>Math.abs(dx)*1.2){drag=null;return;}
   if(dx<Math.abs(dy)*1.2)return;
   d.active=true;document.body.classList.add('dragging');
   // After horizontal intent is clear, keep receiving the gesture as the
   // drawer covers the row. Ordinary taps and vertical scrolling stay native.
-  if(d.queue)$('#workspace').setPointerCapture(e.pointerId);
+  if(d.queue||d.note)$('#workspace').setPointerCapture(e.pointerId);
+  if(d.note)d.note.blur();
   if(d.type==='viewer')$('#viewer').setPointerCapture(e.pointerId);
  }
  d.dx=Math.max(0,Math.min(dx,innerWidth));if(d.type==='viewer'){$('#viewer').style.transform='';$('#workspace').style.transform='translateX('+(-1+d.dx/innerWidth)*100+'%)';}

@@ -120,3 +120,6 @@ body[data-page=bridge] .sectionline,.departing .sectionline{margin:6px 0}
 
 .galleryAsset .transport{display:grid;grid-template-columns:38px minmax(0,1fr);row-gap:2px}
 .galleryAsset .transport small{grid-column:1/-1;text-align:center;font-size:11px}
+
+.viewerNavigation button{background:transparent;border:0;box-shadow:none}
+.mediaHero:has(video) .viewerNavigation{bottom:var(--action-height,72px)}

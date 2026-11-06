@@ -1,5 +1,6 @@
 'use strict';
 let chat={snapshot:null,draft:'',edit:null,source:'',snap:1,send:null},chatKey='',chatBusy=false,chatSubmitting=false,chatDraftTimer,chatNext=0,chatError='';
+let chatComposerCollapsed=false;
 const chatShown=new Map();let chatAnimation=0,chatDragging=false,chatTimingAt=performance.now();
 async function loadChat(){
  const key='chat:'+(info().fingerprint||'local');if(key===chatKey)return;
@@ -59,13 +60,23 @@ function chatStops(){
 function sizeChat(){
  const tray=$('#chatTray'),field=$('#chatText');if(!tray||!field||chatDragging)return;
  const v=chatViewport();tray.style.setProperty('--chat-viewport',v.height+'px');tray.style.bottom=v.bottom+'px';
- const cap=chat.snap<=1?v.height*.5:Math.max(60,v.height*(chat.snap===2?.5:.9)-156);
+ const style=getComputedStyle(field),tenLines=10*parseFloat(style.lineHeight)+parseFloat(style.paddingTop)+parseFloat(style.paddingBottom);
+ const expandedCap=Math.min(v.height*.4,chat.snap<=1?v.height*.4:Math.max(60,v.height*(chat.snap===2?.5:.9)-156));
+ const cap=chatComposerCollapsed?Math.min(tenLines,expandedCap):expandedCap;
  field.style.height='0px';field.style.height=Math.min(Math.max(46,field.scrollHeight),cap)+'px';field.style.overflowY=field.scrollHeight>cap?'auto':'hidden';
  const height=chatStops()[chat.snap];tray.style.height=height+'px';
  tray.classList.toggle('nested',chat.snap===0);tray.classList.toggle('docked',chat.snap===1);
  $('#chatGrab').setAttribute('aria-valuenow',chat.snap);
  const sticky=$('#addSticky');if(sticky)sticky.style.bottom=(v.bottom+height+9)+'px';
  $('#main')?.style.setProperty('--chat-clearance',(height+70)+'px');
+}
+function collapseChatComposer(){
+ if(chatComposerCollapsed)return;
+ chatComposerCollapsed=true;$('#chatText')?.blur();sizeChat();
+}
+function expandChatComposer(){
+ if(!chatComposerCollapsed)return;
+ chatComposerCollapsed=false;sizeChat();
 }
 function setChatSnap(value){chat.snap=Math.max(0,Math.min(3,value));storeChat();if(!chat.snap)$('#chatText')?.blur();sizeChat();}
 function paintChatStatus(){
@@ -201,6 +212,7 @@ function bindChatSurfaceDrag(tray){
   const dx=e.clientX-g.x,dy=e.clientY-g.y;
   if(!g.axis){if(Math.max(Math.abs(dx),Math.abs(dy))<7)return;g.axis=Math.abs(dy)>Math.abs(dx)?'y':'x';if(g.axis==='y')tray.setPointerCapture(e.pointerId);}
   if(g.axis!=='y')return;
+  if(g.list)collapseChatComposer();
   e.preventDefault();e.stopPropagation();
   const now=performance.now(),step=e.clientY-g.last,dt=Math.max(8,now-g.time);g.velocity=g.velocity*.35+step/dt*.65;g.last=e.clientY;g.time=now;
   const limit=Math.max(0,list.scrollHeight-list.clientHeight);
@@ -231,6 +243,8 @@ function mountChat(){
  const tray=document.createElement('section');tray.id='chatTray';tray.setAttribute('aria-label','Local AI chat');
  tray.innerHTML='<button id="chatGrab" role="slider" aria-label="Chat tray height" aria-valuemin="0" aria-valuemax="3" aria-valuenow="1"><span></span></button><div id="chatComposer"><textarea id="chatText" rows="1" maxlength="24000" placeholder="Chat about a prompt or idea…" aria-label="Message local AI"></textarea><div class="chatComposerButtons"><button id="chatNew" aria-label="New chat" title="New chat"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 10a8 8 0 1 0-2 8M20 4v6h-6"/></svg></button><button id="chatSend" aria-label="Send message"><span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5M6 11l6-6 6 6"/></svg></span></button></div></div><small id="chatStatus" role="status"></small><div id="chatMessages" aria-label="Conversation, newest messages first"></div>';
  $('#workspace').append(tray);$('#chatText').value=chat.draft;
+ $('#chatText').onpointerdown=expandChatComposer;$('#chatText').onfocus=expandChatComposer;
+ $('#chatMessages').addEventListener('wheel',e=>{if(Math.abs(e.deltaY)>0)collapseChatComposer();},{passive:true});
  $('#chatText').oninput=()=>{chat.draft=$('#chatText').value;chatChanged();sizeChat();paintChatStatus();};
  $('#chatText').onkeydown=e=>{if(e.key==='Enter'&&(e.ctrlKey||e.metaKey)){e.preventDefault();sendChat();}};
  $('#chatSend').onclick=sendChat;$('#chatNew').onclick=confirmNewChat;
@@ -245,7 +259,7 @@ function mountChat(){
 }
 async function chatAboutPrompt(key){
  const text=$('textarea[data-setting="'+key+'"]')?.value??state.settings[page]?.[key]??'',source=page+' '+key;
- await loadChat();chat.draft=text;chat.source=source;chat.snap=1;chatChanged();navigate('notepad');
+ await loadChat();chatComposerCollapsed=false;chat.draft=text;chat.source=source;chat.snap=1;chatChanged();navigate('notepad');
  $('#chatText').focus({preventScroll:true});$('#chatText').setSelectionRange(text.length,text.length);sizeChat();
 }
 window.addEventListener('resize',sizeChat);window.visualViewport?.addEventListener('resize',sizeChat);window.visualViewport?.addEventListener('scroll',sizeChat);

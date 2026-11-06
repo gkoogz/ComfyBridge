@@ -62,6 +62,21 @@ const assert=require('node:assert/strict'),path=require('node:path');
   const copyBox=await p.locator('.chatCopy').boundingBox(),timerBox=await p.locator('.chatElapsed').boundingBox();
   assert(timerBox.x>=copyBox.x+copyBox.width,'Timer is next to copy');
   assert(Math.abs(timerBox.y+timerBox.height/2-copyBox.y-copyBox.height/2)<2,'Timer and copy are vertically aligned');
+  // Long drafts leave room for replies; scrolling compacts them until tapped again.
+  await p.evaluate(()=>{chat.draft=Array(70).fill('A quiet mountain valley with soft light.').join('\n');$('#chatText').value=chat.draft;chatChanged();setChatSnap(3);});
+  await p.waitForTimeout(350);
+  const expanded=await p.locator('#chatText').evaluate(e=>e.clientHeight);
+  assert(expanded<=844*.4+1);
+  const conversation=await p.locator('#chatMessages').boundingBox();
+  await p.mouse.move(conversation.x+20,conversation.y+20);await p.mouse.wheel(0,100);
+  await p.waitForTimeout(150);
+  const collapsed=await p.locator('#chatText').evaluate(e=>e.clientHeight);
+  assert(collapsed<=253&&collapsed<expanded);
+  const kept=await p.locator('#chatText').inputValue();
+  await p.locator('#chatText').click();
+  assert.equal(await p.locator('#chatText').evaluate(e=>e.clientHeight),expanded);
+  assert.equal(await p.locator('#chatText').inputValue(),kept);
+  await p.evaluate(()=>{chat.draft='';chat.edit=null;remote.draft='';clearTimeout(chatDraftTimer);$('#chatText').value='';setChatSnap(2);});
   // Four magnetic positions, smooth handle drag, and no accidental sidebar gesture.
   await p.evaluate(()=>setChatSnap(0));await p.waitForTimeout(300);assert.equal(await p.locator('#chatGrab').getAttribute('aria-valuenow'),'0');
   assert(await p.evaluate(()=>$('#chatTray').offsetHeight===28));
