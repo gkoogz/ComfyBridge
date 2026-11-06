@@ -4,8 +4,9 @@ const viewerOpen=()=>!$('#viewer').hidden;
 const reduceMotion=()=>matchMedia('(prefers-reduced-motion: reduce)').matches;
 // Release the browser's temporary playback handle when a route or result is replaced.
 // The verified file in the phone library is unaffected.
-const playbackHandles=new Map();
+const playbackHandles=new Map(),assetObservers=new Map();
 new MutationObserver(()=>{
+ for(const [host,observer] of assetObservers)if(!host.isConnected){observer.disconnect();assetObservers.delete(host);}
  for(const [v,url] of playbackHandles)if(!v.isConnected){v.pause();v.removeAttribute('src');v.load();URL.revokeObjectURL(url);playbackHandles.delete(v);}
 }).observe(document.body,{childList:true,subtree:true});
 function renderLibrary(){
@@ -48,6 +49,49 @@ function wireMedia(root){$$('[data-media]',root).forEach(b=>b.onclick=()=>{
  if(root.id==='carousel'){liveSelection=null;delete $('#result').dataset.live;mountResult(item);pruneFrames();return;}
  if($('#modal').open)closeModal();originTile=b;openMedia(item);
 });}
+
+function ratingButtons(item){
+ const group=document.createElement('div');group.className='mediaRating';group.dataset.ratingId=item.id;group.setAttribute('aria-label','Rate this generation');
+ for(let n=1;n<=5;n++){
+  const b=document.createElement('button');b.type='button';b.textContent=n;b.dataset.rating=n;b.setAttribute('aria-label','Rate '+n+' out of 5');
+  b.onclick=async()=>{
+   if(!connected){toast('Connect to the PC to save a rating.');return;}
+   group.querySelectorAll('button').forEach(x=>x.disabled=true);
+   try{
+    const current=library.find(x=>x.id===item.id)||item;
+    const saved=await api('studio/rating',{id:item.id,rating:current.rating===n?0:n});
+    updateItem({...current,rating:saved.rating});refreshRatings();
+    await syncShelf(true);
+   }catch(e){toast(e.message);}finally{group.querySelectorAll('button').forEach(x=>x.disabled=false);}
+  };group.append(b);
+ }
+ return group;
+}
+function refreshRatings(){
+ $$('.mediaRating').forEach(group=>{
+  const value=library.find(x=>x.id===group.dataset.ratingId)?.rating||0;
+  $$('button',group).forEach(b=>b.setAttribute('aria-pressed',String(+b.dataset.rating===value)));
+ });
+}
+const mediaChevron=direction=>'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="'+(direction<0?'M15 5l-7 7 7 7':'M9 5l7 7-7 7')+'"/></svg>';
+let viewerNavTimer;
+function showViewerNavigation(){
+ const view=$('#viewer');view.classList.remove('navQuiet');clearTimeout(viewerNavTimer);
+ viewerNavTimer=setTimeout(()=>view.classList.add('navQuiet'),2000);
+}
+function pageMedia(direction){
+ const current=library.find(x=>x.id===$('#viewer').dataset.id);
+ const items=library.filter(x=>!!x.archived===!!current?.archived),index=items.findIndex(x=>x.id===$('#viewer').dataset.id);
+ const next=items[index+direction];if(index<0||!next)return;
+ openMedia(next);
+}
+function mediaTap(event,toggle){
+ if(viewerOpen()&&event.currentTarget.closest('#viewer')){
+  showViewerNavigation();const rect=event.currentTarget.getBoundingClientRect(),x=(event.clientX-rect.left)/rect.width;
+  if(x<.22){pageMedia(-1);return;}if(x>.78){pageMedia(1);return;}
+ }
+ toggle();
+}
 
 function makeVideoButton(item){
  const button=document.createElement('button');
@@ -115,6 +159,7 @@ function activateExtension(source){
 
 // Both surfaces use the same player. Only verified, complete originals are playable.
 function mountAsset(host,item,isViewer){
+ assetObservers.get(host)?.disconnect();assetObservers.delete(host);
  const id=item.id;host.className='asset'+(isViewer?' galleryAsset':'');host.replaceChildren();
  const toggleChrome=()=>{if(isViewer)$('#viewer').classList.toggle('quiet');else host.classList.toggle('quiet');};
  async function load(download=true,play=false){
@@ -136,7 +181,7 @@ function mountAsset(host,item,isViewer){
     const original=new Image();original.className='original';original.alt='Generated image';original.src=media(id);
     await original.decode();
     if(host.isConnected){
-     host.replaceChildren(original);original.onclick=toggleChrome;
+     host.replaceChildren(original);original.onclick=e=>mediaTap(e,toggleChrome);
      if(!isViewer)host.after(makeVideoButton(item));
     }
     return;
@@ -163,10 +208,23 @@ function mountAsset(host,item,isViewer){
      await video.play();
     }catch(e){if(video.isConnected)toast(e.message);}finally{preparing=false;middle.textContent='▶';middle.disabled=false;}
    };
-   btn.onclick=middle.onclick=toggle;video.onclick=toggleChrome;seek.oninput=()=>{if(Number.isFinite(video.duration))video.currentTime=Number(seek.value);};
+   btn.onclick=middle.onclick=toggle;video.onclick=e=>mediaTap(e,toggleChrome);seek.oninput=()=>{if(Number.isFinite(video.duration))video.currentTime=Number(seek.value);};
    video.onplay=()=>{middle.hidden=true;btn.textContent='Ⅱ';btn.setAttribute('aria-label','Pause');chrome(false);};
    video.onpause=video.onended=()=>{middle.hidden=false;btn.textContent='▶';btn.setAttribute('aria-label','Play');chrome(true);};
-   video.ontimeupdate=video.onloadedmetadata=tick;tick();
+   const poster=new Image();
+   const layout=()=>{
+    const vw=video.videoWidth||poster.naturalWidth,vh=video.videoHeight||poster.naturalHeight;
+    if(!isViewer||!vw||!vh)return;
+    const rect=video.getBoundingClientRect(),outer=host.getBoundingClientRect();
+    const scale=Math.min(rect.width/vw,rect.height/vh);
+    const width=vw*scale,height=vh*scale;
+    host.style.setProperty('--content-left',(rect.left-outer.left+(rect.width-width)/2)+'px');
+    host.style.setProperty('--content-right',(outer.right-rect.right+(rect.width-width)/2)+'px');
+    host.style.setProperty('--content-bottom',(outer.bottom-rect.bottom+(rect.height-height)/2)+'px');
+   };
+   poster.onload=layout;poster.src=media(id,true);
+   const observer=new ResizeObserver(layout);observer.observe(video);assetObservers.set(host,observer);
+   video.ontimeupdate=tick;video.onloadedmetadata=()=>{tick();layout();};tick();
    video.onerror=()=>{if(host.isConnected){chrome(true);msg(window.Desktop?'Windows could not decode this video. Use Open file location to play it in another app.':'Android could not decode this video. Your phone copy is still available to save.');}};
    if(play)await toggle();
   }catch(e){if(host.isConnected){msg(e.message);const retry=document.createElement('button');retry.className='assetRetry';retry.textContent='Try again';retry.onclick=()=>load(true,play);host.append(retry);}}
@@ -176,9 +234,9 @@ function mountAsset(host,item,isViewer){
 function mountResult(j){
  const box=$('#result');if(!box)return;
  let host=$('.asset',box);
- if(host&&host.dataset.id===j.id&&host.dataset.hash===(j.local||''))return;
+ if(host&&host.dataset.id===j.id&&host.dataset.hash===(j.local||'')){refreshRatings();return;}
  box.replaceChildren();host=document.createElement('div');host.dataset.id=j.id;host.dataset.hash=j.local||'';box.append(host);mountAsset(host,j,false);
- if(j.kind==='video')host.after(extendVideoButton(j));
+ const actions=document.createElement('div');actions.className='resultActions';if(j.kind==='video')actions.append(extendVideoButton(j));actions.append(ratingButtons(j));host.after(actions);refreshRatings();
 }
 function renderResults(){
  const box=$('#result');if(!box)return;
@@ -202,7 +260,15 @@ function openMedia(item){
  view.releaseFooter?.();view.releaseProvenance?.();$('video',view)?.pause();
  view.className='';view.hidden=false;work.inert=true;work.classList.add('behind');galleryDirty=false;
  view.scrollTop=0;
- view.innerHTML='<div class="mediaHero"><div class="asset"></div><div class="viewerTop"><button id="viewerBack" aria-label="Back to collection">‹</button><div><b>'+esc(item.kind==='video'?'Video':'Image')+'</b><small>'+esc(new Date(item.created*1000).toLocaleString())+'</small></div></div><div class="viewerFoot"><div id="mediaWarning"></div><div class="viewerActions"><button id="saveMedia">↓　Save to camera roll</button><button id="archiveMedia">'+(item.archived?'Unarchive':'Archive')+'</button></div><div id="mediaMessage" role="status"></div></div></div>';
+ view.innerHTML='<div class="mediaHero"><div class="asset"></div><div class="viewerTop"><button id="viewerBack" aria-label="Back to collection">'+mediaChevron(-1)+'</button><div><b>'+esc(item.kind==='video'?'Video':'Image')+'</b><small>'+esc(new Date(item.created*1000).toLocaleString())+'</small></div></div><div class="viewerFoot"><div id="mediaWarning"></div><div class="viewerActions"><button id="saveMedia">↓　Save to camera roll</button><button id="archiveMedia">'+(item.archived?'Unarchive':'Archive')+'</button></div><div id="mediaMessage" role="status"></div></div></div>';
+ $('.viewerTop',view).append(ratingButtons(item));refreshRatings();
+ const nav=document.createElement('div');nav.className='viewerNavigation';
+ for(const direction of [-1,1]){
+  const b=document.createElement('button');b.className=direction<0?'mediaPrevious':'mediaNext';b.setAttribute('aria-label',direction<0?'Previous media':'Next media');b.innerHTML=mediaChevron(direction);
+  const items=library.filter(x=>!!x.archived===!!item.archived),index=items.findIndex(x=>x.id===item.id);b.disabled=index<0||!items[index+direction];
+  b.onclick=()=>pageMedia(direction);nav.append(b);
+ }
+ $('.mediaHero',view).append(nav);view.onpointerdown=()=>{showViewerNavigation();clearTimeout(viewerNavTimer);};view.onpointermove=showViewerNavigation;view.onpointerup=view.onpointercancel=showViewerNavigation;showViewerNavigation();
  const current=()=>library.find(x=>x.id===item.id)||item;
  const stillHere=()=>viewerOpen()&&$('#viewerBack')===back;
  const back=$('#viewerBack');
@@ -224,13 +290,13 @@ function openMedia(item){
 }
 function closeViewer(immediate=false){
  const view=$('#viewer'),work=$('#workspace');if(view.hidden||viewerClosing)return;viewerClosing=true;
- const finish=()=>{view.releaseFooter?.();view.releaseProvenance?.();view.hidden=true;view.replaceChildren();view.className='';view.style.transform='';work.style.transform='';work.classList.remove('behind');work.inert=false;viewerClosing=false;
+ const finish=()=>{view.releaseFooter?.();view.releaseProvenance?.();clearTimeout(viewerNavTimer);view.hidden=true;view.replaceChildren();view.className='';view.style.transform='';work.style.transform='';work.classList.remove('behind');work.inert=false;viewerClosing=false;
  if(galleryDirty&&page==='library')renderLibrary();galleryDirty=false;if(originTile?.isConnected)originTile.focus({preventScroll:true});originTile=null;};
  $('video',view)?.pause();if(window.Desktop||immediate||reduceMotion()){finish();return;}
- const from=view.getBoundingClientRect().left;
- const opts={duration:Math.max(65,180*(1-from/innerWidth)),easing:'ease-out',fill:'forwards'};
- work.animate([{transform:getComputedStyle(work).transform},{transform:'translateX(0)'}],opts).onfinish=e=>e.target.cancel();
- const anim=view.animate([{transform:'translateX('+from+'px)'},{transform:'translateX(100%)'}],opts);anim.onfinish=()=>{finish();anim.cancel();};
+ const from=work.getBoundingClientRect().left;
+ const opts={duration:Math.max(65,180*(-from/innerWidth)),easing:'ease-out',fill:'forwards'};
+ const anim=work.animate([{transform:getComputedStyle(work).transform},{transform:'translateX(0)'}],opts);
+ anim.onfinish=()=>{finish();anim.cancel();};
 }
 function bridgeBack(){
  if($('#modal').open){$('#modalClose').click();return;}
@@ -273,8 +339,9 @@ document.addEventListener('pointermove',e=>{
   // After horizontal intent is clear, keep receiving the gesture as the
   // drawer covers the row. Ordinary taps and vertical scrolling stay native.
   if(d.queue)$('#workspace').setPointerCapture(e.pointerId);
+  if(d.type==='viewer')$('#viewer').setPointerCapture(e.pointerId);
  }
- d.dx=Math.max(0,Math.min(dx,innerWidth));if(d.type==='viewer'){$('#viewer').style.transform='translateX('+d.dx+'px)';$('#workspace').style.transform='translateX('+(-1+d.dx/innerWidth)*100+'%)';}
+ d.dx=Math.max(0,Math.min(dx,innerWidth));if(d.type==='viewer'){$('#viewer').style.transform='';$('#workspace').style.transform='translateX('+(-1+d.dx/innerWidth)*100+'%)';}
  if(d.type==='drawer'||closingDrawer){
   const panel=$('#drawer'),width=panel.offsetWidth,travel=Math.min(width,d.dx);
   const visible=closingDrawer?width-travel:travel;

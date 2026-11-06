@@ -91,3 +91,32 @@ body[data-page=bridge] .sectionline,.departing .sectionline{margin:6px 0}
 #bridgeOptions{padding:8px 2px;font-size:13px}
 @media(max-height:510px) and (min-width:520px){body[data-page=bridge] main{display:grid;grid-template-columns:1fr 1fr;gap:5px 12px}body[data-page=bridge] .pairCard{grid-column:1;grid-row:1/4}body[data-page=bridge] .sectionline,body[data-page=bridge] .telemetry,body[data-page=bridge] #destinations{grid-column:2}}
 @media(prefers-reduced-motion:reduce){#drawer,#workspace,#viewer,.viewerTop,.viewerFoot,.transport{transition:none!important}}
+
+/* The collection returns above a stationary viewer. */
+#workspace.behind{z-index:33;pointer-events:none}
+.mediaRating{display:flex;align-items:center;gap:4px;flex:none}
+.mediaRating button,.viewerTop .mediaRating button{width:30px;height:32px;min-height:32px;min-width:30px;padding:0;border-radius:7px;font-size:13px;line-height:1;display:grid;place-items:center;background:#192027e8;color:#c2cbd0;border:1px solid #ffffff33}
+.mediaRating button[aria-pressed=true]{color:#101418;font-weight:750;border-color:var(--rating-color);background:var(--rating-color)}
+.mediaRating button[data-rating="1"]{--rating-color:#ed6d78}.mediaRating button[data-rating="2"]{--rating-color:#eca064}.mediaRating button[data-rating="3"]{--rating-color:#e4cf71}.mediaRating button[data-rating="4"]{--rating-color:#b4d97b}.mediaRating button[data-rating="5"]{--rating-color:#70dca0}
+.viewerTop{gap:8px;padding:10px}
+.viewerTop>div:not(.mediaRating){display:none}
+.viewerTop .mediaRating{margin-left:auto;pointer-events:auto}
+#viewerBack{display:grid;place-items:center;flex:0 0 40px;width:40px;height:40px;min-height:40px;padding:0}
+#viewerBack svg,.viewerNavigation svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.resultActions{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 12px;flex-wrap:wrap}
+.resultActions .makeVideo{margin:0}
+.asset .bigPlay{min-width:60px;min-height:60px;max-width:60px;max-height:60px;aspect-ratio:1;flex:none}
+.transport button{min-width:38px;min-height:38px;max-width:38px;max-height:38px;aspect-ratio:1;flex:0 0 38px;display:grid;place-items:center;line-height:1}
+.galleryAsset video{height:calc(100% - var(--action-height,72px));}
+.galleryAsset .transport{left:var(--content-left,0px);right:var(--content-right,0px);bottom:var(--content-bottom,var(--action-height,72px));gap:6px;padding:8px 6px}
+.mediaHero .viewerFoot{background:transparent}
+.viewerNavigation{position:absolute;inset:0;pointer-events:none;display:flex;justify-content:space-between;align-items:center;padding:0 5px}
+.viewerNavigation button{pointer-events:auto;display:grid;place-items:center;padding:0;width:32px;height:44px;min-height:44px;border:0;background:#05070866;color:#fff;border-radius:8px;transition:opacity .2s}
+.viewerNavigation svg{width:16px;height:16px}.viewerNavigation button:disabled{visibility:hidden}
+.navQuiet .viewerNavigation button{opacity:0}
+@media(max-width:350px){.mediaRating{gap:3px}.mediaRating button,.viewerTop .mediaRating button{width:27px;min-width:27px}}
+
+.galleryAsset .bigPlay{top:calc((100% - var(--action-height,72px))/2)}
+
+.galleryAsset .transport{display:grid;grid-template-columns:38px minmax(0,1fr);row-gap:2px}
+.galleryAsset .transport small{grid-column:1/-1;text-align:center;font-size:11px}

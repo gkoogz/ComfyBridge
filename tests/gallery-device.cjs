@@ -22,7 +22,7 @@ const assert=require('node:assert/strict');
  console.log('grid',await ev(()=>{const g=$('.librarygrid').getBoundingClientRect();return [g.x,g.right,g.top,innerWidth]}));
  check('tiles at first/last pixel',await ev(()=>{const g=$('.librarygrid').getBoundingClientRect();return g.x===0&&Math.abs(g.right-innerWidth)<0.51&&g.top<=105;}));
  await kind('image');await p.waitForFunction(()=>$('#viewer .original')?.naturalWidth>0);check('image fitted',await ev(()=>getComputedStyle($('#viewer .original')).objectFit==='contain'&&$('#viewer .original').clientWidth===innerWidth));
- await drag(35,Math.round(await ev(()=>innerWidth*.85)),325,async()=>{check('both mounted pages follow finger',await ev(()=>$('#viewer').getBoundingClientRect().x>0&&$('#workspace').getBoundingClientRect().x<0&&$('#workspace').getBoundingClientRect().right>0));});
+ await drag(35,Math.round(await ev(()=>innerWidth*.85)),325,async()=>{check('library covers stationary media',await ev(()=>$('#viewer').getBoundingClientRect().x===0&&$('#workspace').getBoundingClientRect().x<0&&$('#workspace').getBoundingClientRect().right>0));});
  check('back preserves grid and scroll',await ev(()=>!viewerOpen()&&window.testGrid===$('.librarygrid')&&window.testScroll===$('#workspace').scrollTop));
  await kind('video');await p.locator('#viewer .bigPlay').click();
  await p.waitForFunction(()=>$('#viewer video')?.currentTime>.12,{},{timeout:10000});

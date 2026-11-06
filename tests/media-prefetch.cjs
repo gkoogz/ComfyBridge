@@ -11,7 +11,7 @@ const assert=require('node:assert/strict'),path=require('node:path');
    heartbeat=poll=notice=showShelf=()=>{};
    window.hidden=false;Object.defineProperty(document,'hidden',{get:()=>hidden,configurable:true});
    window.calls=[];window.requests=[];window.transfers=new Map();window.wire=[];window.autoActive=0;window.maxAuto=0;
-   window.fixture=(n,local='')=>({id:String(n).padStart(32,'0'),created:n,local,source:'available',kind:n%2?'video':'image',archived:n%3===0,recent:true});
+   window.fixture=(n,local='')=>({id:String(n).padStart(32,'0'),created:n,rating:0,local,source:'available',kind:n%2?'video':'image',archived:n%3===0,recent:true});
    Native.prefetchEnabled=value=>calls.push({enabled:value});
    local=async(op,args={})=>{
     calls.push({op,id:args.id});

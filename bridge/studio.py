@@ -1,4 +1,5 @@
 """Phone workspace storage. The tray opens this helper on demand without starting ComfyUI."""
+from media_index import read_ratings
 import base64
 from datetime import datetime
 import json
@@ -240,6 +241,19 @@ def desktop_file(db, root, data, body):
     return dict(path=str(path))
 
 
+def rate_media(db, body):
+    value=body.get('rating')
+    if type(value) is not int or not 0<=value<=5:
+        raise ValueError('Rating must be a number from 1 to 5, or 0 to clear.')
+    identity=body.get('id')
+    if not db.execute('SELECT 1 FROM media WHERE id=?',(identity,)).fetchone():
+        raise ValueError('This item is no longer in the library.')
+    with db:
+        db.execute('CREATE TABLE IF NOT EXISTS media_ratings(media TEXT PRIMARY KEY,rating INTEGER NOT NULL)')
+        db.execute('INSERT INTO media_ratings VALUES(?,?) ON CONFLICT(media) DO UPDATE SET rating=excluded.rating',(identity,value))
+    return dict(id=identity,rating=value)
+
+
 def serve():
     sys.stdin.reconfigure(encoding='utf-8')
     data=Path(os.environ['LOCALAPPDATA'])/'ComfyBridge'
@@ -260,6 +274,11 @@ def serve():
                 result=chat.request(data,action,body,device,config['comfyUrl'])
             elif route.startswith('desktop-chat-'):
                 result=chat.request(data,route[len('desktop-chat-'):],body,device,config['comfyUrl'])
+            elif route=='ratings':
+                result=read_ratings(data)
+            elif route=='rating':
+                uuid.UUID(device)
+                result=rate_media(db,body)
             elif route=='time':
                 result=round(time.time()*1000)
             elif route=='history':

@@ -1,4 +1,5 @@
 """Phone media manifest. Standalone mode only reads the existing library during a rolling upgrade."""
+from contextlib import closing
 import hashlib
 import json
 import os
@@ -20,7 +21,24 @@ def stat_key(st):
     return st.st_size, st.st_mtime_ns, st.st_ctime_ns, st.st_ino
 
 
+def read_ratings(data):
+    try:
+        with closing(sqlite3.connect((data/'library.sqlite').as_uri()+'?mode=ro',uri=True)) as db:
+            ratings=dict(db.execute('SELECT media,rating FROM media_ratings'))
+    except sqlite3.OperationalError:
+        ratings={}
+    return ratings
+
+
+def with_ratings(items, data):
+    ratings=read_ratings(data)
+    for item in items:
+        item['rating']=ratings.get(item['id'],0)
+    return items
+
+
 def media_manifest(items, root, cache_dir):
+    with_ratings(items, cache_dir)
     # The worker sleeps between visits. Keep hashes across restarts so checking
     # the library normally requires only a file stat, not rereading every MP4.
     cache = None

@@ -2,7 +2,7 @@ import asyncio
 import base64
 import hashlib
 import re
-from media_index import media_manifest
+from media_index import media_manifest, with_ratings
 import io
 import json
 import logging
@@ -548,7 +548,7 @@ async def api(request):
                 j['queuePosition'], j['queueTotal'] = counts[j['id']]
             if j['id']==ACTIVE and TRACKER and j['status'] not in ('complete','cancelled','error'):
                 j['progress'],j['current_node']=TRACKER.sample()
-        return web.json_response(dict(protocol=17,build='0.1.0-beta.41',jobs=jobs, active=ACTIVE, preview=bool(PREVIEW), previewRevision=PREVIEW_REV,ownedComfy=bool(OWNED),queueEtaSeconds=total_eta))
+        return web.json_response(dict(protocol=17,build='0.1.0-beta.42',jobs=jobs, active=ACTIVE, preview=bool(PREVIEW), previewRevision=PREVIEW_REV,ownedComfy=bool(OWNED),queueEtaSeconds=total_eta))
     if path.startswith('preview/'):
         job=str(uuid.UUID(path[8:]))
         after=int(request.query.get('after','-1'))
@@ -568,7 +568,7 @@ async def api(request):
         return web.Response(body=PREVIEW or b'', content_type='image/jpeg')
     if path == 'library':
         items = rows('SELECT id,job,kind,duration,created,archived FROM media ORDER BY created DESC')
-        return web.json_response(items)
+        return web.json_response(with_ratings(items,DATA))
     if path.startswith('extension/'):
         media_id = path.split('/',1)[1]
         source = extension.source_path(DB,ROOT,media_id)
