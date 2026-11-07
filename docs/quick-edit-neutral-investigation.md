@@ -25,3 +25,7 @@ These tests demonstrate a neutral failure and an improvement on it, not a univer
 ## Final checks
 
 The reasoning-enabled multi-part edit also applied the main requests and removed the empty-hall contradiction, but introduced unnecessary wording (a rainy concert hall and melancholy music). This is not perfect semantic adherence. All 89 backend tests and the Quick edit browser suite passed. The APK signature and assets were verified. No physical-phone test was performed.
+
+## Beta 53 bracketed input
+
+The model-facing user message now contains the original prompt directly in square brackets and the requested edits directly in curly brackets, followed by the user-specified deliverable wording. The input is not a JSON field bundle; output remains edited_prompt JSON. Bounded reasoning and validation remain enabled. The same neutral contradiction case passed in 98.2 seconds, removing the empty-hall contradiction and preserving the scene requirements. Twelve focused tests passed, including literal multiline/bracket preservation. This test does not isolate the template from the reasoning improvement or establish universal reliability.

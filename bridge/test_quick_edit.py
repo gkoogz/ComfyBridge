@@ -29,9 +29,19 @@ class QuickEditTests(unittest.TestCase):
         with contextlib.closing(chat.database(self.data)) as db:
             messages=chat.context_messages(db,self.body['id'])
             self.assertEqual(len(messages),2);self.assertNotIn('Unrelated',json.dumps(messages))
-            self.assertEqual(json.loads(messages[1]['content'])['edit_instructions'],'Make it blue.')
+            self.assertIn('[An orange bowl.]',messages[1]['content'])
+            self.assertIn('{Make it blue.}',messages[1]['content'])
+            self.assertNotIn('original_prompt',messages[1]['content'])
             self.assertEqual(chat.meta(db)['draft'],'Unsent draft')
             self.assertEqual(chat.snapshot(db)['messages'][0]['content'],'Unrelated discussion')
+
+    def test_bracketed_input_preserves_multiline_text_and_delimiters(self):
+        row=dict(source='video positive',prompt='[Shot 1] Café.\nA sign says {hello}.',instructions='Use blue.\nKeep [Shot 1].')
+        value=quick_edit.messages(row)[1]['content']
+        self.assertIn('['+row['prompt']+']',value)
+        self.assertIn('{'+row['instructions']+'}',value)
+        self.assertIn('edited_prompt',value)
+        self.assertIn(quick_edit.bracketed_input(row),quick_edit.retry_messages(row)[1]['content'])
 
     def test_idempotency_ownership_queue_and_chat_reset(self):
         self.call('quick-submit');self.call('quick-submit')
