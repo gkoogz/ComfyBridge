@@ -51,10 +51,17 @@ const assert=require('node:assert/strict'),path=require('node:path');
   for(const kind of ['image','video'])for(const key of ['positive','negative']){
    await p.evaluate(kind=>navigate(kind),kind);await p.waitForSelector('[data-quick-action=open]');
    const a=p.locator('[data-quick-actions='+key+']'),h=p.locator('[data-quick-panel='+key+']'),f=p.locator('textarea.promptEntry[data-setting='+key+']');
-   const old=await f.inputValue();await a.locator('[data-quick-action=open]').click();await h.locator('textarea').fill('Change the color.');await a.locator('[data-quick-action=submit]').click();
+   await f.fill('An orange bowl.');const old=await f.inputValue();await a.locator('[data-quick-action=open]').click();await h.locator('textarea').fill('Change the color.');await a.locator('[data-quick-action=submit]').click();
    await p.evaluate(()=>syncQuickEdits());await p.waitForSelector('[data-quick-panel='+key+'] .quickProposed');
    await h.locator('[data-quick-action=discard]').click();assert.equal(await f.inputValue(),old);
   }
+  // An unchanged result from an older server or persistent cache must never offer Use.
+  await p.evaluate(()=>{connected=true;profileReady=false;heartbeat=poll=syncSettings=syncNotes=syncChat=()=>{};navigate('video');quickSlots['video:positive']={phase:'proposed',original:'An orange bowl.',result:' An orange   bowl. ',text:'Make it blue.'};paintQuickEdit('video','positive');});
+  assert.equal(await p.locator('[data-quick-panel=positive] [data-quick-action=use]').count(),0);
+  assert.match(await p.locator('[data-quick-panel=positive]').textContent(),/without applying an edit/);
+  await p.locator('[data-quick-actions=positive] [data-quick-action=retry]').click();
+  assert.equal(await p.locator('[data-quick-panel=positive] textarea').inputValue(),'Make it blue.');
+  await p.locator('[data-quick-actions=positive] [data-quick-action=discard]').click();
   // Waiting survives a reload in the local persistent store.
   await p.evaluate(()=>finishEdits=false);
   await p.locator('[data-quick-actions=positive] [data-quick-action=open]').click();

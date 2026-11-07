@@ -20,11 +20,17 @@ function quickClock(seconds){seconds=Math.max(0,Math.floor(seconds));return Math
 function paintQuickTimers(){
  $$('[data-quick-clock]').forEach(el=>{const q=quickSlots[el.dataset.quickClock];if(q)el.textContent=quickClock(q.elapsedBase!=null?q.elapsedBase+(Date.now()-q.receivedAt)/1000:(Date.now()-q.started)/1000);});
 }
+function rejectUnchangedQuick(q){
+ if(q?.phase==='proposed' && String(q.result||'').trim().replace(/\s+/g,' ')===String(q.original||'').trim().replace(/\s+/g,' ')){
+  q.phase='error';q.result='';q.detail='The model returned the original prompt without applying an edit. Nothing was changed. Review your instructions and retry.';quickStore();
+ }
+}
 function paintQuickEdit(kind,key){
  if(page!==kind)return;
  const host=$('[data-quick-panel="'+key+'"]'),actions=$('[data-quick-actions="'+key+'"]'),chatButton=$('[data-chat-prompt="'+key+'"]');
  if(!host||!actions)return;
  const slot=quickSlot(kind,key),q=quickSlots[slot];
+ rejectUnchangedQuick(q);
  chatButton.hidden=!!q;
  const version=JSON.stringify([q?.phase,q?.id,q?.result,q?.detail,q?.warning]);
  if(host.dataset.version===version){paintQuickTimers();return;}
@@ -51,6 +57,7 @@ function paintQuickEdit(kind,key){
 }
 async function quickAction(kind,key,action){
  const slot=quickSlot(kind,key),q=quickSlots[slot];
+ rejectUnchangedQuick(q);
  if(action==='open')quickSlots[slot]={phase:'editing',text:''};
  else if(action==='submit'){
   if(!connected)return toast('Connect to the PC to use Quick edit.');
@@ -74,7 +81,7 @@ function discardQuick(q){if(q?.id&&connected)api('studio/chat/quick-discard',{id
 function receiveQuick(q,data){
  q.accepted=true;q.detail=data.detail||({queued:'Waiting for the local model…',waiting:'Waiting for the GPU…',loading:'Loading the local model…',responding:'Editing your prompt…'}[data.status]||'');
  q.elapsedBase=data.elapsedSeconds||0;q.receivedAt=Date.now();
- if(data.status==='complete'){q.phase='proposed';q.result=data.result;}
+ if(data.status==='complete'){q.phase='proposed';q.result=data.result;rejectUnchangedQuick(q);}
  else if(['error','missing','discarded'].includes(data.status)){q.phase='error';q.detail=data.detail||'This edit is no longer available. Retry to submit it again.';}
 }
 async function sendQuick(q,kind,key){

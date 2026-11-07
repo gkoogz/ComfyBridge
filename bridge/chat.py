@@ -498,7 +498,7 @@ def run(data, comfy):
                             last = time.monotonic()
                 if not finished:
                     raise OSError('The local model response was interrupted. Your draft and conversation are kept.')
-                if editing:text=quick_edit.result(text)
+                if editing:text=quick_edit.result(text, editing['prompt'])
                 with db:
                     db.execute('BEGIN IMMEDIATE')
                     if meta(db)['active'] == reply_id:

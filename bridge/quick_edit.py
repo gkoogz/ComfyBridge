@@ -67,6 +67,10 @@ def request(db, action, body, device):
     if not row:return dict(id=identity,status='missing')
     row['elapsedSeconds']=max(0,(row['finished'] or time.time())-row['created'])
     # Do not show the intermediate JSON stream, only the final validated prompt.
+    if row['status']=='complete':
+        try:result(json.dumps(dict(prompt=row['result'])), row['prompt'])
+        except ValueError as error:
+            row['status']='error';row['detail']=str(error)
     if row['status']!='complete':row['result']=''
     return row
 
@@ -76,7 +80,7 @@ def messages(row):
         dict(prompt_type=row['source'],original_prompt=row['prompt'],edit_instructions=row['instructions']),ensure_ascii=False))]
 
 
-def result(text):
+def result(text, original=None):
     try:value=json.loads(text)['prompt']
     except (ValueError,KeyError,TypeError):
         raise ValueError('The model did not return a complete edited prompt. Your original prompt is unchanged; retry the edit.')
@@ -87,4 +91,6 @@ def result(text):
     value=re.sub(r'^<prompt>([\s\S]*)</prompt>$',r'\1',value).strip()
     if not value:
         raise ValueError('The edited prompt was empty. Your original prompt is unchanged.')
+    if original is not None and ' '.join(value.split()) == ' '.join(original.split()):
+        raise ValueError('The model returned the original prompt without applying an edit. Nothing was changed. Review your instructions and retry.')
     return value

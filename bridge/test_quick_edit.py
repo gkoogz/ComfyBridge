@@ -51,7 +51,20 @@ class QuickEditTests(unittest.TestCase):
             with self.subTest(value=value),self.assertRaises(ValueError):quick_edit.result(value)
         self.assertEqual(quick_edit.result('{"prompt":"A blue bowl.\\nSoft light."}'),'A blue bowl.\nSoft light.')
 
-    def exercise_worker(self,malformed=False,leased=False):
+    def test_unchanged_output_is_rejected_including_legacy_results(self):
+        for text in ('An orange bowl.', '  An orange   bowl.\n', '<prompt>An orange bowl.</prompt>'):
+            with self.assertRaisesRegex(ValueError,'without applying an edit'):
+                quick_edit.result(json.dumps(dict(prompt=text)), self.body['prompt'])
+        self.assertEqual(quick_edit.result('{"prompt":"A blue bowl."}', self.body['prompt']), 'A blue bowl.')
+        self.call('quick-submit')
+        with contextlib.closing(chat.database(self.data)) as db,db:
+            db.execute("UPDATE quick_edits SET status='complete',result=prompt WHERE id=?",(self.body['id'],))
+        response=self.call('quick-state')
+        self.assertEqual(response['status'],'error')
+        self.assertEqual(response['result'],'')
+        self.assertEqual(response['instructions'],self.body['instructions'])
+
+    def exercise_worker(self,malformed=False,leased=False,unchanged=False):
         self.call('quick-submit')
         second=dict(self.body,id=str(uuid.uuid4()),source='video negative')
         self.call('quick-submit',second,device='phone2')
@@ -75,7 +88,7 @@ class QuickEditTests(unittest.TestCase):
             def __enter__(self):return self
             def __exit__(self,*args):pass
             def __iter__(self):
-                output='not a prompt' if malformed else json.dumps(dict(prompt='A blue bowl.'))
+                output='not a prompt' if malformed else json.dumps(dict(prompt='An orange bowl.' if unchanged else 'A blue bowl.'))
                 for chunk in (output[:7],output[7:]):
                     yield b'data: '+json.dumps(dict(choices=[dict(delta=dict(content=chunk))])).encode()+b'\n'
                 yield b'data: [DONE]\n'
@@ -85,12 +98,14 @@ class QuickEditTests(unittest.TestCase):
         self.assertEqual(len(engines),2);self.assertTrue(all(e.process.stopped for e in engines))
         self.assertEqual(payloads[0]['response_format'],quick_edit.FORMAT)
         result=self.call('quick-state')
-        self.assertEqual(result['status'],'error' if malformed else 'complete')
-        self.assertEqual(result['result'],'' if malformed else 'A blue bowl.')
+        self.assertEqual(result['status'],'error' if malformed or unchanged else 'complete')
+        self.assertEqual(result['result'],'' if malformed or unchanged else 'A blue bowl.')
         self.assertGreaterEqual(result['elapsedSeconds'],0)
         with contextlib.closing(chat.database(self.data)) as db:
             self.assertEqual(chat.snapshot(db)['messages'],[])
             self.assertIsNone(chat.meta(db)['active']);self.assertEqual(chat.meta(db)['gpu'],0)
+
+    def test_worker_rejects_unchanged_output(self):self.exercise_worker(unchanged=True)
 
     def test_same_worker_runs_two_edits_and_releases_gpu(self):self.exercise_worker()
     def test_failure_isolated_and_next_request_still_runs(self):self.exercise_worker(True)
