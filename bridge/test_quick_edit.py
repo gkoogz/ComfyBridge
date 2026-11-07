@@ -41,7 +41,6 @@ class QuickEditTests(unittest.TestCase):
         self.assertIn('['+row['prompt']+']',value)
         self.assertIn('{'+row['instructions']+'}',value)
         self.assertIn('edited_prompt',value)
-        self.assertIn(quick_edit.bracketed_input(row),quick_edit.retry_messages(row)[1]['content'])
 
     def test_idempotency_ownership_queue_and_chat_reset(self):
         self.call('quick-submit');self.call('quick-submit')
@@ -80,14 +79,22 @@ class QuickEditTests(unittest.TestCase):
         self.assertEqual(quick_edit.result('{"edited_prompt":"An orange bowl!"}', 'An orange bowl.',
                          'Use an exclamation mark.'),'An orange bowl!')
 
-    def test_patch_validation(self):
-        source='A red bowl on a red table.'
-        good=dict(edits=[dict(find='red bowl',replace='blue bowl'),dict(find='red table',replace='white table')])
-        self.assertEqual(quick_edit.patch_result(json.dumps(good),source),'A blue bowl on a white table.')
-        for edits in ([],[dict(find='red',replace='blue')],[dict(find='missing',replace='blue')],
-                      [dict(find='red bowl',replace='blue'),dict(find='bowl on',replace='cup on')],
-                      [dict(find='red bowl',replace='red bowl')]):
-            with self.assertRaises(ValueError):quick_edit.patch_result(json.dumps(dict(edits=edits)),source)
+    def test_review_requires_a_real_verdict(self):
+        for raw in ('{}','{"checks":[],"contradictions":[]}', '{"checks":[{"requirement":"blue","satisfied":"true","reason":"ok"}],"contradictions":[]}'):
+            with self.assertRaises(ValueError):quick_edit.review_result(raw)
+
+    def test_failed_review_is_repaired_and_reviewed_again(self):
+        calls=[]
+        def complete(messages,fmt,stage):
+            calls.append(stage)
+            if fmt==quick_edit.FORMAT:return json.dumps(dict(edited_prompt='A blue bowl on a red table.' if len(calls)==1 else 'A blue bowl on a white table.'))
+            return json.dumps(dict(checks=[dict(requirement='White table',satisfied=len(calls)==4,reason='Table is red' if len(calls)==2 else 'White table present')],contradictions=[]))
+        row=dict(source='image positive',prompt='An orange bowl on a red table.',instructions='Make the bowl blue and the table white.')
+        self.assertEqual(quick_edit.generate_checked(row,complete),'A blue bowl on a white table.')
+        self.assertEqual(len(calls),4)
+        def failed(messages,fmt,stage):
+            return json.dumps(dict(edited_prompt='A blue bowl on a red table.')) if fmt==quick_edit.FORMAT else json.dumps(dict(checks=[dict(requirement='White table',satisfied=False,reason='Still red')],contradictions=[]))
+        with self.assertRaisesRegex(ValueError,'no proposal was accepted'):quick_edit.generate_checked(row,failed)
 
     def exercise_worker(self,malformed=False,leased=False,unchanged=False,recover=False):
         self.call('quick-submit')
@@ -113,9 +120,10 @@ class QuickEditTests(unittest.TestCase):
             def __enter__(self):return self
             def __exit__(self,*args):pass
             def __iter__(self):
-                output='not a prompt' if malformed else json.dumps(dict(edited_prompt='An orange bowl.' if unchanged or (recover and len(payloads)%2==1) else 'A blue bowl.'))
-                if (recover or unchanged) and len(payloads)%2==0:
-                    output=json.dumps(dict(edits=[dict(find='An orange',replace='An orange' if unchanged else 'A blue')]))
+                generation_count=sum(p['response_format']==quick_edit.FORMAT for p in payloads)
+                output='not a prompt' if malformed else json.dumps(dict(edited_prompt='An orange bowl.' if unchanged or (recover and generation_count%2==1) else 'A blue bowl.'))
+                if payloads[-1]['response_format']==quick_edit.REVIEW_FORMAT:
+                    output=json.dumps(dict(checks=[dict(requirement='Blue bowl',satisfied=True,reason='The bowl is blue')],contradictions=[]))
                 for chunk in (output[:7],output[7:]):
                     yield b'data: '+json.dumps(dict(choices=[dict(delta=dict(content=chunk))])).encode()+b'\n'
                 yield b'data: [DONE]\n'
@@ -125,10 +133,8 @@ class QuickEditTests(unittest.TestCase):
         self.assertEqual(len(engines),2);self.assertTrue(all(e.process.stopped for e in engines))
         self.assertEqual(payloads[0]['response_format'],quick_edit.FORMAT)
         self.assertTrue(payloads[0]['chat_template_kwargs']['enable_thinking'])
-        self.assertEqual(len(payloads),4 if unchanged or recover else 2)
-        if unchanged or recover:
-            self.assertEqual(payloads[1]['messages'][-1]['role'],'user')
-            self.assertEqual(payloads[1]['response_format'],quick_edit.PATCH_FORMAT)
+        self.assertTrue(all(p['cache_prompt'] is False for p in payloads))
+        self.assertEqual(len(payloads),6 if recover else 4)
         result=self.call('quick-state')
         self.assertEqual(result['status'],'error' if malformed or unchanged else 'complete')
         self.assertEqual(result['result'],'' if malformed or unchanged else 'A blue bowl.')

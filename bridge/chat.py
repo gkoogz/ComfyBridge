@@ -472,43 +472,30 @@ def run(data, comfy):
                                temperature=.7, top_p=.8, top_k=20, repeat_penalty=1.05,
                                chat_template_kwargs=dict(enable_thinking=False))
                 if editing:
-                    payload.update(response_format=quick_edit.FORMAT,max_tokens=8192,temperature=.4,chat_template_kwargs=dict(enable_thinking=True))
-                for edit_attempt in range(2 if editing else 1):
-                    if edit_attempt:
-                        payload['messages']=quick_edit.retry_messages(editing)
-                        payload['response_format']=quick_edit.PATCH_FORMAT
-                        update('responding', 'The model returned unchanged text. Trying targeted replacements…', '')
-                    req = urllib.request.Request(engine.url + '/v1/chat/completions', data=json.dumps(payload).encode(),
+                    payload.update(response_format=quick_edit.FORMAT,max_tokens=8192,temperature=.4,cache_prompt=False,chat_template_kwargs=dict(enable_thinking=True))
+                def complete(messages, response_format=None, stage='Replying locally'):
+                    request_payload=dict(payload,messages=messages)
+                    if response_format is not None:request_payload['response_format']=response_format
+                    if not update('responding',stage,''):
+                        raise OSError('The request was cancelled.')
+                    req = urllib.request.Request(engine.url + '/v1/chat/completions', data=json.dumps(request_payload).encode(),
                             headers={'Content-Type': 'application/json', 'Authorization': 'Bearer ' + engine.key})
-                    text = ''
-                    last = 0
-                    finished = False
+                    output='';last=0;finished=False
                     with urllib.request.urlopen(req, timeout=180) as stream:
                         for line in stream:
-                            if not line.startswith(b'data: '):
-                                continue
-                            if line.strip() == b'data: [DONE]':
-                                finished = True
-                                break
-                            chunk = json.loads(line[6:])
-                            if chunk.get('error'):
-                                raise ValueError(str(chunk['error']))
-                            choices = chunk.get('choices', [])
-                            if not choices:
-                                continue
-                            text += choices[0].get('delta', {}).get('content') or ''
-                            if time.monotonic() - last > .15:
-                                if not update('responding', ('Retrying unchanged edit · ' if edit_attempt else 'Replying locally · ') + ('Radeon GPU' if gpu else 'CPU while GPU is busy'), text):
-                                    break
-                                last = time.monotonic()
-                    if not finished:
-                        raise OSError('The local model response was interrupted. Your draft and conversation are kept.')
-                    if not editing:break
-                    try:
-                        text=quick_edit.patch_result(text, editing['prompt'], editing['instructions']) if edit_attempt else quick_edit.result(text, editing['prompt'], editing['instructions'])
-                        break
-                    except quick_edit.UnchangedEdit:
-                        if edit_attempt:raise
+                            if not line.startswith(b'data: '):continue
+                            if line.strip()==b'data: [DONE]':finished=True;break
+                            chunk=json.loads(line[6:])
+                            if chunk.get('error'):raise ValueError(str(chunk['error']))
+                            choices=chunk.get('choices',[])
+                            if not choices:continue
+                            output+=choices[0].get('delta',{}).get('content') or ''
+                            if time.monotonic()-last>.15:
+                                if not update('responding',stage,output):break
+                                last=time.monotonic()
+                    if not finished:raise OSError('The local model response was interrupted. Your draft and conversation are kept.')
+                    return output
+                text=quick_edit.generate_checked(editing,complete) if editing else complete(payload['messages'])
                 with db:
                     db.execute('BEGIN IMMEDIATE')
                     if meta(db)['active'] == reply_id:
