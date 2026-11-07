@@ -34,6 +34,23 @@ body[data-page=notepad] #main{padding-bottom:var(--chat-clearance,180px)}
 .promptActions button{display:inline-flex;align-items:center;justify-content:center;height:36px;min-height:36px;margin:0;border:1px solid #52636b;border-radius:8px;background:transparent;padding:0 11px;color:var(--mint)}
 .promptActions .promptHeight{width:36px;min-width:36px;padding:0;font-size:22px}
 .promptActions .promptChat{font-size:12px}
+.promptActions{justify-content:flex-start;flex-wrap:wrap}
+.promptActions .promptHeight{margin-left:auto}
+.quickActions{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.promptActions .quickActions button{font-size:12px;padding:0 8px}
+.quickThinking{display:flex;align-items:center;gap:9px;font-size:12px;min-height:36px}
+.quickThinking .spinner{width:16px;height:16px;flex:none}
+.quickPanel:empty{display:none}
+.quickPanel{margin-top:7px}
+.quickInstructions,.quickSubmitted,.quickProposed{box-sizing:border-box;width:100%;min-height:118px;padding:12px;border:1px solid var(--line);border-radius:12px;background:#0b1318;color:var(--text);font:inherit;line-height:1.45;white-space:pre-wrap;overflow-wrap:anywhere;user-select:text;-webkit-user-select:text}
+.quickInstructions{resize:vertical}
+.quickSubmitted{border-color:#dbc36a;background:#dbc36a0b}
+.quickDetail{display:block;margin:5px 2px}
+.quickProposalHeading{gap:8px;flex-wrap:wrap;margin-bottom:7px}
+.quickProposalHeading button{padding:7px 9px;font-size:12px;border-radius:8px}
+.seedRandom{margin-top:5px;font-size:12px}
+.quickApplied{animation:quickApplied 1.2s ease-out}
+@keyframes quickApplied{0%,45%{border-color:#8df1b5;box-shadow:0 0 0 2px #8df1b566}100%{border-color:var(--line);box-shadow:none}}
 .promptActions button:active{background:#a2f3ce16;border-color:var(--mint)}
 @media(prefers-reduced-motion:reduce){#chatTray,#addSticky{transition:none}.chatDots i{animation:none}}
 

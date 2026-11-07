@@ -269,7 +269,7 @@ def serve():
             if route.startswith('chat/'):
                 uuid.UUID(device)
                 action=route.split('/',1)[1]
-                if action not in ('state','draft','send','reset'):
+                if action not in ('state','draft','send','reset','quick-submit','quick-state','quick-discard'):
                     raise ValueError('Unknown chat request.')
                 result=chat.request(data,action,body,device,config['comfyUrl'])
             elif route.startswith('desktop-chat-'):

@@ -30,7 +30,9 @@ const assert=require('node:assert/strict'),path=require('node:path');
   const actions=await p.locator('.promptActions').first().boundingBox();
   const chatButton=await p.locator('[data-chat-prompt]').first().boundingBox();
   const caret=await p.locator('[data-prompt-height]').first().boundingBox();
-  assert(Math.abs(chatButton.x-actions.x)<2,'Chat belongs at the left edge');
+  const quickButton=await p.locator('[data-quick-actions=positive] [data-quick-action=open]').boundingBox();
+  assert(Math.abs(quickButton.x-actions.x)<2,'Quick edit belongs at the left edge');
+  assert(chatButton.x>quickButton.x+quickButton.width,'Chat follows Quick edit');
   assert(Math.abs(caret.x+caret.width-actions.x-actions.width)<2,'Caret belongs at the right edge');
 
   await p.locator('[data-chat-prompt=positive]').click();await p.waitForSelector('#chatText');

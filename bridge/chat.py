@@ -16,6 +16,7 @@ import urllib.error
 import urllib.request
 import uuid
 import gpu_handoff
+import quick_edit
 
 BUSY = ('queued', 'waiting', 'loading', 'responding')
 SYSTEM = ('You are a helpful creative assistant in ComfyBridge. Help discuss ideas and refine '
@@ -43,6 +44,7 @@ def database(data):
         created REAL, source TEXT, model TEXT, status TEXT);
     ''')
     db.execute('INSERT OR IGNORE INTO chat_meta(id,conversation) VALUES(1,?)', (str(uuid.uuid4()),))
+    quick_edit.prepare(db)
     if 'last_activity' not in {r[1] for r in db.execute('PRAGMA table_info(chat_meta)')}:
         db.execute('ALTER TABLE chat_meta ADD COLUMN last_activity REAL DEFAULT 0')
         db.execute('UPDATE chat_meta SET last_activity=COALESCE((SELECT MAX(created) FROM chat_messages),0)')
@@ -133,6 +135,16 @@ def start_runner(data, comfy):
 
 def request(data, route, body, device, comfy, launch=True):
     with contextlib.closing(database(data)) as db:
+        if route.startswith('quick-'):
+            if route=='quick-submit':selected_model(data)
+            with db:
+                db.execute('BEGIN IMMEDIATE')
+                result=quick_edit.request(db,route,body,device)
+            row=meta(db)
+            if launch and row['active'] and (route=='quick-submit' or time.time()-row['runner_at']>15):
+                with db:db.execute('UPDATE chat_meta SET runner_at=? WHERE id=1',(time.time(),))
+                start_runner(data,comfy)
+            return result
         if route == 'models':
             return models(data)
         expire_idle_chat(db)
@@ -182,8 +194,12 @@ def request(data, route, body, device, comfy, launch=True):
                           draft_device=?,revision=revision+1 WHERE id=1''', (text, str(uuid.UUID(body['edit'])), device))
         elif route == 'reset':
             db.execute('DELETE FROM chat_messages')
+            editing=bool(quick_edit.get(db,row['active']))
             db.execute('''UPDATE chat_meta SET conversation=?,draft='',draft_revision=draft_revision+1,
-                draft_edit='',draft_device=?,active=NULL,status='idle',detail='',revision=revision+1 WHERE id=1''', (str(uuid.uuid4()), device))
+                draft_edit='',draft_device=?,revision=revision+1 WHERE id=1''', (str(uuid.uuid4()), device))
+            if not editing:
+                db.execute("UPDATE chat_meta SET active=NULL,status='idle',detail='' WHERE id=1")
+                quick_edit.activate_next(db)
         elif route == 'send':
             message_id = str(uuid.UUID(body['id']))
             if db.execute('SELECT 1 FROM chat_messages WHERE id=?', (message_id,)).fetchone():
@@ -263,6 +279,8 @@ def renderer_queue_busy(comfy):
 
 
 def context_messages(db, reply_id):
+    editing=quick_edit.get(db,reply_id)
+    if editing:return quick_edit.messages(editing)
     # Keep all messages in the UI; only the most recent context is sent to the model.
     entries = [dict(r) for r in db.execute("SELECT role,content,source FROM chat_messages WHERE id!=? AND status='complete' ORDER BY created,rowid", (reply_id,))]
     recent, used = [], 0
@@ -355,6 +373,7 @@ def run(data, comfy):
         with db:
             db.execute('UPDATE chat_meta SET gpu=0,engine_pid=0,runner_at=? WHERE id=1', (time.time(),))
         while True:
+            with db:quick_edit.activate_next(db)
             row = meta(db)
             with db:
                 db.execute('UPDATE chat_meta SET runner_at=? WHERE id=1', (time.time(),))
@@ -370,6 +389,7 @@ def run(data, comfy):
                 time.sleep(.25)
                 continue
             idle_since = time.monotonic()
+            editing=quick_edit.get(db,reply_id)
             cancel = threading.Event()
             reason = []
             def update(status, detail, content=None):
@@ -378,7 +398,9 @@ def run(data, comfy):
                     if meta(db)['active'] != reply_id:
                         return False
                     db.execute('UPDATE chat_meta SET status=?,detail=?,revision=revision+1,runner_at=? WHERE id=1', (status, detail, time.time()))
-                    if content is not None:
+                    if editing:
+                        db.execute('UPDATE quick_edits SET status=?,detail=? WHERE id=?',(status,detail,reply_id))
+                    elif content is not None:
                         db.execute('UPDATE chat_messages SET content=?,status=? WHERE id=?', (content, status, reply_id))
                 return True
             try:
@@ -449,6 +471,8 @@ def run(data, comfy):
                 payload = dict(messages=context_messages(db, reply_id), stream=True, max_tokens=2048,
                                temperature=.7, top_p=.8, top_k=20, repeat_penalty=1.05,
                                chat_template_kwargs=dict(enable_thinking=False))
+                if editing:
+                    payload.update(response_format=quick_edit.FORMAT,max_tokens=8192,temperature=.4)
                 req = urllib.request.Request(engine.url + '/v1/chat/completions', data=json.dumps(payload).encode(),
                         headers={'Content-Type': 'application/json', 'Authorization': 'Bearer ' + engine.key})
                 text = ''
@@ -474,12 +498,17 @@ def run(data, comfy):
                             last = time.monotonic()
                 if not finished:
                     raise OSError('The local model response was interrupted. Your draft and conversation are kept.')
+                if editing:text=quick_edit.result(text)
                 with db:
                     db.execute('BEGIN IMMEDIATE')
                     if meta(db)['active'] == reply_id:
-                        db.execute("UPDATE chat_messages SET content=?,status='complete' WHERE id=?", (text, reply_id))
-                        db.execute("UPDATE chat_meta SET last_activity=? WHERE id=1", (time.time(),))
+                        if editing:
+                            db.execute("UPDATE quick_edits SET result=?,status='complete',detail='',finished=? WHERE id=?",(text,time.time(),reply_id))
+                        else:
+                            db.execute("UPDATE chat_messages SET content=?,status='complete' WHERE id=?", (text, reply_id))
+                            db.execute("UPDATE chat_meta SET last_activity=? WHERE id=1", (time.time(),))
                         db.execute("UPDATE chat_meta SET active=NULL,status='idle',detail='',revision=revision+1 WHERE id=1")
+                        quick_edit.activate_next(db)
             except Exception as error:
                 if reason and reason[0] == 'yield':
                     update('waiting', 'Waiting for a safe GPU handoff…', '')
@@ -498,8 +527,12 @@ def run(data, comfy):
                     with db:
                         db.execute('BEGIN IMMEDIATE')
                         if meta(db)['active'] == reply_id:
-                            db.execute("UPDATE chat_messages SET status='error' WHERE id=?", (reply_id,))
+                            if editing:
+                                db.execute("UPDATE quick_edits SET status='error',detail=?,finished=? WHERE id=?",(detail[:700],time.time(),reply_id))
+                            else:
+                                db.execute("UPDATE chat_messages SET status='error' WHERE id=?", (reply_id,))
                             db.execute("UPDATE chat_meta SET active=NULL,status='error',detail=?,revision=revision+1 WHERE id=1", (detail[:700],))
+                            quick_edit.activate_next(db)
             finally:
                 cancel.set()
                 if 'watcher' in locals() and watcher.is_alive():

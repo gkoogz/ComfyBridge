@@ -4,7 +4,15 @@ New-Item -ItemType Directory -Force $target | Out-Null
 $exe = Join-Path $target 'ComfyBridge.exe'
 # Only replace this installation; the Python worker and queued Comfy jobs keep running.
 Get-Process ComfyBridge -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $exe } | ForEach-Object { Stop-Process -Id $_.Id; $_.WaitForExit() }
-foreach($file in 'ComfyBridge.exe','Microsoft.Web.WebView2.Core.dll','Microsoft.Web.WebView2.WinForms.dll','WebView2Loader.dll','WebView2-LICENSE.txt','worker.py','workflows.py','extension.py','handoff.py','cancel_recovery.py','gpu_handoff.py','media_index.py','progress.py','queue_progress.py','queue_eta.py','studio.py','recipes.py','provenance.py','chat.py','install_chat.py','Setup-Chat.ps1'){
+# Let the previous chat protocol finish before accepting isolated quick-edit jobs.
+# The generation worker/ComfyUI keep running throughout this installation.
+$chatScript=Join-Path $target 'chat.py'
+$announcedChatWait=$false
+while(Get-CimInstance Win32_Process -Filter "Name='python.exe'" | Where-Object { $_.CommandLine -and $_.CommandLine.IndexOf($chatScript,[StringComparison]::OrdinalIgnoreCase) -ge 0 -and $_.CommandLine.Contains('--run') }){
+    if(-not $announcedChatWait){Write-Output 'Waiting for the current local reply to finish before updating chat.';$announcedChatWait=$true}
+    Start-Sleep -Seconds 1
+}
+foreach($file in 'ComfyBridge.exe','Microsoft.Web.WebView2.Core.dll','Microsoft.Web.WebView2.WinForms.dll','WebView2Loader.dll','WebView2-LICENSE.txt','worker.py','workflows.py','extension.py','handoff.py','cancel_recovery.py','gpu_handoff.py','media_index.py','progress.py','queue_progress.py','queue_eta.py','studio.py','recipes.py','provenance.py','chat.py','quick_edit.py','install_chat.py','Setup-Chat.ps1'){
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot $file) -Destination $target -Force
 }
 New-Item -ItemType Directory -Force (Join-Path $target 'desktop-assets') | Out-Null

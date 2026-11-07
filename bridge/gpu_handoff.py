@@ -70,6 +70,8 @@ def wants_chat(data):
                 if current and current[0]==state.get('runner_at'):
                     if current[1]:
                         db.execute("UPDATE chat_messages SET status='error' WHERE id=?",(current[1],))
+                        if db.execute("SELECT 1 FROM sqlite_master WHERE name='quick_edits'").fetchone():
+                            db.execute("UPDATE quick_edits SET status='error',detail='The local model stopped. Retry this edit; your original prompt is unchanged.',finished=? WHERE id=?",(time.time(),current[1]))
                     db.execute("UPDATE chat_meta SET active=NULL,gpu=0,engine_pid=0,status='error',detail='Chat stopped unexpectedly. Your video can resume; send again to retry.',revision=revision+1 WHERE id=1")
                     return False
     return bool(state.get('active') or state.get('gpu') or state.get('engine_pid'))
