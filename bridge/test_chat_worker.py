@@ -25,7 +25,8 @@ class WorkerTests(unittest.TestCase):
                 def poll(self):return 1 if self.stopped.is_set() else None
                 def terminate(self):self.stopped.set()
             class Engine:
-                def __init__(self,config,model,gpu,data):
+                def __init__(self,config,model,gpu,data,editing=False):
+                    assert not editing, "Notepad chat must retain its existing inference mode"
                     self.gpu=gpu;self.process=Process();self.url='http://fixture';self.key='fixture';self.closed=False;engines.append(self)
                 def close(self):self.closed=True;self.process.terminate()
             class Stream:

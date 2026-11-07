@@ -64,7 +64,22 @@ class QuickEditTests(unittest.TestCase):
         self.assertEqual(response['result'],'')
         self.assertEqual(response['instructions'],self.body['instructions'])
 
-    def exercise_worker(self,malformed=False,leased=False,unchanged=False):
+    def test_cosmetic_change_does_not_count_as_content_edit(self):
+        with self.assertRaises(quick_edit.UnchangedEdit):
+            quick_edit.result('{"edited_prompt":"An orange bowl!"}','An orange bowl.','Make it blue.')
+        self.assertEqual(quick_edit.result('{"edited_prompt":"An orange bowl!"}', 'An orange bowl.',
+                         'Use an exclamation mark.'),'An orange bowl!')
+
+    def test_patch_validation(self):
+        source='A red bowl on a red table.'
+        good=dict(edits=[dict(find='red bowl',replace='blue bowl'),dict(find='red table',replace='white table')])
+        self.assertEqual(quick_edit.patch_result(json.dumps(good),source),'A blue bowl on a white table.')
+        for edits in ([],[dict(find='red',replace='blue')],[dict(find='missing',replace='blue')],
+                      [dict(find='red bowl',replace='blue'),dict(find='bowl on',replace='cup on')],
+                      [dict(find='red bowl',replace='red bowl')]):
+            with self.assertRaises(ValueError):quick_edit.patch_result(json.dumps(dict(edits=edits)),source)
+
+    def exercise_worker(self,malformed=False,leased=False,unchanged=False,recover=False):
         self.call('quick-submit')
         second=dict(self.body,id=str(uuid.uuid4()),source='video negative')
         self.call('quick-submit',second,device='phone2')
@@ -88,7 +103,9 @@ class QuickEditTests(unittest.TestCase):
             def __enter__(self):return self
             def __exit__(self,*args):pass
             def __iter__(self):
-                output='not a prompt' if malformed else json.dumps(dict(edited_prompt='An orange bowl.' if unchanged else 'A blue bowl.'))
+                output='not a prompt' if malformed else json.dumps(dict(edited_prompt='An orange bowl.' if unchanged or (recover and len(payloads)%2==1) else 'A blue bowl.'))
+                if (recover or unchanged) and len(payloads)%2==0:
+                    output=json.dumps(dict(edits=[dict(find='An orange',replace='An orange' if unchanged else 'A blue')]))
                 for chunk in (output[:7],output[7:]):
                     yield b'data: '+json.dumps(dict(choices=[dict(delta=dict(content=chunk))])).encode()+b'\n'
                 yield b'data: [DONE]\n'
@@ -97,6 +114,11 @@ class QuickEditTests(unittest.TestCase):
             chat.run(self.data,'http://fixture')
         self.assertEqual(len(engines),2);self.assertTrue(all(e.process.stopped for e in engines))
         self.assertEqual(payloads[0]['response_format'],quick_edit.FORMAT)
+        self.assertTrue(payloads[0]['chat_template_kwargs']['enable_thinking'])
+        self.assertEqual(len(payloads),4 if unchanged or recover else 2)
+        if unchanged or recover:
+            self.assertEqual(payloads[1]['messages'][-1]['role'],'user')
+            self.assertEqual(payloads[1]['response_format'],quick_edit.PATCH_FORMAT)
         result=self.call('quick-state')
         self.assertEqual(result['status'],'error' if malformed or unchanged else 'complete')
         self.assertEqual(result['result'],'' if malformed or unchanged else 'A blue bowl.')
@@ -104,6 +126,8 @@ class QuickEditTests(unittest.TestCase):
         with contextlib.closing(chat.database(self.data)) as db:
             self.assertEqual(chat.snapshot(db)['messages'],[])
             self.assertIsNone(chat.meta(db)['active']);self.assertEqual(chat.meta(db)['gpu'],0)
+
+    def test_worker_recovers_after_one_unchanged_response(self):self.exercise_worker(recover=True)
 
     def test_worker_rejects_unchanged_output(self):self.exercise_worker(unchanged=True)
 

@@ -21,8 +21,11 @@ function paintQuickTimers(){
  $$('[data-quick-clock]').forEach(el=>{const q=quickSlots[el.dataset.quickClock];if(q)el.textContent=quickClock(q.elapsedBase!=null?q.elapsedBase+(Date.now()-q.receivedAt)/1000:(Date.now()-q.started)/1000);});
 }
 function rejectUnchangedQuick(q){
- if(q?.phase==='proposed' && String(q.result||'').trim().replace(/\s+/g,' ')===String(q.original||'').trim().replace(/\s+/g,' ')){
-  q.phase='error';q.result='';q.detail='The model returned the original prompt without applying an edit. Nothing was changed. Review your instructions and retry.';quickStore();
+ const original=String(q?.original||''),result=String(q?.result||'');
+ const words=text=>(text.toLowerCase().match(/[\p{L}\p{N}_]+/gu)||[]).join(' ');
+ const formatting=/punctuat|comma|period|exclamation|question.mark|semicolon|colon|dash|parenthes|bracket|indent|bold|italic|capitaliz|capitalis|lowercase|uppercase|letter case|hyphen|apostroph|quot|format|spac|line.break|newline|markdown/i.test(q?.text||'');
+ if(q?.phase==='proposed' && (result.trim().replace(/\s+/g,' ')===original.trim().replace(/\s+/g,' ')||(!formatting&&words(result)===words(original)))){
+  q.phase='error';q.result='';q.detail='The model returned unchanged or formatting-only text without applying an edit. Nothing was changed. Review your instructions and retry.';quickStore();
  }
 }
 function paintQuickEdit(kind,key){

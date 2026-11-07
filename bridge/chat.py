@@ -298,7 +298,7 @@ def context_messages(db, reply_id):
 
 
 class Engine:
-    def __init__(self, config, model, gpu, data):
+    def __init__(self, config, model, gpu, data, editing=False):
         self.process = None
         self.job = None
         self.gpu = gpu
@@ -313,7 +313,7 @@ class Engine:
                 '--api-key', self.key, '--no-webui', '--jinja', '--ctx-size', '12288', '--parallel', '1',
                 '--n-gpu-layers', 'auto' if gpu else '0', '--fit-target', '1536', '--threads', '6', '--threads-batch', '6',
                 '--batch-size', '512', '--ubatch-size', '128', '--flash-attn', 'on', '--no-warmup',
-                '--reasoning-budget', '0', '--no-context-shift', '--prio', '-1', '--poll', '0']
+                '--reasoning-budget', '256' if editing else '0', '--no-context-shift', '--prio', '-1', '--poll', '0']
         if not gpu:
             args += ['--device', 'none']
         self.process = subprocess.Popen(args, stdin=subprocess.DEVNULL, stdout=self.log, stderr=self.log, creationflags=flags)
@@ -431,7 +431,7 @@ def run(data, comfy):
                         continue
                     db.execute('UPDATE chat_meta SET gpu=? WHERE id=1', (int(gpu),))
                 update('loading', 'Loading local model on Radeon GPU…' if gpu else 'Loading on CPU while ComfyUI uses the GPU…', '')
-                engine = Engine(config, model, gpu, data)
+                engine = Engine(config, model, gpu, data, bool(editing))
                 with db:
                     db.execute('UPDATE chat_meta SET engine_pid=? WHERE id=1', (engine.process.pid,))
                 current_engine = engine
@@ -472,33 +472,43 @@ def run(data, comfy):
                                temperature=.7, top_p=.8, top_k=20, repeat_penalty=1.05,
                                chat_template_kwargs=dict(enable_thinking=False))
                 if editing:
-                    payload.update(response_format=quick_edit.FORMAT,max_tokens=8192,temperature=.4)
-                req = urllib.request.Request(engine.url + '/v1/chat/completions', data=json.dumps(payload).encode(),
-                        headers={'Content-Type': 'application/json', 'Authorization': 'Bearer ' + engine.key})
-                text = ''
-                last = 0
-                finished = False
-                with urllib.request.urlopen(req, timeout=180) as stream:
-                    for line in stream:
-                        if not line.startswith(b'data: '):
-                            continue
-                        if line.strip() == b'data: [DONE]':
-                            finished = True
-                            break
-                        chunk = json.loads(line[6:])
-                        if chunk.get('error'):
-                            raise ValueError(str(chunk['error']))
-                        choices = chunk.get('choices', [])
-                        if not choices:
-                            continue
-                        text += choices[0].get('delta', {}).get('content') or ''
-                        if time.monotonic() - last > .15:
-                            if not update('responding', 'Replying locally · ' + ('Radeon GPU' if gpu else 'CPU while GPU is busy'), text):
+                    payload.update(response_format=quick_edit.FORMAT,max_tokens=8192,temperature=.4,chat_template_kwargs=dict(enable_thinking=True))
+                for edit_attempt in range(2 if editing else 1):
+                    if edit_attempt:
+                        payload['messages']=quick_edit.retry_messages(editing)
+                        payload['response_format']=quick_edit.PATCH_FORMAT
+                        update('responding', 'The model returned unchanged text. Trying targeted replacements…', '')
+                    req = urllib.request.Request(engine.url + '/v1/chat/completions', data=json.dumps(payload).encode(),
+                            headers={'Content-Type': 'application/json', 'Authorization': 'Bearer ' + engine.key})
+                    text = ''
+                    last = 0
+                    finished = False
+                    with urllib.request.urlopen(req, timeout=180) as stream:
+                        for line in stream:
+                            if not line.startswith(b'data: '):
+                                continue
+                            if line.strip() == b'data: [DONE]':
+                                finished = True
                                 break
-                            last = time.monotonic()
-                if not finished:
-                    raise OSError('The local model response was interrupted. Your draft and conversation are kept.')
-                if editing:text=quick_edit.result(text, editing['prompt'])
+                            chunk = json.loads(line[6:])
+                            if chunk.get('error'):
+                                raise ValueError(str(chunk['error']))
+                            choices = chunk.get('choices', [])
+                            if not choices:
+                                continue
+                            text += choices[0].get('delta', {}).get('content') or ''
+                            if time.monotonic() - last > .15:
+                                if not update('responding', ('Retrying unchanged edit · ' if edit_attempt else 'Replying locally · ') + ('Radeon GPU' if gpu else 'CPU while GPU is busy'), text):
+                                    break
+                                last = time.monotonic()
+                    if not finished:
+                        raise OSError('The local model response was interrupted. Your draft and conversation are kept.')
+                    if not editing:break
+                    try:
+                        text=quick_edit.patch_result(text, editing['prompt'], editing['instructions']) if edit_attempt else quick_edit.result(text, editing['prompt'], editing['instructions'])
+                        break
+                    except quick_edit.UnchangedEdit:
+                        if edit_attempt:raise
                 with db:
                     db.execute('BEGIN IMMEDIATE')
                     if meta(db)['active'] == reply_id:
