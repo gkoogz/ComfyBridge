@@ -30,6 +30,12 @@ class BridgeTests(unittest.IsolatedAsyncioTestCase):
         w.DB.execute('DELETE FROM media'); w.DB.execute('DELETE FROM jobs'); w.DB.commit()
         w.ROOT = Path(TEMP.name)/'comfy'; (w.ROOT/'input/ComfyBridge').mkdir(parents=True, exist_ok=True)
         (w.ROOT/'output/ComfyBridge').mkdir(parents=True, exist_ok=True)
+        # Tiny file stand-ins, never real weights: asset identity must still be
+        # checked by the checkpoint protocol in this simulated Comfy integration.
+        for key,folder in (('3','text_encoders'),('4','vae'),('5','diffusion_models'),('8','loras')):
+            name=w.WF.widgets('video',int(key))[0]
+            target=w.ROOT/'models'/folder/name;target.parent.mkdir(parents=True,exist_ok=True);target.touch()
+        target=w.ROOT/'models/vae'/w.H3_AUDIO_VAE;target.parent.mkdir(parents=True,exist_ok=True);target.touch()
         defaults = w.WF.defaults()
         self.settings = copy.deepcopy(defaults['image'])
         self.settings['positive'] = 'A blue ceramic sphere'; self.settings['negative'] = ''

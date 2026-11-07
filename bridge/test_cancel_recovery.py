@@ -60,6 +60,7 @@ class RecoveryTests(unittest.TestCase):
 
 class StartupTests(unittest.IsolatedAsyncioTestCase):
     async def test_updates_only_owned_idle_process_and_does_not_restart_again(self):
+        import gpu_handoff
         tree=ast.parse(Path(__file__).with_name('worker.py').read_text(encoding='utf-8'))
         node=next(n for n in tree.body if isinstance(n,ast.AsyncFunctionDef) and n.name=='_ensure_comfy')
         for owned,busy,matching,expected in ((True,False,False,1),(True,True,False,0),(False,False,False,0),(True,False,True,0)):
@@ -74,7 +75,7 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
                 def kill(args,**kwargs):kills.append(args);return types.SimpleNamespace(returncode=0)
                 def launch(args,**kwargs):launches.append(args);return types.SimpleNamespace(pid=456,poll=lambda:None)
                 async def immediate(_):pass
-                ns=dict(ROOT=root,DATA=root,OWNED=types.SimpleNamespace(pid=123,poll=lambda:None) if owned else None,
+                ns=dict(ROOT=root,DATA=root,gpu=gpu_handoff,OWNED=types.SimpleNamespace(pid=123,poll=lambda:None) if owned else None,
                         hashlib=hashlib,json=json,os=os,comfy=comfy,asyncio=asyncio,aiohttp=aiohttp,
                         subprocess=types.SimpleNamespace(run=kill,Popen=launch,CREATE_NO_WINDOW=0))
                 exec(compile(ast.Module(body=[node],type_ignores=[]),'worker startup','exec'),ns)

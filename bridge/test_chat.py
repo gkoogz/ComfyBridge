@@ -158,7 +158,7 @@ class ChatTests(unittest.TestCase):
         self.assertTrue(self.call('state',dict(after=self.state['revision']))['unchanged'])
         self.assertTrue(self.call('yield')['ok'])
         db=chat.database(self.root)
-        try:self.assertGreater(chat.meta(db)['gpu_after'],0)
+        try:self.assertEqual(chat.meta(db)['gpu_after'],0)
         finally:db.close()
 
 

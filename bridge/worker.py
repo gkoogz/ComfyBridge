@@ -18,6 +18,7 @@ import threading
 from pathlib import Path
 import extension
 import recipes
+import gpu_handoff as gpu
 from handoff import adopt
 
 import aiohttp
@@ -80,6 +81,7 @@ CATALOG_EROS_ON_DISK = None
 CATALOG_LOCK = asyncio.Lock()
 STOPPING = set()
 CANCEL_STARTED = {}
+HANDOFF_STAGE = {}
 
 
 def rows(sql, args=()):
@@ -107,8 +109,12 @@ async def ensure_comfy():
 
 async def _ensure_comfy():
     global OWNED
+    state=gpu.chat_state(DATA)
+    if state.get('gpu') or gpu.granted(DATA,state.get('active')):
+        raise ValueError('Chat is using the GPU. Generation stays queued until the reply finishes.')
     node=ROOT/'custom_nodes/comfybridge_eros_vsa/__init__.py'
-    revision=hashlib.sha256(node.read_bytes()).hexdigest() if node.is_file() else ''
+    checkpoint_node=ROOT/'custom_nodes/comfybridge_checkpoint/__init__.py'
+    revision=hashlib.sha256(b''.join(p.read_bytes() for p in (node,checkpoint_node) if p.is_file())).hexdigest()
     marker=DATA/'comfy-node-version.json'
     try:
         await comfy('/system_stats')
@@ -129,6 +135,7 @@ async def _ensure_comfy():
         pass
     if OWNED is None or OWNED.poll() is not None:
         env = os.environ.copy()
+        env['COMFYBRIDGE_DATA'] = str(DATA)
         hip = str(ROOT / 'rocm/6.4')
         env.update(HIP_PATH=hip, HIP_PATH_64=hip, MIOPEN_FIND_MODE='2', MIOPEN_LOG_LEVEL='3',
                    TORCH_BACKENDS_CUDNN_ENABLED='0', TORCH_BACKENDS_CUDNN_BENCHMARK='0',
@@ -227,6 +234,11 @@ async def websocket():
                             executing=d.get('prompt_id')
                         if not ACTIVE or d.get('prompt_id') != ACTIVE:
                             continue
+                        if event['type']=='execution_error' and d.get('exception_type','').endswith('ComfyBridgeCheckpointPaused'):
+                            HANDOFF_STAGE[ACTIVE]='Checkpoint saved · paused for chat'
+                            continue
+                        if event['type']=='executing' and d.get('node') is None and ACTIVE in HANDOFF_STAGE:
+                            continue
                         if TRACKER: TRACKER.event(event['type'],d)
         except (aiohttp.ClientError, asyncio.TimeoutError):
             await asyncio.sleep(3)
@@ -292,12 +304,120 @@ async def collect(job, entry):
     DB.commit()
 
 
+async def release_for_chat():
+    """Release only an idle renderer; never interrupt a forward pass or other work."""
+    global OWNED
+    async with COMFY_START_LOCK:
+        try:
+            q = await comfy('/queue')
+        except aiohttp.ClientConnectorError:
+            # A dead process has no GPU allocations. A live but unreachable one is unsafe.
+            return OWNED is None or OWNED.poll() is not None
+        except (aiohttp.ClientError, asyncio.TimeoutError):
+            return False
+        if q['queue_running'] or q['queue_pending']:
+            return False
+        # Cooperatively empty both execution and model caches. Do not terminate
+        # ComfyUI: a different client could submit work after our queue check.
+        # Comfy processes /free between executions, then we verify release.
+        await comfy('/free', dict(unload_models=True, free_memory=True))
+        await asyncio.sleep(2)
+        stats = await comfy('/system_stats')
+        devices = stats.get('devices', [])
+        q=await comfy('/queue')
+        return (not q['queue_running'] and not q['queue_pending'] and bool(devices)
+                and all(d.get('torch_vram_total', float('inf')) < 512*1024**2 for d in devices))
+
+
+async def chat_window(job=None):
+    """Hold admission until chat has actually exited, including its failure cleanup."""
+    released = False
+    try:
+        while gpu.wants_chat(DATA):
+            if released:
+                try:
+                    q=await comfy('/queue')
+                    if q['queue_running'] or q['queue_pending']:
+                        released=False
+                        gpu.revoke(DATA)
+                except aiohttp.ClientConnectorError:
+                    pass
+                except (aiohttp.ClientError, asyncio.TimeoutError):
+                    released=False
+                    gpu.revoke(DATA)
+            if job:
+                state = rows('SELECT status FROM jobs WHERE id=?', (job,))[0]['status']
+                if state in ('cancelled','cancelling'):
+                    update(job, status='cancelled', current_node='Cancelled while paused')
+                    return False
+                saved=gpu.checkpoint(DATA,job)
+                HANDOFF_STAGE[job] = (f"Video paused at {saved['step']}/{saved['total']} · "+('chat using GPU' if released else 'releasing video memory')) if saved else 'Waiting for chat to release GPU'
+                update(job, current_node=HANDOFF_STAGE[job])
+            if not released:
+                released = await release_for_chat()
+            state = gpu.chat_state(DATA)
+            if released and state.get('active'):
+                gpu.grant(DATA, state['active'])
+            await asyncio.sleep(1)
+        return True
+    finally:
+        if not gpu.wants_chat(DATA):
+            gpu.revoke(DATA)
+        if job:
+            HANDOFF_STAGE.pop(job, None)
+
+
+async def resume_checkpoint(j, graph):
+    """Resume only an acknowledged checkpoint, after the old execution has exited."""
+    global TRACKER
+    if not await chat_window(j['id']):
+        return False
+    gpu.check_assets(DATA,j['id'],ROOT,graph)
+    gpu.request_pause(DATA, j['id'], False)
+    HANDOFF_STAGE[j['id']] = 'Resuming video · reloading model'
+    update(j['id'], current_node=HANDOFF_STAGE[j['id']])
+    await ensure_comfy()
+    q = await comfy('/queue')
+    if any(x[1]==j['id'] for x in q['queue_running']+q['queue_pending']):
+        return True
+    if q['queue_running'] or q['queue_pending']:
+        return False
+    # Clear the previous paused execution, not anyone else's history.
+    await comfy('/history', dict(delete=[j['id']]))
+    previous=float(rows('SELECT progress FROM jobs WHERE id=?',(j['id'],))[0]['progress'] or 0)
+    TRACKER=Progress(j['kind'],graph,json.loads(j['settings']))
+    TRACKER.last=min(.99,previous)
+    await comfy('/prompt', dict(prompt=graph, client_id=CLIENT, prompt_id=j['id']))
+    update(j['id'], status='running')
+    HANDOFF_STAGE.pop(j['id'], None)
+    return True
+
+
+def verify_checkpoint_output(path, settings):
+    """A crash after MP4 save must not cause a second copy of a finished video."""
+    import av
+    expected=int(settings['frames'])
+    if not settings.get('exactFrames'):
+        expected=5+17*max(0,math.ceil((expected-5)/17))
+    with av.open(str(path)) as video:
+        if settings.get('sound') and not video.streams.audio:
+            raise ValueError('Existing checkpoint output has no soundtrack. Checkpoint kept for recovery.')
+        count=sum(1 for _ in video.decode(video=0))
+        if count!=expected:
+            raise ValueError('Existing checkpoint output is incomplete. Checkpoint kept rather than duplicating it.')
+
+
 async def run_jobs():
     global ACTIVE, PREVIEW, TRACKER
     while True:
         jobs = rows(f"SELECT * FROM jobs WHERE {LIVE_JOBS} ORDER BY rowid LIMIT 1")
         if not jobs:
             ACTIVE = None
+            try:
+                if gpu.wants_chat(DATA):
+                    await chat_window()
+            except (OSError, sqlite3.Error, aiohttp.ClientError, asyncio.TimeoutError):
+                logging.exception('Idle GPU handoff will retry')
             await asyncio.sleep(1)
             continue
         j = jobs[0]
@@ -312,6 +432,17 @@ async def run_jobs():
                 TRACKER=Progress(j['kind'],graph,settings,learned=learned)
                 TRACKER.last=min(.99,float(j['progress'] or 0))
             ACTIVE=j['id']
+            if j['status'] == 'pending':
+                if not await chat_window(j['id']):
+                    continue
+            elif gpu.checkpoint(DATA,j['id']) and gpu.wants_chat(DATA):
+                try:
+                    q=await comfy('/queue')
+                except aiohttp.ClientConnectorError:
+                    q=dict(queue_running=[],queue_pending=[])
+                if not any(x[1]==j['id'] for x in q['queue_running']+q['queue_pending']):
+                    if not await chat_window(j['id']):
+                        continue
             await ensure_comfy()
             if j['status'] == 'pending':
                 if j['batch'] in STOPPING:
@@ -330,6 +461,13 @@ async def run_jobs():
                 if DB.execute('SELECT status FROM jobs WHERE id=?',(j['id'],)).fetchone()[0]!='pending':
                     continue
                 update(j['id'], status='submitting')
+                # Old queued recipes are wrapped only before their first submission.
+                # Never replace the sampler of a generation already in progress.
+                graph = gpu.resumable_graph(graph, j['id'])
+                if gpu.supports_pause(graph):
+                    gpu.check_assets(DATA,j['id'],ROOT,graph)
+                DB.execute('INSERT OR REPLACE INTO generation_graphs VALUES(?,?)', (j['id'],json.dumps(graph)))
+                DB.commit()
                 await comfy('/prompt', dict(prompt=graph, client_id=CLIENT, prompt_id=j['id']))
                 update(j['id'], status='running')
                 if j['batch'] in STOPPING:
@@ -340,11 +478,29 @@ async def run_jobs():
                 if current=='cancelled':
                     break
                 stopping = current=='cancelling' or j['batch'] in STOPPING
+                can_pause = j['kind']=='video' and gpu.supports_pause(graph)
+                wants_pause = can_pause and not stopping and gpu.wants_chat(DATA)
+                if can_pause:
+                    try:
+                        gpu.request_pause(DATA, j['id'], wants_pause)
+                    except OSError:
+                        logging.warning('Could not request checkpoint; generation continues',exc_info=True)
                 history = await comfy('/history/'+j['id'])
                 if j['id'] in history:
                     stopping = stopping or DB.execute("SELECT status IN ('cancelling','cancelled') FROM jobs WHERE id=?", (j['id'],)).fetchone()[0]
                     entry = history[j['id']]
                     status = entry.get('status', {})
+                    paused = any(event=='execution_error' and data.get('exception_type','').endswith('ComfyBridgeCheckpointPaused')
+                                 for event,data in status.get('messages',[]))
+                    if not stopping and paused and gpu.checkpoint(DATA,j['id']):
+                        try:
+                            await resume_checkpoint(j, graph)
+                        except (OSError, aiohttp.ClientError, asyncio.TimeoutError):
+                            HANDOFF_STAGE[j['id']]='Checkpoint kept · retrying video reload'
+                            await asyncio.sleep(5)
+                        missing = 0
+                        await asyncio.sleep(1)
+                        continue
                     if stopping and (settings.get('extension') or not entry.get('outputs')):
                         update(j['id'], status='cancelled')
                     elif status.get('status_str') == 'error':
@@ -366,6 +522,12 @@ async def run_jobs():
                         break
                 q = await comfy('/queue')
                 progress,stage=TRACKER.sample()
+                if wants_pause:
+                    warning=gpu.read(gpu.folder(DATA,j['id'])/'warning.json')
+                    stage=('Checkpoint unavailable · finishing video before chat' if warning else 'Pause requested · finishing current step')
+                    HANDOFF_STAGE[j['id']] = stage
+                else:
+                    HANDOFF_STAGE.pop(j['id'],None)
                 update(j['id'],progress=progress,current_node=stage)
                 known = any(x[1] == j['id'] for x in q['queue_running']+q['queue_pending'])
                 missing = 0 if known else missing+1
@@ -373,14 +535,21 @@ async def run_jobs():
                     # A retiring ComfyUI instance can lose history just after SaveVideo closes the MP4.
                     # Recover only a unique output of this job; join verifies its frame count and decodes it.
                     outputs = []
-                    if settings.get('extension') and not stopping:
+                    saved_checkpoint=can_pause and gpu.checkpoint(DATA,j['id'])
+                    if (settings.get('extension') or saved_checkpoint) and not stopping:
                         folder = ROOT/'output/ComfyBridge'
                         outputs = [p for p in folder.glob(j['id']+'_*.mp4')
                                    if re.fullmatch(re.escape(j['id'])+r'_\d+_\.mp4',p.name)]
                     if len(outputs)==1:
+                        if saved_checkpoint and not settings.get('extension'):
+                            await asyncio.to_thread(verify_checkpoint_output,outputs[0],settings)
                         item=dict(type='output',subfolder='ComfyBridge',filename=outputs[0].name)
                         await collect(j,{'outputs':{'16':{'images':[item]}}})
                         update(j['id'],status='complete',progress=1,current_node='Saved to library')
+                    elif not outputs and not stopping and saved_checkpoint:
+                        await resume_checkpoint(j,graph)
+                        missing=0
+                        continue
                     else:
                         update(j['id'], status='cancelled' if stopping else 'error',
                                error='Job is absent from ComfyUI queue/history. It was not resubmitted to avoid duplicates.')
@@ -399,9 +568,13 @@ async def run_jobs():
             else:
                 update(j['id'], status='error', error=str(e)[:5000])
         finally:
-            if DB.execute('SELECT status FROM jobs WHERE id=?',(j['id'],)).fetchone()[0] in ('complete','cancelled','error'):
+            final_status=DB.execute('SELECT status FROM jobs WHERE id=?',(j['id'],)).fetchone()[0]
+            if final_status in ('complete','cancelled'):
+                gpu.cleanup(DATA,j['id'])
+            if final_status in ('complete','cancelled','error'):
+                HANDOFF_STAGE.pop(j['id'],None)
                 CANCEL_STARTED.pop(j['id'],None)
-            if json.loads(j['settings']).get('extension') and DB.execute('SELECT status FROM jobs WHERE id=?',(j['id'],)).fetchone()[0] in ('complete','cancelled','error'):
+            if json.loads(j['settings']).get('extension') and (final_status in ('complete','cancelled') or final_status=='error' and not gpu.checkpoint(DATA,j['id'])):
                 for name in extension.guide_names(j['id']):
                     (ROOT/'input'/name).unlink(missing_ok=True)
         ACTIVE = None
@@ -413,6 +586,8 @@ async def idle_watch():
         await asyncio.sleep(10)
         pending = rows("SELECT id FROM jobs WHERE status IN ('pending','running','submitting','cancelling')")
         if pending or IN_FLIGHT or time.monotonic()-LAST_REQUEST < 90:
+            continue
+        if gpu.wants_chat(DATA):
             continue
         if OWNED and OWNED.poll() is None:
             q = await comfy('/queue')
@@ -458,8 +633,21 @@ async def cancel_ids(ids):
 async def _cancel_ids(ids):
     global OWNED
     if not ids:return
-    q=await comfy('/queue')
+    try:
+        q=await comfy('/queue')
+    except aiohttp.ClientConnectorError:
+        if all(gpu.checkpoint(DATA,id) for id in ids):
+            for id in ids:
+                update(id,status='cancelled',current_node='Cancelled while paused')
+                gpu.cleanup(DATA,id)
+            return
+        raise
     queued=[j[1] for j in q['queue_pending'] if j[1] in ids]
+    present={j[1] for j in q['queue_running']+q['queue_pending']}
+    for id in ids-present:
+        if gpu.checkpoint(DATA,id):
+            update(id,status='cancelled',current_node='Cancelled while paused')
+            gpu.cleanup(DATA,id)
     if queued:
         await comfy('/queue',{'delete':queued})
         q=await comfy('/queue')
@@ -533,6 +721,33 @@ async def api(request):
         return web.json_response(json.loads(p[0]['state']))
     if path == 'catalog':
         return web.json_response(await catalogue())
+    if path.startswith('resume-checkpoint/') and request.method=='POST':
+        id=str(uuid.UUID(path.split('/',1)[1]))
+        job=rows('SELECT * FROM jobs WHERE id=?',(id,))
+        if not job or device=='legacy':
+            raise web.HTTPForbidden()
+        if job[0]['status']!='error' or not gpu.checkpoint(DATA,id):
+            raise ValueError('No interrupted video checkpoint to resume.')
+        graph=recipes.recorded_graph(DB,id)
+        if not graph or not gpu.supports_pause(graph):
+            raise ValueError('The checkpoint workflow is unavailable.')
+        gpu.check_assets(DATA,id,ROOT,graph)
+        try:
+            q=await comfy('/queue')
+            if any(x[1]==id for x in q['queue_running']+q['queue_pending']):
+                raise ValueError('This generation is already in ComfyUI.')
+            history=await comfy('/history/'+id)
+            if history.get(id,{}).get('status',{}).get('status_str')=='success':
+                raise ValueError('This generation has already finished; refresh the library.')
+            await comfy('/history',dict(delete=[id]))
+        except aiohttp.ClientConnectorError:
+            pass
+        # Re-enter reconciliation rather than submitting blindly; it checks for
+        # an existing live job/output first. The original seed and job ID stay fixed.
+        with DB:
+            DB.execute("UPDATE jobs SET status='running',error='',current_node='Resuming saved checkpoint' WHERE id=?",(id,))
+            DB.execute('UPDATE job_times SET ended=NULL WHERE job=?',(id,))
+        return web.json_response(dict(ok=True))
     if path in ('monitor','status') or path.startswith('batch/'):
         fields='id,batch,owner,kind,status,progress,current_node,error,ordinal,total,created'
         if path=='monitor':jobs=rows(f"SELECT {fields} FROM jobs WHERE {LIVE_JOBS} ORDER BY rowid")
@@ -542,13 +757,19 @@ async def api(request):
         else:jobs=rows(f'SELECT {fields} FROM jobs WHERE batch=? AND owner=? ORDER BY ordinal',(str(uuid.UUID(path[6:])),device))
         counts = positions(DB) if jobs else {}
         estimates,total_eta=ETA.snapshot(DB,ACTIVE,TRACKER)
+        if HANDOFF_STAGE:
+            total_eta=None
         for j in jobs:
             j['etaSeconds']=estimates.get(j['id'])
             if j['id'] in counts:
                 j['queuePosition'], j['queueTotal'] = counts[j['id']]
             if j['id']==ACTIVE and TRACKER and j['status'] not in ('complete','cancelled','error'):
-                j['progress'],j['current_node']=TRACKER.sample()
-        return web.json_response(dict(protocol=17,build='0.1.0-beta.46',jobs=jobs, active=ACTIVE, preview=bool(PREVIEW), previewRevision=PREVIEW_REV,ownedComfy=bool(OWNED),queueEtaSeconds=total_eta))
+                if j['id'] in HANDOFF_STAGE:
+                    j['current_node']=HANDOFF_STAGE[j['id']]
+                    j['etaSeconds']=None
+                else:
+                    j['progress'],j['current_node']=TRACKER.sample()
+        return web.json_response(dict(protocol=18,build='0.1.0-beta.47',jobs=jobs, active=ACTIVE, preview=bool(PREVIEW), previewRevision=PREVIEW_REV,ownedComfy=bool(OWNED),queueEtaSeconds=total_eta))
     if path.startswith('preview/'):
         job=str(uuid.UUID(path[8:]))
         after=int(request.query.get('after','-1'))

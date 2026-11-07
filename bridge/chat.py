@@ -15,6 +15,7 @@ import time
 import urllib.error
 import urllib.request
 import uuid
+import gpu_handoff
 
 BUSY = ('queued', 'waiting', 'loading', 'responding')
 SYSTEM = ('You are a helpful creative assistant in ComfyBridge. Help discuss ideas and refine '
@@ -159,16 +160,9 @@ def request(data, route, body, device, comfy, launch=True):
             db.commit()
             return models(data)
         if route == 'yield':
-            db.execute('UPDATE chat_meta SET gpu_after=? WHERE id=1', (time.time() + 45,))
+            # New generations may join the queue while chat owns the GPU. The
+            # generation worker, not an HTTP button press, arbitrates admission.
             db.commit()
-            # The renderer must not allocate VRAM until the chat worker has released it.
-            deadline = time.monotonic() + 12
-            while meta(db)['gpu'] and time.monotonic() < deadline:
-                if time.time() - meta(db)['runner_at'] > 15:
-                    break
-                time.sleep(.08)
-            if meta(db)['gpu'] and time.time() - meta(db)['runner_at'] <= 15:
-                raise ValueError('Chat is releasing GPU memory. Please try Generate again in a moment.')
             return dict(ok=True)
         if body.get('conversation') != row['conversation']:
             raise ValueError('The chat was restarted on another device. Your draft is kept; refresh the chat and send again.')
@@ -255,6 +249,17 @@ def rendering(data, comfy):
         return bool(queue.get('queue_running') or queue.get('queue_pending'))
     except OSError:
         return False
+
+
+def renderer_queue_busy(comfy):
+    try:
+        queue=json_request(comfy+'/queue',timeout=2)
+        return bool(queue.get('queue_running') or queue.get('queue_pending'))
+    except urllib.error.URLError as error:
+        # Connection refused means the renderer is off. A timeout is ambiguous.
+        return not isinstance(error.reason,ConnectionRefusedError)
+    except OSError:
+        return True
 
 
 def context_messages(db, reply_id):
@@ -379,11 +384,16 @@ def run(data, comfy):
             try:
                 config, model = selected_model(data)
                 busy = rendering(data, comfy)
-                gpu = not busy and row['gpu_after'] < time.time()
-                required = model.stat().st_size + 2 * 1024**3 if not gpu else 3 * 1024**3
+                leased = gpu_handoff.granted(data, reply_id)
+                if (busy and not leased) or (leased and renderer_queue_busy(comfy)):
+                    update('waiting', 'Waiting for video to save a checkpoint and release the GPU…')
+                    time.sleep(1)
+                    continue
+                gpu = True
+                required = 3 * 1024**3
                 if available_ram() < required:
                     if row['status'] != 'waiting':
-                        update('waiting', 'Waiting for free memory. Your generation continues normally.')
+                        update('waiting', 'Waiting for free system memory. Your video checkpoint and queue are kept.' if leased else 'Waiting for free system memory.')
                     time.sleep(1)
                     continue
                 if gpu:
@@ -396,8 +406,6 @@ def run(data, comfy):
                     db.execute('BEGIN IMMEDIATE')
                     fresh = meta(db)
                     if fresh['active'] != reply_id:
-                        continue
-                    if gpu and fresh['gpu_after'] > time.time():
                         continue
                     db.execute('UPDATE chat_meta SET gpu=? WHERE id=1', (int(gpu),))
                 update('loading', 'Loading local model on Radeon GPU…' if gpu else 'Loading on CPU while ComfyUI uses the GPU…', '')
@@ -412,7 +420,11 @@ def run(data, comfy):
                             with watcher:
                                 watcher.execute('UPDATE chat_meta SET runner_at=? WHERE id=1', (time.time(),))
                             changed = current['active'] != reply_id
-                            yield_gpu = gpu and (current['gpu_after'] > time.time() or rendering(data, comfy))
+                            # A leased pause remains live in the generation queue.
+                            # Losing its coordinator lease must stop the LLM before
+                            # the renderer can reacquire the GPU.
+                            yield_gpu = (leased and (not gpu_handoff.granted(data,reply_id) or renderer_queue_busy(comfy))) or (
+                                not leased and rendering(data,comfy) and not gpu_handoff.granted(data,reply_id))
                             low_memory = not gpu and available_ram() < 1024**3
                             if changed or yield_gpu or low_memory:
                                 reason.append('reset' if changed else 'yield' if yield_gpu else 'memory')
@@ -470,7 +482,7 @@ def run(data, comfy):
                         db.execute("UPDATE chat_meta SET active=NULL,status='idle',detail='',revision=revision+1 WHERE id=1")
             except Exception as error:
                 if reason and reason[0] == 'yield':
-                    update('waiting', 'Generation has priority. Moving chat off the GPU…', '')
+                    update('waiting', 'Waiting for a safe GPU handoff…', '')
                 elif reason and reason[0] == 'memory':
                     update('waiting', 'Waiting for free memory. Your generation continues normally.', '')
                 elif not reason:

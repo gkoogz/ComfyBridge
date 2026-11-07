@@ -289,6 +289,9 @@ def serve():
                         recover_log_estimates(db,Path(config['comfyRoot']))
                         recovered=True
                 result=history_rows(db) if recovered else dict(now=time.time(),jobs=[])
+                import gpu_handoff
+                for job in result['jobs']:
+                    job['checkpointAvailable']=job['status']=='error' and bool(gpu_handoff.checkpoint(data,job['id']))
                 result['supportsRollingSkip']=True
                 remaining,total={},0
                 if recovered:

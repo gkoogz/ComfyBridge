@@ -4,7 +4,7 @@ New-Item -ItemType Directory -Force $target | Out-Null
 $exe = Join-Path $target 'ComfyBridge.exe'
 # Only replace this installation; the Python worker and queued Comfy jobs keep running.
 Get-Process ComfyBridge -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $exe } | ForEach-Object { Stop-Process -Id $_.Id; $_.WaitForExit() }
-foreach($file in 'ComfyBridge.exe','Microsoft.Web.WebView2.Core.dll','Microsoft.Web.WebView2.WinForms.dll','WebView2Loader.dll','WebView2-LICENSE.txt','worker.py','workflows.py','extension.py','handoff.py','cancel_recovery.py','media_index.py','progress.py','queue_progress.py','queue_eta.py','studio.py','recipes.py','provenance.py','chat.py','install_chat.py','Setup-Chat.ps1'){
+foreach($file in 'ComfyBridge.exe','Microsoft.Web.WebView2.Core.dll','Microsoft.Web.WebView2.WinForms.dll','WebView2Loader.dll','WebView2-LICENSE.txt','worker.py','workflows.py','extension.py','handoff.py','cancel_recovery.py','gpu_handoff.py','media_index.py','progress.py','queue_progress.py','queue_eta.py','studio.py','recipes.py','provenance.py','chat.py','install_chat.py','Setup-Chat.ps1'){
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot $file) -Destination $target -Force
 }
 New-Item -ItemType Directory -Force (Join-Path $target 'desktop-assets') | Out-Null
@@ -14,6 +14,9 @@ $studioRoot=(Get-Content -Raw -LiteralPath (Join-Path $target 'config.json')|Con
 $nodeFolder=Join-Path $studioRoot 'custom_nodes/comfybridge_eros_vsa'
 New-Item -ItemType Directory -Force $nodeFolder | Out-Null
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'comfybridge_eros_vsa.py') -Destination (Join-Path $nodeFolder '__init__.py') -Force
+$checkpointFolder=Join-Path $studioRoot 'custom_nodes/comfybridge_checkpoint'
+New-Item -ItemType Directory -Force $checkpointFolder | Out-Null
+Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'comfybridge_checkpoint.py') -Destination (Join-Path $checkpointFolder '__init__.py') -Force
 & (Join-Path $studioRoot 'venv\Scripts\python.exe') (Join-Path $target 'studio.py') --init
 if($LASTEXITCODE){throw 'Could not initialize queue timers and workspace storage.'}
 $admin=([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)

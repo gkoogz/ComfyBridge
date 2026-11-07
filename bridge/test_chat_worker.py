@@ -36,11 +36,8 @@ class WorkerTests(unittest.TestCase):
                     yield b'data: '+json.dumps(dict(choices=[dict(delta=dict(content='A quiet forest'))])).encode()+b'\n'
                     if interrupt:
                         raise OSError('Fixture interrupted stream')
-                    if engine.gpu:
-                        def handoff():handoffs.append(chat.request(data,'yield',{},'panel','http://invalid',launch=False))
-                        thread=threading.Thread(target=handoff);thread.start()
-                        if not engine.process.stopped.wait(5):raise AssertionError('GPU worker did not yield')
-                        raise OSError('Fixture preemption')
+                    handoffs.append(chat.request(data,'yield',{},'panel','http://invalid',launch=False))
+                    if engine.process.stopped.is_set():raise AssertionError('Queueing a generation interrupted chat')
                     yield b'data: '+json.dumps(dict(choices=[dict(delta=dict(content=' at sunrise.'))])).encode()+b'\n'
                     yield b'data: [DONE]\n'
             with patch.object(chat,'Engine',Engine),patch.object(chat,'rendering',return_value=False),patch.object(chat,'available_ram',return_value=64*1024**3),patch.object(chat,'json_request',return_value={'status':'ok'}),patch.object(chat.urllib.request,'urlopen',return_value=Stream()):
@@ -53,7 +50,7 @@ class WorkerTests(unittest.TestCase):
                 self.assertEqual(final['messages'][-1]['content'],'A quiet forest')
                 self.assertIn('interrupted',final['detail'])
             else:
-                self.assertEqual([e.gpu for e in engines],[True,False])
+                self.assertEqual([e.gpu for e in engines],[True])
                 self.assertEqual(handoffs,[dict(ok=True)])
                 self.assertEqual(final['messages'][-1]['content'],'A quiet forest at sunrise.')
                 self.assertEqual(final['status'],'idle')
@@ -61,7 +58,7 @@ class WorkerTests(unittest.TestCase):
                 self.assertEqual(chat.meta(db)['gpu'],0)
                 self.assertEqual(chat.meta(db)['engine_pid'],0)
 
-    def test_gpu_handoff_restarts_reply_on_cpu_and_releases_memory(self):self.exercise()
+    def test_queueing_during_gpu_chat_preserves_reply_and_releases_memory(self):self.exercise()
     def test_interrupted_stream_keeps_partial_reply_and_reports_error(self):self.exercise(True)
 
 

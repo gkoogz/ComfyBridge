@@ -106,7 +106,7 @@ function renderQueue(){
  const box=$('#queueList');if(!box)return;
  const items=queueHistory.length?queueHistory:jobs.filter(j=>liveStatus(j.status));
  const frameId=imagePreviewProtocol?active:null;
- const key=JSON.stringify([frameId,items.map(j=>[j.id,j.status,j.media,media(j.media,true),j.ended])]);
+ const key=JSON.stringify([frameId,items.map(j=>[j.id,j.status,j.media,media(j.media,true),j.ended,j.checkpointAvailable])]);
  watchFrames();
  if(box.dataset.version===key&&box.dataset.failure===historyFailure){updateTimers();return;}
  if(box.dataset.touching==='1'){updateTimers();return;}
@@ -134,11 +134,16 @@ function renderQueue(){
    '<div class="jobInfo"><b>'+esc(j.kind)+' <small>'+new Date(j.created*1000).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})+'</small></b><small>'+esc(active?j.status:'Finished')+' <span class="jobElapsed" data-clock="'+j.id+'"></span></small></div>'+
    (active?'<i class="spinner jobSpinner" aria-hidden="true"></i>':'')+
    (active&&(window.Desktop||j.owner===info().device)?'<button data-cancel="'+j.batch+'">Cancel batch</button>':'<small class="outcome '+esc(j.status)+'">'+esc(label)+'</small>')+
+   (j.checkpointAvailable?'<button data-resume-checkpoint="'+j.id+'">Resume saved video</button>':'')+
    '<button class="jobRecall" data-replay="'+j.id+'" aria-label="Load this generation in the editor">↗</button></div>';
  }).join('')+(items.length?'':'<small>No generations in the last 24 hours.</small>');
  rows.scrollTop=scroll;
  if(frameId)paintFrame(frameId);
  $$('[data-cancel]',box).forEach(b=>b.onclick=()=>stopBatch(b.dataset.cancel));
+ $$('[data-resume-checkpoint]',box).forEach(b=>b.onclick=async()=>{
+  b.disabled=true;try{await api('resume-checkpoint/'+b.dataset.resumeCheckpoint,{});toast('Resuming the saved video.');}
+  catch(e){toast(e.message);}finally{b.disabled=false;}
+ });
  $$('[data-output]',box).forEach(b=>b.onclick=async()=>{
   if(!library.find(j=>j.id===b.dataset.output))await syncShelf(true);
   const item=library.find(j=>j.id===b.dataset.output);

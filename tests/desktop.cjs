@@ -40,6 +40,13 @@ const assert=require('node:assert/strict'),path=require('node:path');
   });
   assert(await p.locator('#bridgeCommands [data-action=skip]').isEnabled());
   assert(await p.locator('#bridgeCommands [data-action=stop]').isEnabled());
+  await p.evaluate(()=>{
+   queueHistory=[{id:'saved-video',kind:'video',owner:'other-phone',status:'error',created:100,checkpointAvailable:true}];
+   renderQueue();window.resumedCheckpoint=null;window.savedApi=api;
+   api=async(path,body)=>{if(path.startsWith('resume-checkpoint/')){window.resumedCheckpoint=path;return {ok:true};}return savedApi(path,body);};
+  });
+  await p.locator('[data-resume-checkpoint]').click();
+  assert.equal(await p.evaluate(()=>resumedCheckpoint),'resume-checkpoint/saved-video');
   await p.evaluate(()=>{library=[{id:'fixture',job:'job',local:'hash',kind:'image',created:100,source:'available',archived:false}];navigate('library');});
   await p.locator('.libraryitem').click();
   await p.waitForFunction(()=>$('#viewer .original')?.naturalWidth>0);
