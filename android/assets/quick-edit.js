@@ -29,7 +29,7 @@ function paintQuickEdit(kind,key){
  const version=JSON.stringify([q?.phase,q?.id,q?.result,q?.detail,q?.warning]);
  if(host.dataset.version===version){paintQuickTimers();return;}
  host.dataset.version=version;
- const button=(action,label)=>'<button type="button" class="textbutton" data-quick-action="'+action+'">'+label+'</button>';
+ const button=(action,label)=>'<button type="button" class="quickButton" data-quick-action="'+action+'">'+label+'</button>';
  if(!q){actions.innerHTML=button('open','Quick edit');host.innerHTML='';}
  else if(q.phase==='editing'){
   actions.innerHTML=button('submit','Submit Quick edit')+button('discard','Cancel quick edit');

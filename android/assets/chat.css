@@ -59,3 +59,7 @@ body[data-page=notepad] #main{padding-bottom:var(--chat-clearance,180px)}
 #chatSend span{display:grid;place-items:center;line-height:1}
 #chatSend.sending svg{display:none}
 .promptHeight[aria-expanded=true] svg{transform:rotate(180deg)}
+
+.seedActions{display:flex;align-items:center;gap:12px}.seedActions .togglelabel{flex:1;margin:0;font-size:12px}.seedActions .seedRandom,.quickProposalHeading .quickButton{border:1px solid #52636b;border-radius:8px;background:transparent;color:var(--mint);padding:8px 11px;min-height:36px;margin:0;flex-shrink:0}
+
+.seedActions{display:flex;align-items:center;gap:12px}.seedActions .togglelabel{flex:1;margin:0;font-size:12px}.seedActions .seedRandom,.quickProposalHeading .quickButton{border:1px solid #52636b;border-radius:8px;background:transparent;color:var(--mint);padding:8px 11px;min-height:36px;margin:0;flex-shrink:0}
