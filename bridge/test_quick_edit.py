@@ -47,15 +47,15 @@ class QuickEditTests(unittest.TestCase):
         with contextlib.closing(chat.database(self.data)) as db:self.assertEqual(chat.meta(db)['active'],second['id'])
 
     def test_invalid_output_is_not_used(self):
-        for value in ('Here is your prompt: a blue bowl.','{"prompt":""}','{"prompt":"<prompt></prompt>"}','{"prompt":42}','{"prompt":"unfinished'):
+        for value in ('{"prompt":"A blue bowl."}','Here is your prompt: a blue bowl.','{"edited_prompt":""}','{"edited_prompt":"<prompt></prompt>"}','{"edited_prompt":42}','{"edited_prompt":"unfinished'):
             with self.subTest(value=value),self.assertRaises(ValueError):quick_edit.result(value)
-        self.assertEqual(quick_edit.result('{"prompt":"A blue bowl.\\nSoft light."}'),'A blue bowl.\nSoft light.')
+        self.assertEqual(quick_edit.result('{"edited_prompt":"A blue bowl.\\nSoft light."}'),'A blue bowl.\nSoft light.')
 
     def test_unchanged_output_is_rejected_including_legacy_results(self):
         for text in ('An orange bowl.', '  An orange   bowl.\n', '<prompt>An orange bowl.</prompt>'):
             with self.assertRaisesRegex(ValueError,'without applying an edit'):
-                quick_edit.result(json.dumps(dict(prompt=text)), self.body['prompt'])
-        self.assertEqual(quick_edit.result('{"prompt":"A blue bowl."}', self.body['prompt']), 'A blue bowl.')
+                quick_edit.result(json.dumps(dict(edited_prompt=text)), self.body['prompt'])
+        self.assertEqual(quick_edit.result('{"edited_prompt":"A blue bowl."}', self.body['prompt']), 'A blue bowl.')
         self.call('quick-submit')
         with contextlib.closing(chat.database(self.data)) as db,db:
             db.execute("UPDATE quick_edits SET status='complete',result=prompt WHERE id=?",(self.body['id'],))
@@ -88,7 +88,7 @@ class QuickEditTests(unittest.TestCase):
             def __enter__(self):return self
             def __exit__(self,*args):pass
             def __iter__(self):
-                output='not a prompt' if malformed else json.dumps(dict(prompt='An orange bowl.' if unchanged else 'A blue bowl.'))
+                output='not a prompt' if malformed else json.dumps(dict(edited_prompt='An orange bowl.' if unchanged else 'A blue bowl.'))
                 for chunk in (output[:7],output[7:]):
                     yield b'data: '+json.dumps(dict(choices=[dict(delta=dict(content=chunk))])).encode()+b'\n'
                 yield b'data: [DONE]\n'
