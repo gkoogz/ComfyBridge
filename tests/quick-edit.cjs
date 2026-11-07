@@ -62,6 +62,20 @@ const assert=require('node:assert/strict'),path=require('node:path');
   await p.locator('[data-quick-actions=positive] [data-quick-action=retry]').click();
   assert.equal(await p.locator('[data-quick-panel=positive] textarea').inputValue(),'Make it blue.');
   await p.locator('[data-quick-actions=positive] [data-quick-action=discard]').click();
+  // A response from a different request or input must not become a proposal.
+  await p.evaluate(()=>{
+   const q={id:'correct',source:'image positive',original:'A red bowl.',text:'Make it blue.',phase:'working'};
+   receiveQuick(q,{id:'wrong',status:'complete',result:'Wrong response'});
+   if(q.phase!=='error'||q.result)throw Error('Wrong request accepted');
+   q.phase='working';receiveQuick(q,{id:'correct',status:'complete',prompt:'A different input.',result:'Wrong response'});
+   if(q.phase!=='error'||q.result)throw Error('Wrong input accepted');
+  });
+  // Completed proposals are labeled when restored, and instructions can be reopened.
+  await p.evaluate(()=>{quickSlots['video:positive']={phase:'proposed',restored:true,finishedAt:1700000000000,original:'A red bowl.',result:'A blue bowl.',text:'Make it blue.'};paintQuickEdit('video','positive');});
+  assert.match(await p.locator('.quickProvenance').textContent(),/Saved proposal.*restored from this device/);
+  await p.locator('[data-quick-actions=positive] [data-quick-action=retry]').click();
+  assert.equal(await p.locator('[data-quick-panel=positive] textarea').inputValue(),'Make it blue.');
+  await p.locator('[data-quick-actions=positive] [data-quick-action=discard]').click();
   // Waiting survives a reload in the local persistent store.
   await p.evaluate(()=>finishEdits=false);
   await p.locator('[data-quick-actions=positive] [data-quick-action=open]').click();

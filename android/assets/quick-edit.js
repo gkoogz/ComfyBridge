@@ -12,7 +12,7 @@ async function loadQuickEdits(){
  quickStoreKey=key;quickSlots={};
  quickLoading=new Promise(resolve=>{
   const request=db.transaction('data').objectStore('data').get(key);
-  request.onsuccess=()=>{if(quickStoreKey===key){quickSlots=request.result||{};for(const q of Object.values(quickSlots))delete q.sending;}resolve();};request.onerror=()=>resolve();
+  request.onsuccess=()=>{if(quickStoreKey===key){quickSlots=request.result||{};for(const q of Object.values(quickSlots)){delete q.sending;if(q.phase==='proposed')q.restored=true;}}resolve();};request.onerror=()=>resolve();
  });
  await quickLoading;quickLoading=null;
 }
@@ -35,7 +35,7 @@ function paintQuickEdit(kind,key){
  const slot=quickSlot(kind,key),q=quickSlots[slot];
  rejectUnchangedQuick(q);
  chatButton.hidden=!!q;
- const version=JSON.stringify([q?.phase,q?.id,q?.result,q?.detail,q?.warning]);
+ const version=JSON.stringify([q?.phase,q?.id,q?.result,q?.detail,q?.warning,q?.restored,q?.finishedAt]);
  if(host.dataset.version===version){paintQuickTimers();return;}
  host.dataset.version=version;
  const button=(action,label)=>'<button type="button" class="quickButton" data-quick-action="'+action+'">'+label+'</button>';
@@ -48,8 +48,10 @@ function paintQuickEdit(kind,key){
   actions.innerHTML='<span class="quickThinking" role="status"><i class="spinner"></i><span>Quick edit · <time data-quick-clock="'+slot+'"></time></span></span>';
   host.innerHTML='<div class="quickSubmitted" tabindex="0">'+esc(q.text)+'</div><small class="quickDetail" role="status">'+esc(q.detail||'Preparing quick edit…')+'</small>';
  }else if(q.phase==='proposed'){
-  actions.innerHTML='';
-  host.innerHTML='<div class="row spread quickProposalHeading"><strong>Proposed edit</strong><div class="row">'+button('use','Use edited prompt ↗')+button('discard','Discard ×')+'</div></div><div class="quickProposed" tabindex="0">'+esc(q.result)+'</div>';
+  actions.innerHTML=button('retry','Edit instructions');
+  const when=q.finishedAt||(q.started&&q.elapsedBase!=null?q.started+q.elapsedBase*1000:null);
+  const date=when?new Date(when).toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}):'time unavailable';
+  host.innerHTML='<small class="quickProvenance">'+(q.restored?'Saved proposal':'Completed')+' · '+esc(date)+(q.restored?' · restored from this device':'')+'</small><div class="row spread quickProposalHeading" ><strong>Proposed edit</strong><div class="row">'+button('use','Use edited prompt ↗')+button('discard','Discard ×')+'</div></div><div class="quickProposed" tabindex="0">'+esc(q.result)+'</div>';
   if(state.settings[kind][key]!==q.original)host.insertAdjacentHTML('beforeend','<small>The prompt above changed while this edit was being prepared. Use edited prompt will replace it.</small>');
  }else{
   actions.innerHTML=button('retry','Retry quick edit')+button('discard','Discard ×');
@@ -82,9 +84,11 @@ async function quickAction(kind,key,action){
 }
 function discardQuick(q){if(q?.id&&connected)api('studio/chat/quick-discard',{id:q.id}).catch(()=>{});}
 function receiveQuick(q,data){
+ const mismatch=data.id!==q.id||['source','prompt','instructions'].some(key=>key in data&&data[key]!==({source:q.source,prompt:q.original,instructions:q.text}[key]));
+ if(mismatch){q.phase='error';q.detail='The PC returned a response for a different edit. Your prompt is unchanged; retry to create a new request.';return;}
  q.accepted=true;q.detail=data.detail||({queued:'Waiting for the local model…',waiting:'Waiting for the GPU…',loading:'Loading the local model…',responding:'Editing your prompt…'}[data.status]||'');
  q.elapsedBase=data.elapsedSeconds||0;q.receivedAt=Date.now();
- if(data.status==='complete'){q.phase='proposed';q.result=data.result;rejectUnchangedQuick(q);}
+ if(data.status==='complete'){q.phase='proposed';q.result=data.result;q.finishedAt=data.finished?data.finished*1000:Date.now();q.restored=false;rejectUnchangedQuick(q);}
  else if(['error','missing','discarded'].includes(data.status)){q.phase='error';q.detail=data.detail||'This edit is no longer available. Retry to submit it again.';}
 }
 async function sendQuick(q,kind,key){
