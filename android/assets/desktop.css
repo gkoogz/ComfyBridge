@@ -6,29 +6,44 @@
 .desktop #desktopTitle button{padding:0;min-height:28px;width:35px;margin-left:2px;border:0;background:transparent;border-radius:6px;font-size:19px}
 .desktop #desktopTitle button:hover{background:var(--panel2)}
 .desktop #desktopTitle [data-window=quit]:hover{background:#69272d}
-.desktop #desktopBridge{position:fixed;inset:var(--desktop-top) auto 0 0;width:var(--desktop-bridge);padding:12px;display:flex;flex-direction:column;gap:10px;overflow:auto;border-right:1px solid var(--line);background:#0e161b}
+.desktop #desktopBridge{position:fixed;inset:var(--desktop-top) auto 0 0;width:var(--desktop-bridge);padding:8px;display:flex;flex-direction:column;gap:6px;overflow:auto;border-right:1px solid var(--line);background:#0e161b}
 .desktop .desktopServer{padding-bottom:8px;border-bottom:1px solid var(--line)}
 .desktop .desktopServer h2{margin:0;font-size:18px}
-.desktop .desktopServer label{margin:12px 0 4px}
+.desktop .desktopServer label{margin:5px 0 2px;font-size:11px}
 .desktop .desktopServer>small{display:block;color:var(--muted);font-size:11px}
+.desktop #desktopPhones{display:block;font-size:10px;color:var(--muted);line-height:1.2}
+.desktop .desktopPairRow{margin-top:4px}
+.desktop .desktopPairRow label{margin:0}
+.desktop #desktopPairHint,.desktop #desktopChatHint:not(.hasError){display:none}
 .desktop .desktopServer .row{gap:5px}
-.desktop .desktopServer button{padding:5px 9px;min-height:32px;border-radius:8px}
+.desktop .desktopServer button{padding:3px 8px;min-height:28px;border-radius:8px}
+.desktop .desktopServer select{padding:4px 6px;height:28px;font-size:12px}
+.desktop .desktopChatControls small{display:block;font-size:10px;line-height:1.2;margin-top:3px}
 .desktop #desktopAddress{min-width:0;padding:6px;font-size:12px}
 .desktop #desktopPower{font-size:22px;line-height:1;color:var(--red)}
 .desktop #desktopPower svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;vertical-align:middle}
 .desktop #desktopPower.powered,.desktop .serverOnline{color:var(--mint)}
 .desktop .serverOffline,.desktop #desktopError{color:var(--red)}
-.desktop #desktopCode{font-size:28px;letter-spacing:3px;font-variant-numeric:tabular-nums}
+.desktop #desktopCode{font-size:23px;letter-spacing:3px;font-variant-numeric:tabular-nums}
 .desktop #desktopBridge .sectionline{margin:0}.desktop #desktopBridge .sectionline h2{font-size:15px;margin:0}
-.desktop #desktopBridge .metric{padding:7px 8px;border-radius:8px}.desktop #desktopBridge .metric strong{font-size:18px}
+.desktop #desktopBridge .metric{padding:4px 7px;border-radius:8px}.desktop #desktopBridge .metric strong{font-size:17px}
+.desktop #desktopBridge .metric label{margin:0;font-size:9px;line-height:1.2}
+.desktop #desktopBridge .metric{display:grid;grid-template-columns:auto auto 1fr;align-items:baseline;column-gap:5px}
+.desktop #desktopBridge .metric label{grid-column:1;grid-row:1}
+.desktop #desktopBridge .metric strong{grid-column:2;grid-row:1;font-size:16px;text-align:right}
+.desktop #desktopBridge .metric small{grid-column:3;grid-row:1;font-size:9px;line-height:1.1;margin:0;text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.desktop #desktopBridge .metric .meter{grid-column:1/-1}
+.desktop #desktopBridge .sectionline .pill{padding:2px 6px}
+.desktop #desktopBridge .meter{margin-top:3px;height:3px}
 .desktop #desktopBridge .metric small{font-size:10px}.desktop #desktopBridge .telemetry{gap:5px}
-.desktop #desktopBridge #bridgeActivity{flex:none;padding:9px;border:1px solid var(--line);border-radius:10px;margin:0}
+.desktop #desktopBridge #bridgeActivity{flex:none;padding:6px;border:1px solid var(--line);border-radius:10px;margin:0}
 .desktop #bridgeCommands{display:flex;gap:4px;margin:6px 0}.desktop #bridgeCommands button{flex:1;min-height:29px;padding:4px;font-size:11px;border-radius:7px}
 .desktop #desktopBridge .bridgeStage{display:block;font-size:11px}.desktop #bridgeStage,.desktop #activeTimer{display:block}
-.desktop #desktopBridge .progress{height:28px}.desktop #desktopBridge .progress span{font-size:11px}
-.desktop #desktopBridge #queueList{min-height:140px;flex:1;display:flex}
+.desktop #desktopBridge .progress{height:23px}.desktop #desktopBridge .progress span{font-size:11px}
+/* Keep five complete 52px entries visible; only the list scrolls afterward. */
+.desktop #desktopBridge #queueList{min-height:290px;flex:1;display:flex}
 .desktop #desktopBridge .historyCard{margin:0;padding:8px;flex:1;min-height:0;display:flex;flex-direction:column}
-.desktop #desktopBridge .queueRows{max-height:none;min-height:80px;overflow:auto;flex:1}
+.desktop #desktopBridge .queueRows{height:0;max-height:none;min-height:260px;overflow:auto;flex:1}
 .desktop #desktopBridge .queueJob{gap:5px}.desktop #desktopBridge .jobThumb{width:38px;height:42px;min-width:38px}
 .desktop #desktopBridge .queueJob button[data-cancel]{font-size:10px;padding:4px;width:45px;min-height:30px}
 .desktop #desktopBridge .jobRecall{min-width:26px;padding:3px}.desktop #desktopBridge .jobInfo{font-size:12px}
@@ -51,3 +66,17 @@
 .desktop .upload{max-height:280px}.desktop .asset:not(.galleryAsset) img.original,.desktop .asset:not(.galleryAsset) video{max-height:70vh}
 .desktop .gentoolbar{z-index:15}.desktop .promptEntry{user-select:text}
 @media(max-width:1150px){.desktop{--desktop-bridge:300px;--desktop-nav:120px}.desktop #drawer .eyebrow{letter-spacing:1px}.desktop #drawer .brandmark{display:none}}
+@media(max-height:800px){
+ .desktop #desktopBridge{gap:4px;padding:6px}
+ .desktop .desktopServer{padding-bottom:4px}
+ .desktop .desktopServer label{margin-top:3px}
+ .desktop #desktopBridge .metric{padding:2px 5px}
+ .desktop #desktopBridge #bridgeActivity{padding:4px}
+ .desktop #bridgeCommands{margin:3px 0}
+ .desktop #bridgeCommands button{min-height:26px}
+ .desktop #desktopBridge .bridgeStage{font-size:10px;line-height:1.2}
+}
+@media(max-height:760px){
+ .desktop #desktopBridge>.sectionline{display:none}
+ .desktop #desktopBridge .metric strong{font-size:15px}
+}

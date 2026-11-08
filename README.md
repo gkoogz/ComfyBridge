@@ -1,10 +1,12 @@
 # ComfyBridge
 
-**[Open the beta 55 release page](https://github.com/gkoogz/ComfyBridge/releases/tag/v0.1.0-beta.55)** · [Download the Android APK](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.55/ComfyBridge-0.1.0-beta.55.apk) · [Download Windows](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.55/ComfyBridge-Windows-0.1.0-beta.55.zip) · [All releases](https://github.com/gkoogz/ComfyBridge/releases)
+**[Open the beta 56 release page](https://github.com/gkoogz/ComfyBridge/releases/tag/v0.1.0-beta.56)** · [Download the Android APK](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.56/ComfyBridge-0.1.0-beta.56.apk) · [Download Windows](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.56/ComfyBridge-Windows-0.1.0-beta.56.zip) · [All releases](https://github.com/gkoogz/ComfyBridge/releases)
 
 <img src="artwork/comfybridge.png" width="128" alt="ComfyBridge white cube and play icon on black">
 
 An Android remote for an existing Windows ComfyUI installation. The phone edits generation settings, uploads images and masks, and views results; the PC does the GPU work. A small Windows tray application wakes its Python worker on demand.
+
+Beta 56 reconciles uncertain submissions before restoring settings, expires Quick edits after two hours, resumes the saved queue when Windows ComfyBridge reopens, and makes room for five queue entries in the PC studio. Quick edit uses the same single-response prompt-block path as Notepad chat.
 
 **Notepad chat** talks to a local model on the PC. **Chat about this** under any positive or negative prompt copies it into the Notepad composer without sending it. Drag its handle between tucked-away, composer-only, half-screen and nearly full-screen positions. Send with the up arrow (or Ctrl+Enter on PC). Newest messages appear nearest the composer; replies stream into grey bubbles with a copy button. The restart button asks before clearing the current conversation. It does not change the notes or stickies.
 
@@ -16,7 +18,7 @@ Run **Setup-Chat.ps1** in the Windows package once to install the pinned llama.c
 
 Chat starts its model process only for a message and releases it after the reply. Sending a message during a supported H3/Eros Euler video requests a checkpoint at the next sampling boundary. The bridge holds the remaining queue, saves the unfinished packed audio/video latent, cooperatively unloads Comfy models and execution caches, verifies VRAM release, and lets chat use the GPU. After the chat process exits, video reloads its unchanged workflow and continues at the saved step. Images, unsupported samplers and videos started before this update finish before handing off. A large video step can take minutes: pausing is not instant and does not recover an already-stuck step. New generations can join the held queue without interrupting chat. A loopback-only server with an ephemeral access key serves inference; phone requests use the existing encrypted, authenticated bridge. Prompts and replies are not sent to a cloud model. The latest conversation turns are used within the model's context budget; older turns remain visible in the active chat.
 
-**0.1.0-beta.55 is a personal-workflow beta**, adapted specifically to `Image gen.json` and `Video gen.json` in `E:\ComfyUI-Zluda\user\default\workflows`. It is not a general ComfyUI workflow importer. Models, LoRAs, workflow files, prompts, generated media, pairing credentials, and signing keys are not included in this repository or release. Beta 37 requires the updated Windows companion for local chat. Existing generation queues survive the tray update.
+**0.1.0-beta.56 is a personal-workflow beta**, adapted specifically to `Image gen.json` and `Video gen.json` in `E:\ComfyUI-Zluda\user\default\workflows`. It is not a general ComfyUI workflow importer. Models, LoRAs, workflow files, prompts, generated media, pairing credentials, and signing keys are not included in this repository or release. Beta 37 requires the updated Windows companion for local chat. Existing generation queues survive the tray update.
 
 The phone shows **PC connected** as soon as the bridge answers. Loading models and unavailable telemetry have their own messages. If the server or VPN drops, leave the phone app open: it retries automatically using the saved pairing. **Disconnect** or **Cancel reconnect** stops those retries.
 

@@ -266,7 +266,9 @@ def serve():
     for line in sys.stdin:
         try:
             msg=json.loads(line);route=msg['route'];device=msg['device'];body=msg.get('body') or {}
-            if route.startswith('chat/'):
+            if route=='queue-active':
+                result=dict(unfinished=bool(db.execute(f"SELECT 1 FROM jobs WHERE status IN {LIVE} LIMIT 1").fetchone()))
+            elif route.startswith('chat/'):
                 uuid.UUID(device)
                 action=route.split('/',1)[1]
                 if action not in ('state','draft','send','reset','quick-submit','quick-state','quick-discard'):

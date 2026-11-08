@@ -21,8 +21,8 @@ using Microsoft.Win32;
 [assembly: System.Reflection.AssemblyTitle("Comfy Bridge")]
 [assembly: System.Reflection.AssemblyDescription("Phone to ComfyUI bridge")]
 [assembly: System.Reflection.AssemblyVersion("0.1.0.0")]
-[assembly: System.Reflection.AssemblyFileVersion("0.1.0.55")]
-[assembly: System.Reflection.AssemblyInformationalVersion("0.1.0-beta.55")]
+[assembly: System.Reflection.AssemblyFileVersion("0.1.0.56")]
+[assembly: System.Reflection.AssemblyInformationalVersion("0.1.0-beta.56")]
 
 partial class Bridge : ApplicationContext {
     static readonly string Home = AppDomain.CurrentDomain.BaseDirectory;
@@ -114,6 +114,16 @@ partial class Bridge : ApplicationContext {
         var dispatch=new Control();var handle=dispatch.Handle;
         panelSignal=new EventWaitHandle(false,EventResetMode.AutoReset,"Local\\ComfyBridgeOpenPanel");
         ThreadPool.RegisterWaitForSingleObject(panelSignal,(s,t)=>{if(!dispatch.IsDisposed)dispatch.BeginInvoke((Action)(()=>{ShowMonitor();CheckForRelease();}));},null,Timeout.Infinite,false);
+        ResumeSavedQueue();
+    }
+    async void ResumeSavedQueue(){
+        try{
+            var reply=new JavaScriptSerializer().Deserialize<Dictionary<string,object>>(await StudioRequest("queue-active","panel",""));
+            var data=(Dictionary<string,object>)reply["data"];
+            if(Convert.ToInt32(reply["code"])!=200||!Convert.ToBoolean(data["unfinished"]))return;
+            await starting.WaitAsync();
+            try{await PrepareWorker();}finally{starting.Release();}
+        }catch(Exception ex){System.Diagnostics.Trace.WriteLine("Saved queue will resume on the next connection: "+ex.Message);}
     }
     static async Task Listen(System.Net.Sockets.TcpListener listener,bool encrypted) {
         while(true) {

@@ -40,7 +40,7 @@ class QuickEditTests(unittest.TestCase):
         value=quick_edit.messages(row)[1]['content']
         self.assertIn('['+row['prompt']+']',value)
         self.assertIn('{'+row['instructions']+'}',value)
-        self.assertIn('edited_prompt',value)
+        self.assertIn('<prompt>',value)
 
     def test_idempotency_ownership_queue_and_chat_reset(self):
         self.call('quick-submit');self.call('quick-submit')
@@ -59,6 +59,21 @@ class QuickEditTests(unittest.TestCase):
         for value in ('{"prompt":"A blue bowl."}','Here is your prompt: a blue bowl.','{"edited_prompt":""}','{"edited_prompt":"<prompt></prompt>"}','{"edited_prompt":42}','{"edited_prompt":"unfinished'):
             with self.subTest(value=value),self.assertRaises(ValueError):quick_edit.result(value)
         self.assertEqual(quick_edit.result('{"edited_prompt":"A blue bowl.\\nSoft light."}'),'A blue bowl.\nSoft light.')
+
+    def test_two_hour_expiry_clears_every_phase_without_touching_chat(self):
+        self.call('quick-submit')
+        with contextlib.closing(chat.database(self.data)) as db,db:
+            db.execute("INSERT INTO chat_messages(id,role,content,status) VALUES('keep','user','Keep this conversation','complete')")
+            db.execute("UPDATE quick_edits SET created=? WHERE id=?",(__import__('time').time()-7201,self.body['id']))
+        self.assertEqual(self.call('quick-state')['status'],'missing')
+        with contextlib.closing(chat.database(self.data)) as db:
+            self.assertIsNone(chat.meta(db)['active'])
+            self.assertEqual(chat.snapshot(db)['messages'][0]['content'],'Keep this conversation')
+        for phase in ('queued','waiting','loading','responding','complete','error'):
+            body=dict(self.body,id=str(uuid.uuid4()));self.call('quick-submit',body)
+            with contextlib.closing(chat.database(self.data)) as db,db:
+                db.execute('UPDATE quick_edits SET status=?,created=? WHERE id=?',(phase,__import__('time').time()-7201,body['id']))
+            self.assertEqual(self.call('quick-state',body)['status'],'missing')
 
     def test_unchanged_output_is_rejected_including_legacy_results(self):
         for text in ('An orange bowl.', '  An orange   bowl.\n', '<prompt>An orange bowl.</prompt>'):
@@ -79,24 +94,23 @@ class QuickEditTests(unittest.TestCase):
         self.assertEqual(quick_edit.result('{"edited_prompt":"An orange bowl!"}', 'An orange bowl.',
                          'Use an exclamation mark.'),'An orange bowl!')
 
-    def test_review_requires_a_real_verdict(self):
-        for raw in ('{}','{"checks":[],"contradictions":[]}', '{"checks":[{"requirement":"blue","satisfied":"true","reason":"ok"}],"contradictions":[]}'):
-            with self.assertRaises(ValueError):quick_edit.review_result(raw)
-
-    def test_failed_review_is_repaired_and_reviewed_again(self):
+    def test_chat_prompt_block_extraction_and_no_semantic_veto(self):
+        row=dict(source='image positive',prompt='An orange bowl.',instructions='Make it blue.')
         calls=[]
         def complete(messages,fmt,stage):
-            calls.append(stage)
-            if fmt==quick_edit.FORMAT:return json.dumps(dict(edited_prompt='A blue bowl on a red table.' if len(calls)==1 else 'A blue bowl on a white table.'))
-            return json.dumps(dict(checks=[dict(requirement='White table',satisfied=len(calls)==4,reason='Table is red' if len(calls)==2 else 'White table present')],contradictions=[]))
-        row=dict(source='image positive',prompt='An orange bowl on a red table.',instructions='Make the bowl blue and the table white.')
-        self.assertEqual(quick_edit.generate_checked(row,complete),'A blue bowl on a white table.')
-        self.assertEqual(len(calls),4)
-        def failed(messages,fmt,stage):
-            return json.dumps(dict(edited_prompt='A blue bowl on a red table.')) if fmt==quick_edit.FORMAT else json.dumps(dict(checks=[dict(requirement='White table',satisfied=False,reason='Still red')],contradictions=[]))
-        with self.assertRaisesRegex(ValueError,'no proposal was accepted'):quick_edit.generate_checked(row,failed)
+            calls.append((messages,fmt))
+            return 'Here is the edit:\n<prompt>A blue bowl.</prompt>\nLighting was preserved.'
+        self.assertEqual(quick_edit.generate_checked(row,complete,chat.SYSTEM),'A blue bowl.')
+        self.assertEqual(len(calls),1)
+        self.assertIsNone(calls[0][1])
+        self.assertTrue(calls[0][0][0]['content'].startswith(chat.SYSTEM))
+        for raw in ('<prompt>unfinished','<prompt>One</prompt><prompt>Two</prompt>',
+                    '<prompt><prompt>Nested</prompt></prompt>','<prompt> </prompt>'):
+            with self.subTest(raw=raw),self.assertRaises(ValueError):quick_edit.result(raw)
+        with self.assertRaises(quick_edit.UnchangedEdit):
+            quick_edit.result('<prompt>An orange bowl.</prompt>',row['prompt'],row['instructions'])
 
-    def exercise_worker(self,malformed=False,leased=False,unchanged=False,recover=False):
+    def exercise_worker(self,malformed=False,leased=False,unchanged=False):
         self.call('quick-submit')
         second=dict(self.body,id=str(uuid.uuid4()),source='video negative')
         self.call('quick-submit',second,device='phone2')
@@ -114,16 +128,15 @@ class QuickEditTests(unittest.TestCase):
             def poll(self):return 1 if self.stopped else None
             def terminate(self):self.stopped=True
         class Engine:
-            def __init__(self,*args):self.process=Process();self.url='http://fixture';self.key='fixture';engines.append(self)
+            def __init__(self,*args):
+                assert len(args)==4, 'Quick edit must use the same engine mode as chat'
+                self.process=Process();self.url='http://fixture';self.key='fixture';engines.append(self)
             def close(self):self.process.terminate()
         class Stream:
             def __enter__(self):return self
             def __exit__(self,*args):pass
             def __iter__(self):
-                generation_count=sum(p['response_format']==quick_edit.FORMAT for p in payloads)
-                output='not a prompt' if malformed else json.dumps(dict(edited_prompt='An orange bowl.' if unchanged or (recover and generation_count%2==1) else 'A blue bowl.'))
-                if payloads[-1]['response_format']==quick_edit.REVIEW_FORMAT:
-                    output=json.dumps(dict(checks=[dict(requirement='Blue bowl',satisfied=True,reason='The bowl is blue')],contradictions=[]))
+                output='not a prompt' if malformed else '<prompt>'+('An orange bowl.' if unchanged else 'A blue bowl.')+'</prompt>'
                 for chunk in (output[:7],output[7:]):
                     yield b'data: '+json.dumps(dict(choices=[dict(delta=dict(content=chunk))])).encode()+b'\n'
                 yield b'data: [DONE]\n'
@@ -131,10 +144,12 @@ class QuickEditTests(unittest.TestCase):
         with patch.object(chat,'Engine',Engine),patch.object(chat,'rendering',return_value=leased),patch.object(chat,'renderer_queue_busy',return_value=False),patch.object(chat.gpu_handoff,'granted',side_effect=granted if leased else lambda *args:False),patch.object(chat,'available_ram',return_value=64*1024**3),patch.object(chat,'json_request',return_value=dict(status='ok')),patch.object(chat.urllib.request,'urlopen',side_effect=urlopen):
             chat.run(self.data,'http://fixture')
         self.assertEqual(len(engines),2);self.assertTrue(all(e.process.stopped for e in engines))
-        self.assertEqual(payloads[0]['response_format'],quick_edit.FORMAT)
-        self.assertTrue(payloads[0]['chat_template_kwargs']['enable_thinking'])
+        self.assertTrue(all('response_format' not in p for p in payloads))
+        self.assertTrue(all(not p['chat_template_kwargs']['enable_thinking'] for p in payloads))
         self.assertTrue(all(p['cache_prompt'] is False for p in payloads))
-        self.assertEqual(len(payloads),6 if recover else 4)
+        self.assertTrue(all(p['temperature']==.7 and p['top_p']==.8 and p['top_k']==20 for p in payloads))
+        self.assertTrue(all(p['messages'][0]['content'].startswith(chat.SYSTEM) for p in payloads))
+        self.assertEqual(len(payloads),2)
         result=self.call('quick-state')
         self.assertEqual(result['status'],'error' if malformed or unchanged else 'complete')
         self.assertEqual(result['result'],'' if malformed or unchanged else 'A blue bowl.')
@@ -142,8 +157,6 @@ class QuickEditTests(unittest.TestCase):
         with contextlib.closing(chat.database(self.data)) as db:
             self.assertEqual(chat.snapshot(db)['messages'],[])
             self.assertIsNone(chat.meta(db)['active']);self.assertEqual(chat.meta(db)['gpu'],0)
-
-    def test_worker_recovers_after_one_unchanged_response(self):self.exercise_worker(recover=True)
 
     def test_worker_rejects_unchanged_output(self):self.exercise_worker(unchanged=True)
 

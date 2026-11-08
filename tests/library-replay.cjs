@@ -32,6 +32,24 @@ const assert=require('node:assert/strict'),path=require('node:path');
      input.width,input.height,!!input.mask,state.settings[page].batch,...calls.filter(route=>!route.startsWith('studio/provenance/'))];
    });
    assert.deepEqual(result,[kind,'18446744073709551615','saved prompt',64,96,kind==='image',1,'studio/replay/original-job']);
+   for(const accepted of [true,false]){
+    const check=await p.evaluate(async({kind,accepted})=>{
+     const base=api;const requests=[];
+     const payload={kind,count:4,requestId:'original-request',settings:{seed:'100',increment:true,positive:'Unique pending prompt'}};
+     state.pendingByKind={[kind]:payload};navigate('library');
+     api=async(route,body)=>{
+      requests.push({route,body});
+      if(route==='batch/original-request')return {jobs:accepted?[{id:'accepted-job'}]:[]};
+      if(route==='generate')return {batch:'original-request'};
+      return base(route,body);
+     };
+     await restoreGeneration('original-job',{disabled:false});api=base;
+     return {page,pending:!!pendingSubmission(kind),seed:state.settings[kind].seed,requests};
+    },{kind,accepted});
+    assert.equal(check.page,kind);assert.equal(check.pending,false);assert.equal(check.seed,'18446744073709551615');
+    const retries=check.requests.filter(r=>r.route==='generate');assert.equal(retries.length,accepted?0:1);
+    if(retries.length){assert.equal(retries[0].body.requestId,'original-request');assert.equal(retries[0].body.settings.positive,'Unique pending prompt');}
+   }
   }
   console.log('Image and archived video opened their original editor, seed, source and mask without submitting.');
  }finally{await browser.close();}

@@ -1,6 +1,16 @@
 'use strict';
 let quickSlots={},quickStoreKey='',quickLoading=null,quickPolling=false;
 const quickSlot=(kind,key)=>kind+':'+key;
+const quickTTL=2*60*60*1000;
+function expireQuickEdits(now=Date.now()){
+ let changed=false;
+ for(const [slot,q] of Object.entries(quickSlots)){
+  q.touchedAt??=q.started||q.finishedAt||now;
+  if(now-q.touchedAt<quickTTL)continue;
+  discardQuick(q);delete quickSlots[slot];changed=true;
+ }
+ if(changed)quickStore();return changed;
+}
 function quickStore(){
  if(!db||!quickStoreKey)return;
  const tx=db.transaction('data','readwrite');tx.objectStore('data').put(quickSlots,quickStoreKey);
@@ -8,13 +18,13 @@ function quickStore(){
 }
 async function loadQuickEdits(){
  const key='quick-edit:'+(info().fingerprint||info().address||'local');
- if(key===quickStoreKey){if(quickLoading)await quickLoading;return;}
+ if(key===quickStoreKey){if(quickLoading)await quickLoading;expireQuickEdits();return;}
  quickStoreKey=key;quickSlots={};
  quickLoading=new Promise(resolve=>{
   const request=db.transaction('data').objectStore('data').get(key);
   request.onsuccess=()=>{if(quickStoreKey===key){quickSlots=request.result||{};for(const q of Object.values(quickSlots)){delete q.sending;if(q.phase==='proposed')q.restored=true;}}resolve();};request.onerror=()=>resolve();
  });
- await quickLoading;quickLoading=null;
+ await quickLoading;quickLoading=null;expireQuickEdits();quickStore();
 }
 function quickClock(seconds){seconds=Math.max(0,Math.floor(seconds));return Math.floor(seconds/60)+':'+String(seconds%60).padStart(2,'0');}
 function paintQuickTimers(){
@@ -29,6 +39,7 @@ function rejectUnchangedQuick(q){
  }
 }
 function paintQuickEdit(kind,key){
+ expireQuickEdits();
  if(page!==kind)return;
  const host=$('[data-quick-panel="'+key+'"]'),actions=$('[data-quick-actions="'+key+'"]'),chatButton=$('[data-chat-prompt="'+key+'"]');
  if(!host||!actions)return;
@@ -43,7 +54,7 @@ function paintQuickEdit(kind,key){
  else if(q.phase==='editing'){
   actions.innerHTML=button('submit','Submit Quick edit')+button('discard','Cancel quick edit');
   host.innerHTML='<textarea class="quickInstructions" rows="5" aria-label="Quick edit instructions for '+key+' prompt" placeholder="Describe the changes you want…" maxlength="8000">'+esc(q.text)+'</textarea>';
-  const field=$('textarea',host);field.oninput=()=>{q.text=field.value;field.style.height='118px';field.style.height=Math.max(118,field.scrollHeight+2)+'px';quickStore();};
+  const field=$('textarea',host);field.oninput=()=>{q.text=field.value;q.touchedAt=Date.now();field.style.height='118px';field.style.height=Math.max(118,field.scrollHeight+2)+'px';quickStore();};
  }else if(q.phase==='working'){
   actions.innerHTML='<span class="quickThinking" role="status"><i class="spinner"></i><span>Quick edit · <time data-quick-clock="'+slot+'"></time></span></span>';
   host.innerHTML='<div class="quickSubmitted" tabindex="0">'+esc(q.text)+'</div><small class="quickDetail" role="status">'+esc(q.detail||'Preparing quick edit…')+'</small>';
@@ -61,13 +72,14 @@ function paintQuickEdit(kind,key){
  paintQuickTimers();
 }
 async function quickAction(kind,key,action){
+ expireQuickEdits();
  const slot=quickSlot(kind,key),q=quickSlots[slot];
  rejectUnchangedQuick(q);
- if(action==='open')quickSlots[slot]={phase:'editing',text:''};
+ if(action==='open')quickSlots[slot]={phase:'editing',text:'',touchedAt:Date.now()};
  else if(action==='submit'){
   if(!connected)return toast('Connect to the PC to use Quick edit.');
   if(!q?.text.trim())return toast('Describe how you want to change the prompt.');
-  Object.assign(q,{phase:'working',id:crypto.randomUUID(),original:state.settings[kind][key]||'',source:kind+' '+key,started:Date.now(),detail:'Submitting quick edit…',accepted:false});
+  Object.assign(q,{phase:'working',id:crypto.randomUUID(),original:state.settings[kind][key]||'',source:kind+' '+key,started:Date.now(),touchedAt:Date.now(),detail:'Submitting quick edit…',accepted:false});
   quickStore();paintQuickEdit(kind,key);await sendQuick(q,kind,key);return;
  }else if(action==='use'&&q?.phase==='proposed'){
   state.settings[kind][key]=q.result;delete state.settings[kind].replayOf;persist(kind);
@@ -77,7 +89,7 @@ async function quickAction(kind,key,action){
  }else if(action==='discard'){
   if(q?.id)discardQuick(q);delete quickSlots[slot];
  }else if(action==='retry'){
-  discardQuick(q);quickSlots[slot]={phase:'editing',text:q.text};
+  if(!q)return;discardQuick(q);quickSlots[slot]={phase:'editing',text:q.text,touchedAt:Date.now()};
  }
  quickStore();paintQuickEdit(kind,key);
  if(action==='open'||action==='retry')$('[data-quick-panel="'+key+'"] textarea')?.focus();
@@ -126,5 +138,5 @@ function bindQuickEdits(){
   $('[data-setting="seed"]').value=seed;persist(kind);
  };
 }
-setInterval(()=>{if(!document.hidden)paintQuickTimers();},250);
+setInterval(()=>{if(!document.hidden){if(expireQuickEdits())for(const key of ['positive','negative'])paintQuickEdit(page,key);paintQuickTimers();}},250);
 setInterval(()=>syncQuickEdits(),1000);

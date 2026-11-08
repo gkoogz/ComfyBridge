@@ -21,7 +21,7 @@ TEMP = tempfile.TemporaryDirectory()
 os.environ['COMFYBRIDGE_DATA'] = TEMP.name
 Path(TEMP.name, 'token.txt').write_text('integration-test-key')
 import worker as w
-atexit.register(w.DB.close)
+atexit.register(lambda:w.DB.close())
 atexit.register(logging.shutdown)
 
 
@@ -96,6 +96,54 @@ class BridgeTests(unittest.IsolatedAsyncioTestCase):
             if len(done)==count:return done
             await asyncio.sleep(.02)
         self.fail(w.rows('SELECT status,error FROM jobs'))
+
+    async def wait_recovered(self,count):
+        for _ in range(600):
+            if len(w.rows("SELECT id FROM jobs WHERE status='complete'"))==count:return
+            await asyncio.sleep(.02)
+        self.fail(w.rows('SELECT status,error FROM jobs'))
+
+    async def test_unclean_exit_restarts_saved_jobs_without_changing_inputs(self):
+        await self.submit(4)
+        original=w.rows('SELECT id,settings,batch,owner,ordinal FROM jobs ORDER BY rowid')
+        w.update(original[0]['id'],status='running',progress=.7)
+        w.update(original[1]['id'],status='submitting')
+        # Lose the worker connection just as a process death would. Queue,
+        # recipes and prompts must survive opening the same SQLite store again.
+        w.DB.close();w.DB=__import__('sqlite3').connect(Path(TEMP.name)/'library.sqlite')
+        w.DB.row_factory=__import__('sqlite3').Row
+        self.runner=asyncio.create_task(w.run_jobs());await self.wait_recovered(4)
+        self.assertEqual(original,w.rows('SELECT id,settings,batch,owner,ordinal FROM jobs ORDER BY rowid'))
+        sent=[data['prompt_id'] for path,data in self.calls if path=='/prompt']
+        self.assertEqual(sent,[r['id'] for r in original])
+        self.assertEqual(len(w.rows('SELECT * FROM media')),4)
+
+    async def test_unclean_exit_recovers_finished_image_without_resubmission(self):
+        await self.submit()
+        job=w.rows('SELECT * FROM jobs')[0];w.update(job['id'],status='running')
+        path=w.ROOT/'output/ComfyBridge'/(job['id']+'_00001_.png')
+        Image.new('RGB',(48,64),'blue').save(path)
+        self.runner=asyncio.create_task(w.run_jobs());await self.wait_recovered(1)
+        self.assertFalse(any(route=='/prompt' for route,_ in self.calls))
+        self.assertEqual(w.rows('SELECT path FROM media')[0]['path'],str(path.resolve()))
+
+    async def test_unclean_exit_preserves_partial_output_and_restarts(self):
+        await self.submit()
+        job=w.rows('SELECT * FROM jobs')[0];w.update(job['id'],status='submitting')
+        path=w.ROOT/'output/ComfyBridge'/(job['id']+'_00001_.png');path.write_bytes(b'partial PNG')
+        self.runner=asyncio.create_task(w.run_jobs());await self.wait_recovered(1)
+        self.assertEqual(len(list(path.parent.glob(path.name+'.interrupted-*'))),1)
+        self.assertEqual(len([r for r,_ in self.calls if r=='/prompt']),1)
+
+    async def test_reopened_worker_attaches_to_surviving_comfy_result(self):
+        await self.submit()
+        job=w.rows('SELECT * FROM jobs')[0]
+        graph=__import__('recipes').recorded_graph(w.DB,job['id'])
+        await w.comfy('/prompt',dict(prompt=graph,prompt_id=job['id']))
+        w.update(job['id'],status='running')
+        self.calls.clear()
+        self.runner=asyncio.create_task(w.run_jobs());await self.wait_recovered(1)
+        self.assertFalse(any(route=='/prompt' for route,_ in self.calls))
 
     async def test_auth_and_private_library(self):
         r,d=await self.request('library',headers={});self.assertEqual(r.status,401)

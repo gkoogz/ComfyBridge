@@ -280,7 +280,7 @@ def renderer_queue_busy(comfy):
 
 def context_messages(db, reply_id):
     editing=quick_edit.get(db,reply_id)
-    if editing:return quick_edit.messages(editing)
+    if editing:return quick_edit.messages(editing,SYSTEM)
     # Keep all messages in the UI; only the most recent context is sent to the model.
     entries = [dict(r) for r in db.execute("SELECT role,content,source FROM chat_messages WHERE id!=? AND status='complete' ORDER BY created,rowid", (reply_id,))]
     recent, used = [], 0
@@ -313,7 +313,7 @@ class Engine:
                 '--api-key', self.key, '--no-webui', '--jinja', '--ctx-size', '12288', '--parallel', '1',
                 '--n-gpu-layers', 'auto' if gpu else '0', '--fit-target', '1536', '--threads', '6', '--threads-batch', '6',
                 '--batch-size', '512', '--ubatch-size', '128', '--flash-attn', 'on', '--no-warmup',
-                '--reasoning-budget', '256' if editing else '0', '--no-context-shift', '--prio', '-1', '--poll', '0']
+                '--reasoning-budget', '0', '--no-context-shift', '--prio', '-1', '--poll', '0']
         if not gpu:
             args += ['--device', 'none']
         self.process = subprocess.Popen(args, stdin=subprocess.DEVNULL, stdout=self.log, stderr=self.log, creationflags=flags)
@@ -431,7 +431,7 @@ def run(data, comfy):
                         continue
                     db.execute('UPDATE chat_meta SET gpu=? WHERE id=1', (int(gpu),))
                 update('loading', 'Loading local model on Radeon GPU…' if gpu else 'Loading on CPU while ComfyUI uses the GPU…', '')
-                engine = Engine(config, model, gpu, data, bool(editing))
+                engine = Engine(config, model, gpu, data)
                 with db:
                     db.execute('UPDATE chat_meta SET engine_pid=? WHERE id=1', (engine.process.pid,))
                 current_engine = engine
@@ -472,7 +472,9 @@ def run(data, comfy):
                                temperature=.7, top_p=.8, top_k=20, repeat_penalty=1.05,
                                chat_template_kwargs=dict(enable_thinking=False))
                 if editing:
-                    payload.update(response_format=quick_edit.FORMAT,max_tokens=8192,temperature=.4,cache_prompt=False,chat_template_kwargs=dict(enable_thinking=True))
+                    # Same sampling and non-thinking mode as Notepad chat, with
+                    # more output room for a complete long prompt and no history.
+                    payload.update(max_tokens=8192,cache_prompt=False)
                 def complete(messages, response_format=None, stage='Replying locally'):
                     request_payload=dict(payload,messages=messages)
                     if response_format is not None:request_payload['response_format']=response_format
@@ -489,13 +491,15 @@ def run(data, comfy):
                             if chunk.get('error'):raise ValueError(str(chunk['error']))
                             choices=chunk.get('choices',[])
                             if not choices:continue
+                            if choices[0].get('finish_reason')=='length':
+                                raise ValueError('The local model reached its response limit. Your original text is kept; try a shorter request.')
                             output+=choices[0].get('delta',{}).get('content') or ''
                             if time.monotonic()-last>.15:
                                 if not update('responding',stage,output):break
                                 last=time.monotonic()
                     if not finished:raise OSError('The local model response was interrupted. Your draft and conversation are kept.')
                     return output
-                text=quick_edit.generate_checked(editing,complete) if editing else complete(payload['messages'])
+                text=quick_edit.generate_checked(editing,complete,SYSTEM) if editing else complete(payload['messages'])
                 with db:
                     db.execute('BEGIN IMMEDIATE')
                     if meta(db)['active'] == reply_id:

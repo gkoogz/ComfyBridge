@@ -71,7 +71,7 @@ const assert=require('node:assert/strict'),path=require('node:path');
    if(q.phase!=='error'||q.result)throw Error('Wrong input accepted');
   });
   // Completed proposals are labeled when restored, and instructions can be reopened.
-  await p.evaluate(()=>{quickSlots['video:positive']={phase:'proposed',restored:true,finishedAt:1700000000000,original:'A red bowl.',result:'A blue bowl.',text:'Make it blue.'};paintQuickEdit('video','positive');});
+  await p.evaluate(()=>{quickSlots['video:positive']={phase:'proposed',restored:true,finishedAt:Date.now(),original:'A red bowl.',result:'A blue bowl.',text:'Make it blue.'};paintQuickEdit('video','positive');});
   assert.match(await p.locator('.quickProvenance').textContent(),/Saved proposal.*restored from this device/);
   await p.locator('[data-quick-actions=positive] [data-quick-action=retry]').click();
   assert.equal(await p.locator('[data-quick-panel=positive] textarea').inputValue(),'Make it blue.');
@@ -85,6 +85,14 @@ const assert=require('node:assert/strict'),path=require('node:path');
   await p.evaluate(async()=>{await loadQuickEdits();});
   assert.equal(await p.evaluate(()=>quickSlots['video:positive'].text),'Persistent instructions.');
   assert.equal(await p.evaluate(()=>quickSlots['video:positive'].phase),'working');
+  await p.evaluate(()=>{
+   state.settings.video??={positive:"Keep this prompt"};const original=state.settings.video.positive;
+   quickSlots={};
+   for(const [i,phase] of ['editing','working','proposed','error'].entries())quickSlots['slot'+i]={phase,touchedAt:Date.now()-7200001,id:'expired-'+i,text:'Old instructions'};
+   quickSlots['video:negative']={phase:'editing',text:'Fresh draft',touchedAt:Date.now()};
+   if(!expireQuickEdits()||Object.keys(quickSlots).length!==1)throw Error('Expired Quick edit state survived');
+   if(state.settings.video.positive!==original)throw Error('Expiry modified the main prompt');
+  });
   assert.deepEqual(errors,[]);
   console.log('Seed range, four prompt panels, cancel, frozen submission, timer, separate payload, navigation, proposal acceptance/discard and reload persistence passed.');
  }finally{await browser.close();}

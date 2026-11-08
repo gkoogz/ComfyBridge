@@ -124,7 +124,7 @@ function extendVideoButton(item){
   button.disabled=true;button.textContent='Reading clip…';
   try{
    if(!connected)throw Error('Connect to the PC to extend this video.');
-   if(state.pendingByKind?.video||state.pendingRequest?.kind==='video')throw Error('Resolve the pending video submission before starting an extension.');
+   await resolvePendingSubmission('video');
    if(item.warning==='changed'||item.source==='missing')throw Error('Resolve the source file warning before extending this clip.');
    let source;
    try{source=await api((queueProtocol>=9?'':'studio/')+'extension/'+item.id);}

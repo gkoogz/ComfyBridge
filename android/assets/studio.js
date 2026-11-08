@@ -161,6 +161,7 @@ async function restoreGeneration(job,button,stillHere=()=>true){
    if(!connected)throw Error('Connect to the PC to restore this generation.');
    if(!job)throw Error('This item has no saved generation record.');
    const {kind,settings,inputs}=await api('studio/replay/'+job);
+   await resolvePendingSubmission(kind);
    if(inputs.data){const img=await loadImg(inputs.data);inputs.width=img.naturalWidth;inputs.height=img.naturalHeight;}
    if(inputs.mask){
     const mask=await loadImg(inputs.mask),canvas=document.createElement('canvas');
@@ -174,8 +175,6 @@ async function restoreGeneration(job,button,stillHere=()=>true){
    settings.batch=1;
    settings.replayOf=job;
    if(kind==='video' && settings.sound===undefined)settings.sound=false; // older jobs were silent
-   if(submitting||state.pendingByKind?.[kind]||state.pendingRequest?.kind===kind)
-    throw Error('Resolve the pending submission before restoring another generation.');
    state.settings[kind]=settings;state.inputs[kind]=inputs;persist(kind);navigate(kind);
    toast('Generation settings loaded');
   }catch(e){if(page===origin&&stillHere())toast(e.message);}finally{button.disabled=false;}

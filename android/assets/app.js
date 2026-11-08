@@ -206,9 +206,7 @@ function refreshVideoModelField(){
 }
 async function switchVideoModel(model){
  const s=state.settings.video,session=epoch,original=s.model;
- if(submitting||state.pendingByKind?.video||state.pendingRequest?.kind==='video'){
-  toast('Wait for the pending submission to be confirmed before changing models.');return;
- }
+ try{await resolvePendingSubmission('video');}catch(e){toast(e.message);return;}
  let profile=catalog?.videoModels?.find(p=>p.model===model);
  if(!profile)return;
  if(profile.missing.length&&connected){
@@ -262,7 +260,7 @@ async function loadStartingMedia(field){
  const video=file.type.startsWith('video/')||(!file.type&&window.Native?.pickedVideo?.());
  if(page!=='video'||!video)return loadImage(file);
  if(!connected||queueProtocol<11){toast('Connect to Windows beta 20 to import a video.');field.value='';return;}
- if(state.pendingByKind?.video||state.pendingRequest?.kind==='video'){toast('Resolve the pending video submission first.');field.value='';return;}
+ try{await resolvePendingSubmission('video');}catch(e){toast(e.message);field.value='';return;}
  const session=epoch;
  const play=$('#play'),batch=$('#batchButton');
  field.disabled=play.disabled=batch.disabled=true;
@@ -386,6 +384,30 @@ async function openMask(){
  $('#applyMask').onclick=()=>{if(maskSession.dirty){inp.mask=canvas.toDataURL('image/png');}else delete inp.mask;state.settings.image.mask=null;persist();closeModal();renderGenerator();};
 }
 let submitting=false;
+function pendingSubmission(kind){return state.pendingByKind?.[kind]||(state.pendingRequest?.kind===kind?state.pendingRequest:null);}
+function acceptSubmission(payload,accepted){
+ const kind=payload.kind,s=state.settings[kind];
+ if(state.pendingByKind?.[kind]?.requestId===payload.requestId)delete state.pendingByKind[kind];
+ if(state.pendingRequest?.requestId===payload.requestId)delete state.pendingRequest;
+ s.batch=1;
+ if(payload.settings.increment&&String(s.seed)===String(payload.settings.seed))s.seed=((BigInt(s.seed)+BigInt(payload.count))%(2n**64n)).toString();
+ persist(kind);Native.watchBatch?.(accepted.batch);
+}
+async function resolvePendingSubmission(kind){
+ if(submitting)throw Error('The current submission is still being sent. Please try again when it finishes.');
+ const payload=pendingSubmission(kind);if(!payload)return;
+ const session=epoch;submitting=true;
+ try{
+  // A lost HTTP reply is not a rejected batch. Reconcile first, including jobs
+  // which have finished; retry with the exact original idempotency key if absent.
+  const receipt=await api('batch/'+payload.requestId);
+  if(session!==epoch)throw Error('PC connection changed; the saved submission is kept.');
+  const accepted=receipt.jobs?.length?{batch:payload.requestId}:await api('generate',payload);
+  if(session!==epoch)throw Error('PC connection changed; the saved submission is kept.');
+  acceptSubmission(payload,accepted);
+ }catch(e){throw Error('Could not confirm the previous batch: '+e.message+'. Its saved request is kept for retry.');}
+ finally{submitting=false;}
+}
 async function stopBatch(batch){try{await api('stop',{batch});toast('Stopping this batch');await poll();}catch(e){toast(e.message);}}
 async function generate(){
  if(!connected)return toast(window.Desktop?'Turn the server on in the left column first.':'Connect to your PC first.');if(submitting)return;
@@ -411,9 +433,8 @@ async function generate(){
    if(inp.data===state.inputs[kind].data&&inp.mask===state.inputs[kind].mask){s.upload=snapshot.upload;s.mask=snapshot.mask;}
    payload={kind,count,settings:snapshot,requestId:crypto.randomUUID()};state.pendingByKind[kind]=payload;persist(kind);
   }
-  const accepted=await api('generate',payload);delete state.pendingByKind[kind];s.batch=1;
-  if(payload.settings.increment&&String(s.seed)===String(payload.settings.seed))s.seed=((BigInt(s.seed)+BigInt(payload.count))%(2n**64n)).toString();
-  persist(kind);Native.watchBatch(accepted.batch);toast('Added '+payload.count+' to the PC queue');if(page===kind){const seed=$('[data-setting="seed"]');if(seed)seed.value=s.seed;}await poll();
+  const accepted=await api('generate',payload);acceptSubmission(payload,accepted);
+  toast('Added '+payload.count+' to the PC queue');if(page===kind){const seed=$('[data-setting="seed"]');if(seed)seed.value=s.seed;}await poll();
  }catch(e){if(/^HTTP (400|401|403|413)/.test(e.message)){delete state.pendingByKind[kind];persist();}if($('#genError'))$('#genError').textContent=e.message;toast(e.message);}
  finally{
   submitting=false;

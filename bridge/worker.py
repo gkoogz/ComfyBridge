@@ -49,6 +49,7 @@ DB = sqlite3.connect(DATA / 'library.sqlite')
 DB.row_factory = sqlite3.Row
 DB.executescript('''
 PRAGMA journal_mode=WAL;
+PRAGMA synchronous=FULL;
 CREATE TABLE IF NOT EXISTS jobs(id TEXT PRIMARY KEY, batch TEXT, kind TEXT, settings TEXT,
  status TEXT, progress REAL DEFAULT 0, current_node TEXT DEFAULT '', error TEXT DEFAULT '',
  created REAL, ordinal INTEGER, total INTEGER);
@@ -443,7 +444,17 @@ async def run_jobs():
                 if not any(x[1]==j['id'] for x in q['queue_running']+q['queue_pending']):
                     if not await chat_window(j['id']):
                         continue
-            await ensure_comfy()
+            try:
+                await ensure_comfy()
+            except (ValueError,OSError,aiohttp.ClientError,asyncio.TimeoutError):
+                # A renderer that is still restarting must not consume a saved
+                # job as a failure. Keep its recipe and position and retry.
+                status=DB.execute('SELECT status FROM jobs WHERE id=?',(j['id'],)).fetchone()[0]
+                if status=='cancelling':update(j['id'],status='cancelled')
+                elif status in ('pending','running','submitting'):
+                    update(j['id'],current_node='Waiting for ComfyUI to restart · queue saved')
+                    await asyncio.sleep(5)
+                continue
             if j['status'] == 'pending':
                 if j['batch'] in STOPPING:
                     update(j['id'], status='cancelled'); continue
@@ -536,13 +547,23 @@ async def run_jobs():
                     # Recover only a unique output of this job; join verifies its frame count and decodes it.
                     outputs = []
                     saved_checkpoint=can_pause and gpu.checkpoint(DATA,j['id'])
-                    if (settings.get('extension') or saved_checkpoint) and not stopping:
+                    if not stopping:
                         folder = ROOT/'output/ComfyBridge'
-                        outputs = [p for p in folder.glob(j['id']+'_*.mp4')
-                                   if re.fullmatch(re.escape(j['id'])+r'_\d+_\.mp4',p.name)]
+                        suffix='mp4' if j['kind']=='video' else 'png'
+                        outputs = [p for p in folder.glob(j['id']+'_*.'+suffix)
+                                   if re.fullmatch(re.escape(j['id'])+r'_\d+_\.'+suffix,p.name)]
                     if len(outputs)==1:
-                        if saved_checkpoint and not settings.get('extension'):
-                            await asyncio.to_thread(verify_checkpoint_output,outputs[0],settings)
+                        try:
+                            if j['kind']=='video' and not settings.get('extension'):
+                                await asyncio.to_thread(verify_checkpoint_output,outputs[0],settings)
+                            elif j['kind']=='image':
+                                with Image.open(outputs[0]) as img:img.verify()
+                        except (ValueError,OSError):
+                            # Keep the interrupted file for inspection, outside the
+                            # final-output pattern, and restart from the saved inputs.
+                            outputs[0].rename(outputs[0].with_name(outputs[0].name+'.interrupted-'+uuid.uuid4().hex))
+                            outputs=[]
+                    if len(outputs)==1:
                         item=dict(type='output',subfolder='ComfyBridge',filename=outputs[0].name)
                         await collect(j,{'outputs':{'16':{'images':[item]}}})
                         update(j['id'],status='complete',progress=1,current_node='Saved to library')
@@ -550,9 +571,14 @@ async def run_jobs():
                         await resume_checkpoint(j,graph)
                         missing=0
                         continue
+                    elif not outputs and not stopping:
+                        # Queue admission is durable. A reboot loses ComfyUI's
+                        # volatile queue/history, never the original job/recipe.
+                        update(j['id'],status='pending',progress=0,error='',
+                               current_node='Recovered after interruption · restarting saved job')
                     else:
                         update(j['id'], status='cancelled' if stopping else 'error',
-                               error='Job is absent from ComfyUI queue/history. It was not resubmitted to avoid duplicates.')
+                               error='' if stopping else 'Multiple saved outputs need review before this job can restart.')
                     break
                 await asyncio.sleep(2)
         except InterruptedError:
@@ -769,7 +795,7 @@ async def api(request):
                     j['etaSeconds']=None
                 else:
                     j['progress'],j['current_node']=TRACKER.sample()
-        return web.json_response(dict(protocol=18,build='0.1.0-beta.55',jobs=jobs, active=ACTIVE, preview=bool(PREVIEW), previewRevision=PREVIEW_REV,ownedComfy=bool(OWNED),queueEtaSeconds=total_eta))
+        return web.json_response(dict(protocol=18,build='0.1.0-beta.56',jobs=jobs, active=ACTIVE, preview=bool(PREVIEW), previewRevision=PREVIEW_REV,ownedComfy=bool(OWNED),queueEtaSeconds=total_eta))
     if path.startswith('preview/'):
         job=str(uuid.UUID(path[8:]))
         after=int(request.query.get('after','-1'))
