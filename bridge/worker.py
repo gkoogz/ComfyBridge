@@ -19,6 +19,7 @@ from pathlib import Path
 import extension
 import recipes
 import gpu_handoff as gpu
+from model_gallery import Gallery
 from model_library import Library as ModelLibrary
 from handoff import adopt
 
@@ -83,6 +84,7 @@ CATALOG_AT = 0
 CATALOG_EROS_ON_DISK = None
 CATALOG_LOCK = asyncio.Lock()
 MODELS = ModelLibrary(ROOT, DATA)
+MODEL_GALLERY = Gallery(MODELS)
 STOPPING = set()
 CANCEL_STARTED = {}
 HANDOFF_STAGE = {}
@@ -754,6 +756,20 @@ async def api(request):
         return web.json_response(dict(await catalogue(),listings=MODELS.snapshot()['items']))
     if path == 'model-library':
         return web.json_response(MODELS.snapshot())
+    if path.startswith('model-gallery/'):
+        identity=path.split('/',1)[1]
+        return web.json_response(await asyncio.to_thread(MODEL_GALLERY.page,identity,request.query.get('cursor','')))
+    if path.startswith('model-gallery-detail/'):
+        try:
+            _,identity,image=path.split('/')
+            return web.json_response(await asyncio.to_thread(MODEL_GALLERY.details,identity,image))
+        except (ValueError,FileNotFoundError):raise web.HTTPNotFound()
+    if path.startswith('model-preview/gallery/'):
+        try:
+            _,_,identity,image,size=path.split('/')
+            file=await asyncio.to_thread(MODEL_GALLERY.preview,identity,image,size)
+            return web.FileResponse(file,headers={'Cache-Control':'private, max-age=3600'})
+        except (ValueError,FileNotFoundError):raise web.HTTPNotFound()
     if path.startswith('model-preview/'):
         try:
             _,identity,index=path.split('/')
@@ -807,7 +823,7 @@ async def api(request):
                     j['etaSeconds']=None
                 else:
                     j['progress'],j['current_node']=TRACKER.sample()
-        return web.json_response(dict(protocol=18,build='0.1.0-beta.59',jobs=jobs, active=ACTIVE, preview=bool(PREVIEW), previewRevision=PREVIEW_REV,ownedComfy=bool(OWNED),queueEtaSeconds=total_eta))
+        return web.json_response(dict(protocol=18,build='0.1.0-beta.60',jobs=jobs, active=ACTIVE, preview=bool(PREVIEW), previewRevision=PREVIEW_REV,ownedComfy=bool(OWNED),queueEtaSeconds=total_eta))
     if path.startswith('preview/'):
         job=str(uuid.UUID(path[8:]))
         after=int(request.query.get('after','-1'))
@@ -1001,6 +1017,7 @@ async def cleanup(app):
     for task in app['tasks']:
         task.cancel()
     await SESSION.close()
+    MODEL_GALLERY.resources.shutdown(wait=False,cancel_futures=True)
 
 
 if __name__ == '__main__':

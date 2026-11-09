@@ -154,7 +154,7 @@ public class MainActivity extends Activity {
  String exportOperation="export";
  public class NativeApi {
   @JavascriptInterface public void openListing(String value){
-   Uri uri=Uri.parse(value);if(!"https".equals(uri.getScheme())||!Arrays.asList("civitai.com","huggingface.co").contains(uri.getHost())||uri.getUserInfo()!=null||uri.getPort()!=-1)return;
+   Uri uri=Uri.parse(value);if(!"https".equals(uri.getScheme())||!Arrays.asList("civitai.com","civitai.red","huggingface.co").contains(uri.getHost())||uri.getUserInfo()!=null||uri.getPort()!=-1)return;
    runOnUiThread(()->{try{startActivity(new Intent(Intent.ACTION_VIEW,uri));}catch(Exception ignored){}});
   }
   @JavascriptInterface public void copyText(String text){if(text==null||text.length()>1000000)return;runOnUiThread(()->{android.content.ClipboardManager clipboard=(android.content.ClipboardManager)getSystemService(CLIPBOARD_SERVICE);clipboard.setPrimaryClip(android.content.ClipData.newPlainText("ComfyBridge response",text));});}

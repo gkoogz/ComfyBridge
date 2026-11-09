@@ -28,7 +28,7 @@
 | Chat and Quick edit | `bridge/chat.py`, `quick_edit.py`; `android/assets/chat.js`, `chat-format.js`, `quick-edit.js` |
 | GPU handoff, pause checkpoints and cancellation | `bridge/gpu_handoff.py`, `comfybridge_checkpoint.py`, `comfybridge_eros_vsa.py`, `cancel_recovery.py`, `handoff.py` |
 | Inputs, reproducible recipes and ancestry | `bridge/recipes.py`, `provenance.py`, `extension.py` |
-| Model listing catalogue | `bridge/model_library.py`; `android/assets/model-browser.js` and CSS |
+| Model listing catalogue and sample galleries | `bridge/model_library.py`, `model_gallery.py`; `android/assets/model-browser.js` and CSS |
 | Build/install | `Build.ps1`, `bridge/Install.ps1`, `bridge/WebView2.ps1` |
 | Verification | `bridge/test_*.py`, `tests/`; historical evidence in `docs/BETA-TESTING.md` |
 
@@ -103,6 +103,7 @@ node tests/android-assets.cjs
 # Set PLAYWRIGHT_MODULE to an available Playwright installation if needed:
 node tests/desktop.cjs
 node tests/model-browser.cjs
+node tests/model-gallery.cjs
 ```
 
 - Use the relevant existing tests; add meaningful regressions for bugs. A docs
