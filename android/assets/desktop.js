@@ -13,6 +13,7 @@ if(window.Desktop){
   localMedia:(id,action,value)=>forward(id,desktopCall('local',{action,value:JSON.parse(value)})),
   notificationRoute:()=>'',watchBatch:()=>{},haptic:()=>{},
   copyText:text=>desktopCall('copyText',{text}),
+  openListing:url=>desktopCall('openListing',{url}),
   enableAlerts:()=>toast('Keep the desktop studio open to follow generation progress.')
  };
  document.documentElement.classList.add('desktop');

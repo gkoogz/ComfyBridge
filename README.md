@@ -1,10 +1,14 @@
 # ComfyBridge
 
-**[Open the beta 57 release page](https://github.com/gkoogz/ComfyBridge/releases/tag/v0.1.0-beta.57)** · [Download the Android APK](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.57/ComfyBridge-0.1.0-beta.57.apk) · [Download Windows](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.57/ComfyBridge-Windows-0.1.0-beta.57.zip) · [All releases](https://github.com/gkoogz/ComfyBridge/releases)
+**[Open the beta 58 release page](https://github.com/gkoogz/ComfyBridge/releases/tag/v0.1.0-beta.58)** · [Download the Android APK](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.58/ComfyBridge-0.1.0-beta.58.apk) · [Download Windows](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.58/ComfyBridge-Windows-0.1.0-beta.58.zip) · [All releases](https://github.com/gkoogz/ComfyBridge/releases)
 
 <img src="artwork/comfybridge.png" width="128" alt="ComfyBridge white cube and play icon on black">
 
 An Android remote for an existing Windows ComfyUI installation. The phone edits generation settings, uploads images and masks, and views results; the PC does the GPU work. A small Windows tray application wakes its Python worker on demand.
+
+**Checkpoint Browser and LoRA listings** show installed files as rich cards: proper source title, version, author, file size, base model, published activation keywords, expandable descriptions and up to three cached non-explicit sample images. Select a checkpoint with its checkbox. Add LoRAs from the browser; active entries are marked and cannot be added twice. See Listing beside an active LoRA opens its own card. Video models also expose See Listing.
+
+The Windows worker indexes local file SHA-256 hashes and queries Civitai's public version API. A verified tensor hash can identify a metadata-only variant; selected known Hugging Face files have exact publisher SHA identities. Unmatched files and local merges remain usable and clearly labelled. Model metadata and previews stay under `%LOCALAPPDATA%/ComfyBridge/model-library`, outside the public repository and releases. Inventory is checked when the worker starts and every 30 minutes while it remains active; unchanged files are not rehashed and source metadata is normally refreshed weekly. Temporary lookup failures retain previously verified cached listings. New models hosted outside the supported source lookups may remain unconfirmed.
 
 Beta 57 makes the Windows X button and Alt+F4 hide to the tray. To exit, right-click the tray icon and choose **Close ComfyBridge**.
 
@@ -20,7 +24,7 @@ Run **Setup-Chat.ps1** in the Windows package once to install the pinned llama.c
 
 Chat starts its model process only for a message and releases it after the reply. Sending a message during a supported H3/Eros Euler video requests a checkpoint at the next sampling boundary. The bridge holds the remaining queue, saves the unfinished packed audio/video latent, cooperatively unloads Comfy models and execution caches, verifies VRAM release, and lets chat use the GPU. After the chat process exits, video reloads its unchanged workflow and continues at the saved step. Images, unsupported samplers and videos started before this update finish before handing off. A large video step can take minutes: pausing is not instant and does not recover an already-stuck step. New generations can join the held queue without interrupting chat. A loopback-only server with an ephemeral access key serves inference; phone requests use the existing encrypted, authenticated bridge. Prompts and replies are not sent to a cloud model. The latest conversation turns are used within the model's context budget; older turns remain visible in the active chat.
 
-**0.1.0-beta.57 is a personal-workflow beta**, adapted specifically to `Image gen.json` and `Video gen.json` in `E:\ComfyUI-Zluda\user\default\workflows`. It is not a general ComfyUI workflow importer. Models, LoRAs, workflow files, prompts, generated media, pairing credentials, and signing keys are not included in this repository or release. Beta 37 requires the updated Windows companion for local chat. Existing generation queues survive the tray update.
+**0.1.0-beta.58 is a personal-workflow beta**, adapted specifically to `Image gen.json` and `Video gen.json` in `E:\ComfyUI-Zluda\user\default\workflows`. It is not a general ComfyUI workflow importer. Models, LoRAs, workflow files, prompts, generated media, pairing credentials, and signing keys are not included in this repository or release. Beta 37 requires the updated Windows companion for local chat. Existing generation queues survive the tray update.
 
 The phone shows **PC connected** as soon as the bridge answers. Loading models and unavailable telemetry have their own messages. If the server or VPN drops, leave the phone app open: it retries automatically using the saved pairing. **Disconnect** or **Cancel reconnect** stops those retries.
 

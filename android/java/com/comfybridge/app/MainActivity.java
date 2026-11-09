@@ -87,7 +87,7 @@ public class MainActivity extends Activity {
       if(parts[2].equals("video"))return new WebResourceResponse("video/mp4",null,200,"OK",Collections.singletonMap("Content-Length",Long.toString(f.length())),new FileInputStream(f));
       return new WebResourceResponse(thumb?"image/jpeg":"image/png",null,new FileInputStream(f));
      }
-     if(path.startsWith("/source/")||path.startsWith("/thumb/")||path.equals("/preview")||path.startsWith("/preview/")){
+     if(path.startsWith("/source/")||path.startsWith("/model-preview/")||path.startsWith("/thumb/")||path.equals("/preview")||path.startsWith("/preview/")){
       String query=uri.getEncodedQuery();
       HttpURLConnection c=connection((path.startsWith("/source/")?"api/studio/source-file/"+path.substring(8):"api"+path)+(query==null?"":"?"+query),"GET");String range=r.getRequestHeaders().get("Range");if(range!=null)c.setRequestProperty("Range",range);
       int code=c.getResponseCode();Map<String,String> headers=new HashMap<>();
@@ -98,7 +98,7 @@ public class MainActivity extends Activity {
       return new WebResourceResponse(mime,null,code,c.getResponseMessage()==null?"Response":c.getResponseMessage(),headers,new FilterInputStream(input){@Override public void close()throws IOException{super.close();c.disconnect();}});
      }
      if(path.equals("/"))path="/index.html";
-     if(!Arrays.asList("/index.html","/style.css","/app.js","/profile.js","/gallery.js","/gallery.css","/studio.css","/studio.js","/notepad.js","/live-image.js","/generator-controls.js","/generator.css","/desktop.js","/desktop.css","/provenance.js","/chat.js","/quick-edit.js","/chat-format.js","/chat.css","/provenance.css").contains(path))return response(404,"Not Found","text/plain",new byte[0]);
+     if(!Arrays.asList("/index.html","/style.css","/app.js","/profile.js","/gallery.js","/gallery.css","/studio.css","/studio.js","/notepad.js","/live-image.js","/generator-controls.js","/generator.css","/desktop.js","/desktop.css","/provenance.js","/chat.js","/quick-edit.js","/chat-format.js","/chat.css","/provenance.css","/model-browser.js","/model-browser.css").contains(path))return response(404,"Not Found","text/plain",new byte[0]);
      String mime=path.endsWith("css")?"text/css":path.endsWith("js")?"application/javascript":"text/html";
      return new WebResourceResponse(mime,"UTF-8",getAssets().open(path.substring(1)));
     }catch(Exception e){return response(503,"Unavailable","text/plain",new byte[0]);}
@@ -153,6 +153,10 @@ public class MainActivity extends Activity {
  }
  String exportOperation="export";
  public class NativeApi {
+  @JavascriptInterface public void openListing(String value){
+   Uri uri=Uri.parse(value);if(!"https".equals(uri.getScheme())||!Arrays.asList("civitai.com","huggingface.co").contains(uri.getHost())||uri.getUserInfo()!=null||uri.getPort()!=-1)return;
+   runOnUiThread(()->{try{startActivity(new Intent(Intent.ACTION_VIEW,uri));}catch(Exception ignored){}});
+  }
   @JavascriptInterface public void copyText(String text){if(text==null||text.length()>1000000)return;runOnUiThread(()->{android.content.ClipboardManager clipboard=(android.content.ClipboardManager)getSystemService(CLIPBOARD_SERVICE);clipboard.setPrimaryClip(android.content.ClipData.newPlainText("ComfyBridge response",text));});}
   @JavascriptInterface public void prefetchEnabled(boolean enabled){
    if(enabled&&foreground)prefetchAllowed=true;else if(prefetchAllowed||prefetchConnection!=null)stopPrefetch();

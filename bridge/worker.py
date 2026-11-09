@@ -19,6 +19,7 @@ from pathlib import Path
 import extension
 import recipes
 import gpu_handoff as gpu
+from model_library import Library as ModelLibrary
 from handoff import adopt
 
 import aiohttp
@@ -78,8 +79,10 @@ if not CLIENT_FILE.exists():
     CLIENT_FILE.write_text('comfybridge-' + secrets.token_hex(16))
 CLIENT = CLIENT_FILE.read_text().strip()
 CATALOG = None
+CATALOG_AT = 0
 CATALOG_EROS_ON_DISK = None
 CATALOG_LOCK = asyncio.Lock()
+MODELS = ModelLibrary(ROOT, DATA)
 STOPPING = set()
 CANCEL_STARTED = {}
 HANDOFF_STAGE = {}
@@ -168,13 +171,14 @@ async def catalogue():
     installed=(ROOT/'models/diffusion_models'/EROS_BETA7).is_file()
     if CATALOG_EROS_ON_DISK is not None and installed!=CATALOG_EROS_ON_DISK:
         CATALOG=None
+    if MODELS.last>CATALOG_AT:CATALOG=None
     if CATALOG is not None:return CATALOG
     async with CATALOG_LOCK:
         return await load_catalogue()
 
 
 async def load_catalogue():
-    global CATALOG, CATALOG_EROS_ON_DISK
+    global CATALOG, CATALOG_EROS_ON_DISK, CATALOG_AT
     if CATALOG is not None:
         return CATALOG
     await ensure_comfy()
@@ -191,6 +195,7 @@ async def load_catalogue():
     if H3_AUDIO_VAE not in choices('VAELoader','vae_name'):
         CATALOG['audioMissing'].append(H3_AUDIO_VAE)
     CATALOG_EROS_ON_DISK=eros_on_disk
+    CATALOG_AT=time.time()
     return CATALOG
 
 
@@ -746,7 +751,14 @@ async def api(request):
         if not p:raise web.HTTPNotFound()
         return web.json_response(json.loads(p[0]['state']))
     if path == 'catalog':
-        return web.json_response(await catalogue())
+        return web.json_response(dict(await catalogue(),listings=MODELS.snapshot()['items']))
+    if path == 'model-library':
+        return web.json_response(MODELS.snapshot())
+    if path.startswith('model-preview/'):
+        try:
+            _,identity,index=path.split('/')
+            return web.FileResponse(MODELS.preview(identity,index),headers={'Cache-Control':'private, max-age=86400'})
+        except (ValueError,FileNotFoundError):raise web.HTTPNotFound()
     if path.startswith('resume-checkpoint/') and request.method=='POST':
         id=str(uuid.UUID(path.split('/',1)[1]))
         job=rows('SELECT * FROM jobs WHERE id=?',(id,))
@@ -795,7 +807,7 @@ async def api(request):
                     j['etaSeconds']=None
                 else:
                     j['progress'],j['current_node']=TRACKER.sample()
-        return web.json_response(dict(protocol=18,build='0.1.0-beta.57',jobs=jobs, active=ACTIVE, preview=bool(PREVIEW), previewRevision=PREVIEW_REV,ownedComfy=bool(OWNED),queueEtaSeconds=total_eta))
+        return web.json_response(dict(protocol=18,build='0.1.0-beta.58',jobs=jobs, active=ACTIVE, preview=bool(PREVIEW), previewRevision=PREVIEW_REV,ownedComfy=bool(OWNED),queueEtaSeconds=total_eta))
     if path.startswith('preview/'):
         job=str(uuid.UUID(path[8:]))
         after=int(request.query.get('after','-1'))
@@ -972,7 +984,14 @@ async def api(request):
 async def start(app):
     global SESSION
     SESSION = aiohttp.ClientSession()
-    app['tasks'] = [asyncio.create_task(f()) for f in (run_jobs, websocket, idle_watch)]
+    app['tasks'] = [asyncio.create_task(f()) for f in (run_jobs, websocket, idle_watch, model_watch)]
+
+
+async def model_watch():
+    while True:
+        try:await asyncio.to_thread(MODELS.scan)
+        except Exception:logging.exception('Model catalogue refresh will retry')
+        await asyncio.sleep(1800)
 
 
 async def cleanup(app):

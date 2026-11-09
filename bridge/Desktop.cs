@@ -107,6 +107,7 @@ partial class Bridge {
             case "address":SetRemote();result=DesktopStatus();break;
             case "copy":if(addressBox.Items.Contains(Convert.ToString(args["address"])))Clipboard.SetText(Convert.ToString(args["address"]));result=true;break;
             case "copyText":{string text=Convert.ToString(args["text"]);if(text.Length>1000000)throw new IOException("Text is too long to copy.");if(text.Length>0)Clipboard.SetText(text);result=true;break;}
+            case "openListing":{var uri=new Uri(Convert.ToString(args["url"]));if(uri.Scheme!="https"||!new[]{"civitai.com","huggingface.co"}.Contains(uri.Host)||!String.IsNullOrEmpty(uri.UserInfo)||!uri.IsDefaultPort)throw new IOException("Invalid listing URL.");Process.Start(uri.AbsoluteUri);result=true;break;}
             case "collapse":CollapseDesktop();return;
             case "hide":HidePanel();return;
             case "quit":HidePanel();return; // Legacy desktop assets: X also hides.
@@ -212,7 +213,7 @@ partial class Bridge {
                 if(partial)headers+="Content-Range: bytes "+start+"-"+end+"/"+stream.Length+"\r\n";
                 e.Response=env.CreateWebResourceResponse(new DesktopSlice(stream,end-start+1),partial?206:200,partial?"Partial Content":"OK",headers);return;
             }
-            if(path.StartsWith("/preview")||path.StartsWith("/thumb/")||path=="/api/upload-video"){
+            if(path.StartsWith("/preview")||path.StartsWith("/model-preview/")||path.StartsWith("/thumb/")||path=="/api/upload-video"){
                 string route=path.StartsWith("/api/")?path.Substring(5):path.Substring(1);
                 var req=DesktopRequest(route+uri.Query,e.Request.Method);
                 if(e.Request.Method=="POST"){
