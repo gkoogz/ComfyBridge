@@ -106,14 +106,17 @@ partial class Bridge {
         if(monitor==null){
             monitor=new Form{Text="ComfyBridge",Icon=tray.Icon,ClientSize=new Size(438,428),BackColor=Ink,ForeColor=Color.White,ShowInTaskbar=false,TopMost=true,StartPosition=FormStartPosition.Manual,FormBorderStyle=FormBorderStyle.None,AutoScaleMode=AutoScaleMode.Dpi};
             monitor.SizeChanged+=(s,e)=>RoundPanel();RoundPanel();
-            monitor.FormClosing+=(s,e)=>{Server(false,false);tray.Visible=false;Application.ExitThread();};
+            monitor.FormClosing+=(s,e)=>{
+                if(e.CloseReason==CloseReason.UserClosing){e.Cancel=true;HidePanel();return;}
+                Server(false,false);tray.Visible=false;Application.ExitThread();
+            };
             var grid=new TableLayoutPanel{Padding=new Padding(14,8,14,8),Dock=DockStyle.Fill,ColumnCount=1,AutoScroll=true};grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));monitor.Controls.Add(grid);
             compactPanel=grid;
             var head=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=4,RowCount=1,Margin=Padding.Empty,Padding=Padding.Empty};head.RowStyles.Add(new RowStyle(SizeType.Percent,100));head.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,43));head.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));head.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,43));head.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,43));
             head.Controls.Add(WindowButton("↖","Expand desktop studio",(s,e)=>ExpandDesktop()),0,0);
             var title=L("ComfyBridge",15,Color.White,true);title.Margin=Padding.Empty;head.Controls.Add(title,1,0);
             head.Controls.Add(WindowButton("–","Hide to tray",(s,e)=>HidePanel()),2,0);
-            head.Controls.Add(WindowButton("×","Quit ComfyBridge",(s,e)=>monitor.Close()),3,0);Add(grid,head,44);
+            head.Controls.Add(WindowButton("×","Hide to tray",(s,e)=>HidePanel()),3,0);Add(grid,head,44);
             badge=L("",10,Mint,true);badge.Dock=DockStyle.None;badge.Size=new Size(88,30);phone=L("",10,Red);phone.Dock=DockStyle.None;phone.Size=new Size(155,30);
             power=B("",(s,e)=>{try{Server(!online,true);}catch(Exception ex){MessageBox.Show(monitor,ex.Message);}});power.Image=PowerIcon();power.TextImageRelation=TextImageRelation.ImageBeforeText;Add(grid,Row(badge,phone,power),38);
             Add(grid,L("1   PC address",10,Mint,true),23);

@@ -109,7 +109,7 @@ partial class Bridge {
             case "copyText":{string text=Convert.ToString(args["text"]);if(text.Length>1000000)throw new IOException("Text is too long to copy.");if(text.Length>0)Clipboard.SetText(text);result=true;break;}
             case "collapse":CollapseDesktop();return;
             case "hide":HidePanel();return;
-            case "quit":monitor.Close();return;
+            case "quit":HidePanel();return; // Legacy desktop assets: X also hides.
             case "drag":ReleaseCapture();SendMessage(monitor.Handle,0xA1,(IntPtr)2,IntPtr.Zero);return;
             default:throw new InvalidOperationException("Unknown desktop command.");
             }

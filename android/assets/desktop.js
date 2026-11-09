@@ -22,7 +22,7 @@ async function initDesktop(){
  const powerIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2v10M6.4 5.5a9 9 0 1 0 11.2 0"/></svg>';
  page=localStorage.getItem('desktopPage')||'image';if(!['image','video','library','notepad'].includes(page))page='image';
  const title=document.createElement('div');title.id='desktopTitle';
- title.innerHTML='<strong>ComfyBridge <small>DESKTOP STUDIO</small></strong><div><button data-window="collapse" title="Collapse to tray panel" aria-label="Collapse to tray panel">↘</button><button data-window="hide" title="Hide to tray" aria-label="Hide to tray">–</button><button data-window="quit" title="Quit ComfyBridge" aria-label="Quit ComfyBridge">×</button></div>';
+ title.innerHTML='<strong>ComfyBridge <small>DESKTOP STUDIO</small></strong><div><button data-window="collapse" title="Collapse to tray panel" aria-label="Collapse to tray panel">↘</button><button data-window="hide" title="Hide to tray" aria-label="Hide to tray">–</button><button data-window="hide" class="desktopClose" title="Hide to tray" aria-label="Hide to tray">×</button></div>';
  document.body.prepend(title);
  title.onpointerdown=e=>{if(e.button===0&&!e.target.closest('button'))desktopCall('drag');};
  title.querySelectorAll('[data-window]').forEach(b=>b.onclick=async()=>{if(profileDirty)await flushProfile();desktopCall(b.dataset.window);});

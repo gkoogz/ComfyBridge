@@ -77,7 +77,17 @@ partial class Bridge {
                 await Until(()=>Task.FromResult(!System.Diagnostics.Process.GetProcessesByName("msedgewebview2").Any(p=>p.Id==processId)),"browser process release");
                 app.ExpandDesktop();
                 await Until(async()=>app.desktop!=null&&app.desktop.CoreWebView2!=null&&await app.desktop.CoreWebView2.ExecuteScriptAsync("!!document.querySelector('#desktopPower')")=="true","reopen");
-                app.HidePanel();if(app.desktop!=null||app.expanded||app.monitor.Visible)throw new Exception("Hide did not release studio");
+                await app.desktop.CoreWebView2.ExecuteScriptAsync("setTimeout(()=>document.querySelector('.desktopClose').click(),100)");
+                await Until(()=>Task.FromResult(app.desktop==null&&!app.expanded&&!app.monitor.Visible),"X hides studio");
+                app.ShowMonitor();app.Server(true,false);
+                app.monitor.Close();
+                if(app.monitor.IsDisposed||app.monitor.Visible||!app.tray.Visible||!online)throw new Exception("Window close must hide and keep server running");
+                app.ShowMonitor();
+                var close=app.compactPanel.Controls.Cast<Control>().SelectMany(c=>c.Controls.Cast<Control>()).OfType<Button>().First(b=>b.Text=="×");
+                close.PerformClick();
+                if(app.monitor.Visible||!app.tray.Visible||!online)throw new Exception("Compact X stopped bridge");
+                if(!app.tray.ContextMenuStrip.Items.Cast<ToolStripItem>().Any(i=>i.Text.StartsWith("Close ComfyBridge")))throw new Exception("Tray Close missing");
+                app.Server(false,false);
                 Console.WriteLine("Native WebView chat model selectors and persistence, power on/off, authenticated ping, identity, local range playback, seeking, collapse, browser process release, reopen and hide passed.");
                 Environment.ExitCode=0;
                 if(inspect){

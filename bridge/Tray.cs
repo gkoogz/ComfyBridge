@@ -21,8 +21,8 @@ using Microsoft.Win32;
 [assembly: System.Reflection.AssemblyTitle("Comfy Bridge")]
 [assembly: System.Reflection.AssemblyDescription("Phone to ComfyUI bridge")]
 [assembly: System.Reflection.AssemblyVersion("0.1.0.0")]
-[assembly: System.Reflection.AssemblyFileVersion("0.1.0.56")]
-[assembly: System.Reflection.AssemblyInformationalVersion("0.1.0-beta.56")]
+[assembly: System.Reflection.AssemblyFileVersion("0.1.0.57")]
+[assembly: System.Reflection.AssemblyInformationalVersion("0.1.0-beta.57")]
 
 partial class Bridge : ApplicationContext {
     static readonly string Home = AppDomain.CurrentDomain.BaseDirectory;
@@ -97,7 +97,7 @@ partial class Bridge : ApplicationContext {
         var menu=new ContextMenuStrip();
         menu.Items.Add("Open ComfyBridge",null,(s,e)=>ShowMonitor());
         menu.Items.Add("Open logs",null,(s,e)=>Process.Start("explorer.exe",Data));
-        menu.Items.Add("Quit bridge (queued jobs finish)",null,(s,e)=>{Server(false,false);tray.Visible=false;Application.ExitThread();});
+        menu.Items.Add("Close ComfyBridge (queued jobs finish)",null,(s,e)=>{Server(false,false);tray.Visible=false;Application.ExitThread();});
         tray.ContextMenuStrip=menu;tray.MouseClick+=(s,e)=>{if(e.Button==MouseButtons.Left)ShowMonitor();};
         try{Server(!File.Exists(offFile),false);}catch(Exception ex){MessageBox.Show("Could not start the bridge: "+ex.Message);}
         timer=new System.Windows.Forms.Timer {Interval=5000};

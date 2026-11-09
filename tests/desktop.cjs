@@ -72,6 +72,8 @@ const assert=require('node:assert/strict'),path=require('node:path');
   assert.equal(await p.locator('#saveMedia').textContent(),'Save a copy');
   await p.locator('#viewerBack').click();assert(await p.locator('#viewer').isHidden());
   await p.locator('[data-nav=notepad]').click();assert.equal(await p.locator('#queueList').count(),1);
+  await p.locator('.desktopClose').click();assert(await p.evaluate(()=>calls.some(x=>x.op==='hide')));
+  assert(!(await p.evaluate(()=>calls.some(x=>x.op==='quit'))));
   await p.locator('[data-window=collapse]').click();assert(await p.evaluate(()=>calls.some(x=>x.op==='collapse')));
   for(const width of [1440,1100,1024]){
    await p.setViewportSize({width,height:800});
