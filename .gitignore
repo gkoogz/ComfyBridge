@@ -12,3 +12,7 @@ fingerprint.txt
 password.txt
 *.log
 .env*
+
+# Consolidated local installation, private state, model weights and history.
+/local/
+/releases/

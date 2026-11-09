@@ -6,6 +6,8 @@
 
 An Android remote for an existing Windows ComfyUI installation. The phone edits generation settings, uploads images and masks, and views results; the PC does the GPU work. A small Windows tray application wakes its Python worker on demand.
 
+**Local project:** this PC's canonical checkout is `E:\ComfyBridge`. Source, builds, installed app data, local LLMs and archived work are consolidated there. See [the local folder map](docs/local-layout.md) for private-data exclusions, compatibility links and external ComfyUI dependencies. Run `Start-ComfyBridge.ps1` to open the installed PC panel.
+
 **Checkpoint Browser and LoRA listings** show installed files as rich cards: proper source title, version, author, file size, base model, published activation keywords, expandable descriptions and up to three cached non-explicit sample images. Select a checkpoint with its checkbox. Add LoRAs from the browser; active entries are marked and cannot be added twice. See Listing beside an active LoRA opens its own card. Video models also expose See Listing.
 
 The Windows worker indexes local file SHA-256 hashes and queries Civitai's public version API. A verified tensor hash can identify a metadata-only variant; selected known Hugging Face files have exact publisher SHA identities. Unmatched files and local merges remain usable and clearly labelled. Model metadata and previews stay under `%LOCALAPPDATA%/ComfyBridge/model-library`, outside the public repository and releases. Inventory is checked when the worker starts and every 30 minutes while it remains active; unchanged files are not rehashed and source metadata is normally refreshed weekly. Temporary lookup failures retain previously verified cached listings. New models hosted outside the supported source lookups may remain unconfirmed.
@@ -38,7 +40,7 @@ Prompt fields start reduced when entering a generator, grow as text is typed or 
 
 The compact header has extra vertical space and borderless window controls. Click **↖** at the top left of the Windows tray panel to expand it into the desktop studio. The left column keeps server power, phone connection count, address and pairing code, machine telemetry, progress and the shared queue visible. The sidebar opens Image, Video, Library and Notepad. Desktop connects locally without pairing or routing through the VPN, and uses the same saved settings, presets and notes as your phones.
 
-**↘** returns to the compact tray panel; **–** hides it; **×** quits the bridge. Collapse or hide disposes the WebView2 browser; the compact tray remains lightweight and queued generations continue. The expanded window can be moved by dragging its title bar. Microsoft Edge WebView2 Runtime is required (normally included with Windows/Edge).
+**↘** returns to the compact tray panel; **–** and **×** hide it to the tray. To exit, right-click the tray icon and choose **Close ComfyBridge**. Collapse or hide disposes the WebView2 browser; the compact tray remains lightweight and queued generations continue. The expanded window can be moved by dragging its title bar. Microsoft Edge WebView2 Runtime is required (normally included with Windows/Edge).
 
 In the desktop Library viewer, **Open file location** selects the original in Windows Explorer. **Save a copy** opens a Windows save dialog. Videos play directly from the PC file with byte-range seeking. Desktop queue controls can manage batches submitted by either phone; phone cancellation ownership rules remain unchanged.
 
