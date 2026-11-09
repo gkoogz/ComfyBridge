@@ -1,6 +1,6 @@
 # Model preview galleries
 
-The Beta 60 review build adds a larger X in the top-right corner of model listing
+Beta 60 adds a larger X in the top-right corner of model listing
 popups. A model's sample carousel preserves portrait and landscape aspect ratios.
 Reaching its right edge requests the next Civitai page; there is also a More
 previews button for keyboard navigation or retrying a failed request. Duplicate
@@ -43,8 +43,7 @@ scroll vertically below the image.
   feature does not change that setting, clear a key, or add a new content filter.
   The key stays on the PC. Only the supported Civitai HTTPS API receives it.
 
-This code is built for review; the installed Windows app and public release
-remain Beta 59 until a separate installation/publication is performed.
+Beta 60 includes the matching Android APK and Windows companion. Update both for the complete gallery experience.
 
 ## Verification
 

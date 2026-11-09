@@ -1,6 +1,6 @@
 # ComfyBridge
 
-**[Open the beta 59 release page](https://github.com/gkoogz/ComfyBridge/releases/tag/v0.1.0-beta.59)** · [Download the Android APK](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.59/ComfyBridge-0.1.0-beta.59.apk) · [Download Windows](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.59/ComfyBridge-Windows-0.1.0-beta.59.zip) · [All releases](https://github.com/gkoogz/ComfyBridge/releases)
+**[Open the beta 60 release page](https://github.com/gkoogz/ComfyBridge/releases/tag/v0.1.0-beta.60)** · [Download the Android APK](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.60/ComfyBridge-0.1.0-beta.60.apk) · [Download Windows](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.60/ComfyBridge-Windows-0.1.0-beta.60.zip) · [All releases](https://github.com/gkoogz/ComfyBridge/releases)
 
 <img src="artwork/comfybridge.png" width="128" alt="ComfyBridge white cube and play icon on black">
 
@@ -10,7 +10,7 @@ An Android remote for an existing Windows ComfyUI installation. The phone edits 
 
 **Working on the project:** agents and contributors should start with [AGENTS.md](AGENTS.md) for the code map, build/test commands, live queue preservation and delivery instructions.
 
-The source also contains a **Beta 60 review build** with [paginated model preview galleries and full-image generation details](docs/model-gallery.md). It has not replaced the installed Beta 59 or been published as a release.
+**Beta 60** adds [paginated model preview galleries and full-image generation details](docs/model-gallery.md), with a larger top-right close button, on-demand previews, prompts and LoRA/resource listings.
 
 **Checkpoint Browser and LoRA listings** show installed files as rich cards: proper source title, version, author, file size, base model, published activation keywords, expandable descriptions and up to three cached sample images (non-explicit by default, with mature previews available through a PC-only Civitai key). Select a checkpoint with its checkbox. Add LoRAs from the browser; active entries are marked and cannot be added twice. See Listing beside an active LoRA opens its own card. Video models also expose See Listing.
 
@@ -30,7 +30,7 @@ Run **Setup-Chat.ps1** in the Windows package once to install the pinned llama.c
 
 Chat starts its model process only for a message and releases it after the reply. Sending a message during a supported H3/Eros Euler video requests a checkpoint at the next sampling boundary. The bridge holds the remaining queue, saves the unfinished packed audio/video latent, cooperatively unloads Comfy models and execution caches, verifies VRAM release, and lets chat use the GPU. After the chat process exits, video reloads its unchanged workflow and continues at the saved step. Images, unsupported samplers and videos started before this update finish before handing off. A large video step can take minutes: pausing is not instant and does not recover an already-stuck step. New generations can join the held queue without interrupting chat. A loopback-only server with an ephemeral access key serves inference; phone requests use the existing encrypted, authenticated bridge. Prompts and replies are not sent to a cloud model. The latest conversation turns are used within the model's context budget; older turns remain visible in the active chat.
 
-**0.1.0-beta.59 is a personal-workflow beta**, adapted specifically to `Image gen.json` and `Video gen.json` in `E:\ComfyUI-Zluda\user\default\workflows`. It is not a general ComfyUI workflow importer. Models, LoRAs, workflow files, prompts, generated media, pairing credentials, and signing keys are not included in this repository or release. Beta 37 requires the updated Windows companion for local chat. Existing generation queues survive the tray update.
+**0.1.0-beta.60 is a personal-workflow beta**, adapted specifically to `Image gen.json` and `Video gen.json` in `E:\ComfyUI-Zluda\user\default\workflows`. It is not a general ComfyUI workflow importer. Models, LoRAs, workflow files, prompts, generated media, pairing credentials, and signing keys are not included in this repository or release. Beta 37 requires the updated Windows companion for local chat. Existing generation queues survive the tray update.
 
 The phone shows **PC connected** as soon as the bridge answers. Loading models and unavailable telemetry have their own messages. If the server or VPN drops, leave the phone app open: it retries automatically using the saved pairing. **Disconnect** or **Cancel reconnect** stops those retries.
 
