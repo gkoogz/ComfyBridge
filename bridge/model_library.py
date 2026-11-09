@@ -19,6 +19,11 @@ import urllib.request
 from PIL import Image
 
 API = 'https://civitai.com/api/v1/'
+# civitai.com clamps mature samples. civitai.red is Civitai's own mature host.
+MATURE_API = 'https://civitai.red/api/v1/'
+# None|Soft|Mature|X plus the historical XXX bit. Anonymous calls stay at PG (1).
+BROWSING_MATURE = 31
+TOKEN_FILE = 'civitai-api-key.txt'
 SCAN_INTERVAL = 1800
 SOURCE_INTERVAL = 7 * 86400
 LOCK = threading.Lock()
@@ -49,9 +54,37 @@ def plain(value):
     return re.sub(r'\n\s*\n+', '\n\n', ''.join(parser.parts)).strip()[:60000]
 
 
-def fetch(url, limit=8*1024*1024):
-    req=urllib.request.Request(url,headers={'User-Agent':'ComfyBridge model catalogue/1.0','Accept':'application/json,image/*'})
-    with urllib.request.urlopen(req,timeout=25) as response:
+def valid_civitai_token(value):
+    return bool(re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]{19,399}', value or ''))
+
+
+def civitai_api_url(url):
+    parsed=urllib.parse.urlparse(url)
+    try:
+        return (parsed.scheme=='https' and parsed.hostname in ('civitai.com','civitai.red')
+                and parsed.port in (None,443) and not parsed.username and not parsed.password
+                and parsed.path.startswith('/api/'))
+    except ValueError:return False
+
+
+class CivitaiRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        redirected=super().redirect_request(req,fp,code,msg,headers,newurl)
+        if redirected is not None and not civitai_api_url(newurl):
+            redirected.remove_header('Authorization')
+        return redirected
+
+
+def request_for(url, token=''):
+    headers={'User-Agent':'ComfyBridge model catalogue/1.0','Accept':'application/json,image/*'}
+    # The key is a header on Civitai API hosts only. It never goes in the URL or to the image CDN.
+    if token and civitai_api_url(url):headers['Authorization']='Bearer '+token
+    return urllib.request.Request(url,headers=headers)
+
+
+def fetch(url, limit=8*1024*1024, token=''):
+    req=request_for(url, token)
+    with urllib.request.build_opener(CivitaiRedirect()).open(req,timeout=25) as response:
         raw=response.read(limit+1)
         if len(raw)>limit:raise ValueError('Listing response exceeds limit')
         return raw
@@ -66,11 +99,39 @@ def metadata(path):
     except (OSError,ValueError,struct.error):return {}
 
 
-def safe_preview(image):
-    if image.get('type','image')!='image' or image.get('nsfw') is True:return False
+def image_level(image):
+    level=image.get('browsingLevel',image.get('nsfwLevel'))
+    if type(level) is int and type(level) is not bool:return level
+    if isinstance(level,str):
+        if level.isdigit():return int(level)
+        return {'none':1,'pg':1,'soft':2,'pg13':2,'pg-13':2,'mature':4,'r':4,'x':8,'xxx':16}.get(level.lower(),1)
+    if image.get('nsfw') is True:return 4
+    return 1
+
+
+def safe_preview(image, mature=False):
+    if image.get('type','image')!='image':return False
+    if mature:return True
+    if image.get('nsfw') is True:return False
     level=image.get('browsingLevel',image.get('nsfwLevel'))
     if level is not None:return type(level) is int and level==1 or level=='None'
     return image.get('nsfw')=='None' or image.get('nsfw') is False
+
+
+def extra_images(version_id, token=''):
+    """Return (items, key_rejected). A saved key asks civitai.red for every browsing level."""
+    version_id=int(version_id)
+    if token:
+        for base in (MATURE_API, API):
+            url=f"{base}images?modelVersionId={version_id}&limit=50&browsingLevel={BROWSING_MATURE}&type=image"
+            try:return json.loads(fetch(url, token=token)).get('items',[]), False
+            except urllib.error.HTTPError as error:
+                if error.code in (401,403):return [], True
+                continue
+            except (OSError, ValueError):continue
+        return [], False
+    try:return json.loads(fetch(API+f"images?modelVersionId={version_id}&limit=50&browsingLevel=1&type=image")).get('items',[]), False
+    except (OSError, ValueError):return [], False
 
 
 def roots(root):
@@ -100,21 +161,64 @@ class Library:
         db.execute('PRAGMA journal_mode=WAL');return closing_db(db)
     def snapshot(self):
         with self.db() as db:items=[json.loads(row['payload']) for row in db.execute('SELECT payload FROM assets ORDER BY kind,name')]
+        has_token=bool(self.token())
         for item in items:
+            item['images']=[image for image in item.get('images',[]) if self.preview_allowed(item,image,has_token)]
             for image in item.get('images',[]):
                 revision=item['sha256'][:8]+hashlib.sha256(image['source'].encode()).hexdigest()[:8]
                 image['path']=image['path'].split('?')[0]+'?v='+revision
-        return dict(items=items,scanning=self.running,lastScan=self.last)
+            item.pop('previewAuth',None)
+        return dict(items=items,scanning=self.running,lastScan=self.last,nsfwHidden=not has_token)
+    @staticmethod
+    def preview_allowed(item,image,has_token):
+        if has_token:return True
+        if 'mature' in image:return not image['mature']
+        # Beta 58 cached safe images only. Conservatively hide newer unlabelled caches.
+        return item.get('previewAuth','sfw')=='sfw'
+    def preview_file(self,item,index):
+        image=item['images'][index]
+        suffix='-'+hashlib.sha256(image['source'].encode()).hexdigest()[:16] if image.get('cacheVersion')==2 else ''
+        return self.previews/(item['id']+'-'+str(index)+suffix+'.jpg')
     def preview(self,identity,index):
         if not re.fullmatch('[a-f0-9]{32}',identity) or str(index) not in ('0','1','2'):raise ValueError('Invalid preview')
         with self.db() as db:
             row=db.execute('SELECT payload FROM assets WHERE id=?',(identity,)).fetchone()
-        if not row or int(index)>=len(json.loads(row['payload']).get('images',[])):raise FileNotFoundError('Preview unavailable')
-        path=self.previews/(identity+'-'+str(index)+'.jpg')
+        if not row:raise FileNotFoundError('Preview unavailable')
+        item=json.loads(row['payload']);index=int(index)
+        if index>=len(item.get('images',[])) or not self.preview_allowed(item,item['images'][index],bool(self.token())):
+            raise FileNotFoundError('Preview unavailable')
+        path=self.preview_file(item,index)
         if not path.is_file():raise FileNotFoundError('Preview unavailable')
         return path
+    def token(self):
+        path=self.data.parent/TOKEN_FILE
+        try:value=path.read_text(encoding='utf-8-sig').strip()
+        except OSError:return ''
+        return value if valid_civitai_token(value) else ''
+    def auth_generation(self, token=None):
+        if token is None:token=self.token()
+        return 'sfw' if not token else hashlib.sha256(token.encode()).hexdigest()[:16]
+    def stored_generation(self):
+        try:return (self.data/'preview-auth.txt').read_text(encoding='utf-8').strip()
+        except OSError:return None
+    def write_generation(self, generation):
+        path=self.data/'preview-auth.txt';tmp=path.with_suffix('.txt.tmp')
+        tmp.write_text(generation,encoding='utf-8');tmp.replace(path)
+    def preview_auth_changed(self):
+        return self.stored_generation()!=self.auth_generation()
+    def drop_unused_previews(self, item):
+        keep={self.preview_file(item,index) for index in range(len(item.get('images') or []))}
+        for path in self.previews.glob(item['id']+'-*.jpg'):
+            if path in keep:continue
+            try:path.unlink()
+            except OSError:pass
     def scan(self,force=False):
-        if not force and time.time()-self.last<SCAN_INTERVAL:return
+        token=self.token();generation=self.auth_generation(token);stored=self.stored_generation()
+        # Upgrading with no key must not throw away the previews already cached.
+        if stored is None and generation=='sfw':
+            self.write_generation('sfw');stored='sfw'
+        refresh=stored!=generation
+        if not force and not refresh and time.time()-self.last<SCAN_INTERVAL:return
         if not LOCK.acquire(blocking=False):return
         self.running=True
         try:
@@ -127,34 +231,35 @@ class Library:
                         name=path.relative_to(folder).as_posix();identity=hashlib.sha256((kind+':'+name).encode()).hexdigest()[:32]
                         if identity in seen:continue
                         seen.add(identity)
-                        try:self.inspect(path,kind,name,identity,force)
+                        try:self.inspect(path,kind,name,identity,force,refresh_listings=refresh,token=token)
                         except Exception:logging.exception('Could not index model %s',name)
             with self.db() as db:
                 for row in db.execute('SELECT id FROM assets').fetchall():
                     if row['id'] not in seen:db.execute('DELETE FROM assets WHERE id=?',(row['id'],))
-            self.last=time.time()
+            self.last=time.time();self.write_generation(generation)
         finally:self.running=False;LOCK.release()
     def cache_previews(self,item,safe):
         used={x['source'] for x in item['images']}
         for candidate in safe:
             url=candidate.get('url','');parsed=urllib.parse.urlparse(url)
-            if parsed.scheme!='https' or parsed.hostname!='image.civitai.com' or url in used:continue
+            if parsed.scheme!='https' or parsed.hostname not in ('image.civitai.com','image.civitai.red') or parsed.username or parsed.password or url in used:continue
             used.add(url)
             try:
                 raw=fetch(url,20*1024*1024)
                 with Image.open(io.BytesIO(raw)) as img:
                     if img.width*img.height>40000000:continue
-                    img.thumbnail((768,768));dest=self.previews/(item['id']+'-'+str(len(item['images']))+'.jpg')
+                    suffix=hashlib.sha256(url.encode()).hexdigest()[:16]
+                    img.thumbnail((768,768));dest=self.previews/(item['id']+'-'+str(len(item['images']))+'-'+suffix+'.jpg')
                     tmp=dest.with_suffix('.tmp');img.convert('RGB').save(tmp,format='JPEG',quality=85);tmp.replace(dest)
-                item['images'].append(dict(source=url,credit=candidate.get('username',''),path='model-preview/'+item['id']+'/'+str(len(item['images']))))
+                item['images'].append(dict(source=url,credit=candidate.get('username',''),mature=not safe_preview(candidate),cacheVersion=2,path='model-preview/'+item['id']+'/'+str(len(item['images']))))
                 if len(item['images'])==3:break
             except (OSError,ValueError):continue
-    def inspect(self,path,kind,name,identity,force):
+    def inspect(self,path,kind,name,identity,force,refresh_listings=False,token=''):
         st=path.stat();stamp=f'{st.st_size}:{st.st_mtime_ns}'
         with self.db() as db:old=db.execute('SELECT * FROM assets WHERE id=?',(identity,)).fetchone()
         unchanged=old and old['stamp']==stamp
         interval=900 if unchanged and json.loads(old['payload']).get('status')=='unavailable' else SOURCE_INTERVAL
-        if unchanged and not force and time.time()-old['checked']<interval:return
+        if unchanged and not force and not refresh_listings and time.time()-old['checked']<interval:return
         meta=metadata(path)
         if unchanged:digest=old['hash']
         else:
@@ -197,16 +302,18 @@ class Library:
                         modelId=version['modelId'],versionId=version['id'],match='Exact SHA-256 file match',
                         fileMetadata=matching.get('metadata',{}))
             if tensor_hash:item.update(match='Verified tensor hash · local file metadata differs',tensorHash=tensor_hash)
-            candidates=version.get('images',[])
-            # Only non-explicit, source-labelled previews are cached.
-            safe=[x for x in candidates if safe_preview(x)]
-            if len(safe)<3:
-                try:
-                    extra=json.loads(fetch(API+f"images?modelVersionId={version['id']}&limit=50&browsingLevel=1&type=image"))
-                    safe += [x for x in extra.get('items',[]) if safe_preview(x)]
-                except (OSError,ValueError):pass
+            candidates=list(version.get('images') or [])
+            mature=bool(token);rejected=False
+            # A saved key must look past the PG stills already embedded in the version.
+            if mature or len([x for x in candidates if safe_preview(x, mature)])<3:
+                extra,rejected=extra_images(version['id'], token)
+                candidates=list(extra)+candidates
+            safe=[x for x in candidates if safe_preview(x, mature)]
+            if mature:safe.sort(key=image_level, reverse=True)
             self.cache_previews(item,safe)
-            if not item['images']:item['previewNote']='No non-explicit listing previews were available.'
+            if rejected:item['previewWarning']='Civitai rejected the saved API key. Check the gear next to Turn server off on the PC panel.'
+            elif not item['images']:
+                item['previewNote']='No listing previews were available.' if mature else 'No non-explicit listing previews were available. NSFW previews stay hidden until a Civitai API key is saved on the PC panel.'
         except urllib.error.HTTPError as error:
             item['status']='unmatched' if error.code==404 else 'unavailable'
             item['note']='No exact listing was found. This may be a local merge, removed version, or a file hosted elsewhere.' if error.code==404 else f'Source temporarily unavailable (HTTP {error.code}).'
@@ -222,10 +329,14 @@ class Library:
                 except (OSError,ValueError):item['description']='See the publisher listing for model details.'
         except (OSError,ValueError,KeyError) as error:
             item['status']='unavailable';item['note']='Source lookup unavailable; local model remains selectable.'
+        retry_previews=False
         if unchanged and item['status'] in ('unavailable','unmatched') and json.loads(old['payload']).get('status')=='matched':
             item=json.loads(old['payload']);item['note']='Source refresh unavailable; showing the previously verified cached listing.'
+            retry_previews=refresh_listings
+        else:item['previewAuth']=self.auth_generation(token)
         with self.db() as db:
-            db.execute('INSERT OR REPLACE INTO assets VALUES(?,?,?,?,?,?,?)',(identity,kind,name,stamp,digest,time.time(),json.dumps(item)))
+            db.execute('INSERT OR REPLACE INTO assets VALUES(?,?,?,?,?,?,?)',(identity,kind,name,stamp,digest,0 if retry_previews else time.time(),json.dumps(item)))
+        self.drop_unused_previews(item)
         print(f"{kind}/{name}: {item['status']}, {len(item['images'])} previews",flush=True) if __name__=='__main__' else None
 
 

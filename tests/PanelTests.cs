@@ -37,6 +37,9 @@ partial class Bridge {
                 if(control is Button)Check(((Button)control).FlatAppearance.BorderSize==0,"window controls are borderless");
             }
             Check(app.monitor.Visible && online && app.codeLabel.Text.Length==6,"pairing panel opened");
+            Check(app.civitaiGear!=null && app.civitaiGear.AccessibleName=="Civitai preview settings","civitai gear is on the panel");
+            Check(app.civitaiGear.Parent==app.power.Parent && app.civitaiGear.Right<=app.power.Left && app.power.Right<=app.power.Parent.ClientSize.Width+1,"gear sits beside Turn server off");
+            Check(!Bridge.CivitaiKeySaved() && !Bridge.ValidCivitaiKey("short key") && Bridge.ValidCivitaiKey(new string('a',32)),"civitai key shape");
             Check(app.addressBox.Text=="https://203.0.113.10:15294","remote address shown first");
             int port=((System.Net.IPEndPoint)tlsServer.LocalEndpoint).Port;
             tlsPort=port;loopbackPort=((System.Net.IPEndPoint)server.LocalEndpoint).Port;
@@ -90,7 +93,7 @@ partial class Bridge {
             for(int i=0;i<5;i++){try{Pairing.Exchange("begin",bad,"test","test");throw new Exception("Accepted invalid public value.");}catch(ArgumentException){}}
             try{Pairing.Exchange("begin",bad,"test","test");throw new Exception("Attempt limit missing.");}catch(InvalidOperationException){}
             Check(Pairing.Display(out hint)=="—","attempt limit invalidates code");
-            app.monitor.Close();Check(!online&&!app.tray.Visible,"X quits and releases listeners");
+            app.monitor.Close();Check(online&&!app.monitor.Visible&&app.tray.Visible,"X hides to tray and keeps the server on");
             Console.WriteLine("Passed: 20 fixed-port restarts, occupied port recovery, docked and rounded panel, hide and quit, two independent phones, batch progress and pairing limits.");
             return 0;
         }finally{app.timer.Stop();app.Server(false,false);app.tray.Dispose();app.monitor.Dispose();app.Dispose();Application.DoEvents();}

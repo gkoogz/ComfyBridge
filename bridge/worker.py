@@ -807,7 +807,7 @@ async def api(request):
                     j['etaSeconds']=None
                 else:
                     j['progress'],j['current_node']=TRACKER.sample()
-        return web.json_response(dict(protocol=18,build='0.1.0-beta.58',jobs=jobs, active=ACTIVE, preview=bool(PREVIEW), previewRevision=PREVIEW_REV,ownedComfy=bool(OWNED),queueEtaSeconds=total_eta))
+        return web.json_response(dict(protocol=18,build='0.1.0-beta.59',jobs=jobs, active=ACTIVE, preview=bool(PREVIEW), previewRevision=PREVIEW_REV,ownedComfy=bool(OWNED),queueEtaSeconds=total_eta))
     if path.startswith('preview/'):
         job=str(uuid.UUID(path[8:]))
         after=int(request.query.get('after','-1'))
@@ -991,7 +991,10 @@ async def model_watch():
     while True:
         try:await asyncio.to_thread(MODELS.scan)
         except Exception:logging.exception('Model catalogue refresh will retry')
-        await asyncio.sleep(1800)
+        # A saved or cleared Civitai key should refresh previews without waiting out the half hour.
+        for _ in range(360):
+            await asyncio.sleep(5)
+            if MODELS.preview_auth_changed():break
 
 
 async def cleanup(app):

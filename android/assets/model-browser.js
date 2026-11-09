@@ -14,7 +14,7 @@ async function openModelBrowser(type,only=null){
  clearTimeout(modelBrowserTimer);
  const view={type,only,kind:page,session:epoch};modelBrowser=view;
  openModal(type==='checkpoints'?'Checkpoint Browser':type==='video'?'Video model listing':only?'LoRA listing':'LoRA Browser',
-  '<div class="modelBrowser"><input id="modelSearch" type="search" placeholder="Search title, author, filename or activation keyword…" aria-label="Search model listings"><p id="modelStatus" role="status">Loading the PC catalogue…</p><div id="modelCards"></div></div>');
+  '<div class="modelBrowser"><input id="modelSearch" type="search" placeholder="Search title, author, filename or activation keyword…" aria-label="Search model listings"><p id="modelStatus" role="status">Loading the PC catalogue…</p><p id="modelNsfwNote" class="modelNsfwNote" hidden></p><div id="modelCards"></div></div>');
  $('#modelSearch').oninput=()=>paintModelBrowser(view);
  paintModelBrowser(view);
  async function refresh(){
@@ -22,7 +22,7 @@ async function openModelBrowser(type,only=null){
   try{
    const result=await api('model-library');
    if(modelBrowser!==view||!$('#modelCards')||epoch!==view.session)return;
-   modelListings=result.items||[];if(catalog)catalog.listings=modelListings;
+   modelListings=result.items||[];view.nsfwHidden=result.nsfwHidden!==false;if(catalog)catalog.listings=modelListings;
    if(catalog)for(const [key,type] of [['models','checkpoints'],['loras','loras']])catalog[key]=[...new Set([...(catalog[key]||[]),...modelListings.filter(x=>x.kind===type).map(x=>x.name)])];
    $('#modelStatus').textContent=result.scanning?'Indexing new files and caching listing previews…':'Listings cached on your PC · new files checked periodically';
    paintModelBrowser(view);
@@ -36,13 +36,22 @@ function paintModelBrowser(view){
  const expanded=new Set($$('details[open]',host).map(x=>x.dataset.modelDetails));
  const query=($('#modelSearch')?.value||'').trim().toLowerCase();
  const items=browserItems(view).filter(x=>[x.title,x.name,x.author,x.version,...(x.keywords||[])].join(' ').toLowerCase().includes(query));
+ const note=$('#modelNsfwNote');
+ if(note){
+  const rejected=(modelListings||[]).map(item=>item.previewWarning).find(Boolean);
+  if(rejected){note.hidden=false;note.textContent=rejected;}
+  else if(view.nsfwHidden!==false){note.hidden=false;note.textContent='NSFW previews are hidden. On the PC panel, use the gear next to Turn server off and add a Civitai API key. Turn mature content on for that account.';}
+  else note.hidden=true;
+ }
  host.innerHTML=items.map((item,index)=>{
   const isCheckpoint=view.type==='checkpoints',isVideo=view.type==='video';
   const selected=isCheckpoint?state.settings[view.kind].model===item.name:!isVideo&&activeLora(view.kind,item.name);
   const images=(item.images||[]).map((image,i)=>'<img loading="lazy" src="/'+esc(image.path)+'" alt="Listing sample '+(i+1)+' for '+esc(item.title)+'" width="240" height="280">').join('');
+  const previewNote=item.previewWarning||(view.nsfwHidden!==false?'NSFW previews are hidden. Add a Civitai API key with the gear next to Turn server off on the PC panel.':'');
+  const previewHtml=images?'<div class="modelSamples">'+images+'</div>'+(previewNote?'<p class="modelNsfwNote">'+esc(previewNote)+'</p>':''):'<div class="modelNoSample">'+esc(item.previewNote||previewNote||'No listing preview available yet')+'</div>';
   return '<article class="modelCard" data-model-index="'+index+'"><div class="modelCardHeading"><div><h2>'+esc(item.title||item.name)+'</h2><small>'+esc([item.version,item.author&&'by '+item.author].filter(Boolean).join(' · '))+'</small></div>'+
    (isCheckpoint?'<label class="modelUse"><input type="checkbox" data-model-use="'+index+'" '+(selected?'checked':'')+'>Use</label>':isVideo?'':'<button class="modelAdd" data-model-add="'+index+'" '+(selected?'disabled':'')+'>'+(selected?'✓ Active':'＋ Add')+'</button>')+'</div>'+
-   (images?'<div class="modelSamples">'+images+'</div>':'<div class="modelNoSample">'+esc(item.previewNote||'No listing preview available yet')+'</div>')+
+   previewHtml+
    '<div class="modelFacts"><span>'+esc(item.baseModel||'Base model unconfirmed')+'</span><span>'+modelSize(item.bytes)+'</span><span>'+esc(item.match||'Lookup pending')+'</span></div>'+
    ((item.keywords||[]).length?'<div class="modelKeywords"><small>Activation keywords</small><p>'+item.keywords.map(esc).join(' · ')+'</p><button data-model-keywords="'+index+'">Copy keywords</button></div>':'<small class="modelNoKeywords">No verified activation keywords supplied.</small>')+
    (item.description?'<p class="modelExcerpt">'+esc(item.description.slice(0,360))+'</p>':'')+

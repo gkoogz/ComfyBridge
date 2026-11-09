@@ -49,6 +49,9 @@ const assert=require('node:assert/strict'),path=require('node:path');
   if(process.env.DESKTOP_SHOT)await p.screenshot({path:process.env.DESKTOP_SHOT});
   await p.locator('#desktopPower').click();await p.waitForFunction(()=>document.querySelector('#desktopPower').getAttribute('aria-pressed')==='true');
   assert((await p.locator('#desktopPhones').textContent()).includes('2 phones'));
+  await p.locator('#desktopCivitai').click();
+  await p.waitForFunction(()=>calls.some(x=>x.op==='civitaiKey'));
+  assert.deepEqual(await p.evaluate(()=>calls.find(x=>x.op==='civitaiKey').args),{});
   await p.locator('[data-nav=video]').click();assert.equal(await p.locator('#queueList').count(),1);
   await p.evaluate(()=>{
    connected=true;queueProtocol=17;active='active';jobs=[{id:'active',kind:'video',batch:'test',owner:'phone',status:'running',progress:.4,created:100,ordinal:1,total:1,queuePosition:1,queueTotal:1}];queueHistory=jobs;updateBridgeActivity();

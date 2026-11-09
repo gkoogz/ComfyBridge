@@ -17,7 +17,7 @@ partial class Bridge {
     static int loopbackPort=18765, tlsPort=18764;
     static readonly HashSet<TcpClient> sockets=new HashSet<TcpClient>();
     readonly string remoteFile=Path.Combine(Data,"remote-address.txt"), offFile=Path.Combine(Data,"server-off");
-    Label badge,phone,codeLabel,codeHint,jobText; Button power,newCode;
+    Label badge,phone,codeLabel,codeHint,jobText; Button power,newCode,civitaiGear; ToolTip civitaiTip;
     string powerError;
     ComboBox addressBox,chatModels; Label chatHint; string chatModelError; ProgressBar bar; bool reading,readingChat,paintingChat;
     sealed class ChatChoice{public string Id,Name;public override string ToString(){return Name;}}
@@ -43,6 +43,12 @@ partial class Bridge {
     }
     static Label L(string s,float pt,Color color,bool bold=false){return new Label{Text=s,UseMnemonic=false,ForeColor=color,Font=new Font("Segoe UI",pt,bold?FontStyle.Bold:FontStyle.Regular),Dock=DockStyle.Fill,TextAlign=ContentAlignment.MiddleLeft,AutoEllipsis=true};}
     static Image PowerIcon(){var bmp=new Bitmap(20,20);using(var g=Graphics.FromImage(bmp))using(var pen=new Pen(Mint,2.2f)){g.SmoothingMode=System.Drawing.Drawing2D.SmoothingMode.AntiAlias;g.DrawArc(pen,3,4,14,14,-55,290);g.DrawLine(pen,10,1,10,10);}return bmp;}
+    static Image GearIcon(){var bmp=new Bitmap(20,20);using(var g=Graphics.FromImage(bmp))using(var pen=new Pen(Color.FromArgb(214,226,230),1.6f)){g.SmoothingMode=SmoothingMode.AntiAlias;g.DrawEllipse(pen,7,7,6,6);g.DrawEllipse(pen,4.5f,4.5f,11,11);for(int i=0;i<8;i++){double a=i*Math.PI/4+Math.PI/8;g.DrawLine(pen,10+(float)Math.Cos(a)*6.1f,10+(float)Math.Sin(a)*6.1f,10+(float)Math.Cos(a)*9.2f,10+(float)Math.Sin(a)*9.2f);}}return bmp;}
+    static bool ValidCivitaiKey(string value){if(String.IsNullOrEmpty(value)||value.Length<20||value.Length>400||!Char.IsLetterOrDigit(value[0]))return false;foreach(char c in value)if(!(Char.IsLetterOrDigit(c)||c=='.'||c=='_'||c=='-'))return false;return true;}
+    static string CivitaiKeyFile(){return Path.Combine(Data,"civitai-api-key.txt");}
+    static bool CivitaiKeySaved(){try{return ValidCivitaiKey(File.ReadAllText(CivitaiKeyFile()).Trim());}catch{return false;}}
+    static void SaveCivitaiKey(string value){string path=CivitaiKeyFile(),tmp=path+".tmp";File.WriteAllText(tmp,value,new System.Text.UTF8Encoding(false));if(File.Exists(path))File.Replace(tmp,path,null);else File.Move(tmp,path);}
+    void RefreshCivitaiTip(){if(civitaiGear==null)return;if(civitaiTip==null)civitaiTip=new ToolTip();civitaiTip.SetToolTip(civitaiGear,CivitaiKeySaved()?"Civitai key saved. Mature listing previews are enabled.":"Add a Civitai API key to show NSFW listing previews.");}
     static Button B(string s,EventHandler action){var b=new Button{Text=s,AutoSize=true,MinimumSize=new Size(70,32),FlatStyle=FlatStyle.Flat,ForeColor=Color.White,BackColor=Panel,Font=new Font("Segoe UI",9)};b.FlatAppearance.BorderColor=Color.FromArgb(73,88,95);b.Click+=action;return b;}
     static Button WindowButton(string text,string name,EventHandler action){
         var button=B(text,action);button.AutoSize=false;button.MinimumSize=Size.Empty;button.Dock=DockStyle.Fill;
@@ -80,7 +86,7 @@ partial class Bridge {
         badge.Text=online?"●  Server on":"●  Server off";badge.ForeColor=online?Mint:Red;
         int bg;lock(phones)bg=watchers.Keys.Count(id=>!phones.ContainsKey(id));
         phone.Text=live?"●  "+count+(count==1?" phone":" phones")+(bg>0?" · "+bg+" in bg":" connected"):"●  No phones";phone.ForeColor=live?Mint:Red;
-        power.Text=online?"Turn server off":"Turn server on";
+        power.Text=online?"Turn server off":"Turn server on";RefreshCivitaiTip();
         string hint;codeLabel.Text=Pairing.Display(out hint);codeLabel.AccessibleName="Pairing code "+codeLabel.Text;codeHint.Text=online?hint:powerError??"Turn the server on to pair.";codeHint.ForeColor=powerError!=null?Red:Muted;newCode.Enabled=online;
     }
     static bool ValidAddress(string s,out string clean){Uri u;clean=null;
@@ -102,9 +108,23 @@ partial class Bridge {
         var ok=new Button{Text="Save",Left=336,Top=90,Width=86};ok.Click+=(s,e)=>{string clean;if(field.Text.Trim()=="")File.Delete(remoteFile);else if(ValidAddress(field.Text.Trim(),out clean))File.WriteAllText(remoteFile,clean);else{MessageBox.Show(dlg,"Enter an HTTPS address, for example https://your-host:15294.");return;}dlg.DialogResult=DialogResult.OK;};
         dlg.Controls.AddRange(new Control[]{desc,field,ok});dlg.AcceptButton=ok;if(dlg.ShowDialog(monitor)==DialogResult.OK)AddressesList();
     }}
+    void EditCivitaiKey(){
+        bool saved=CivitaiKeySaved();
+        using(var dlg=new Form{Text="Civitai previews",ClientSize=new Size(460,236),StartPosition=FormStartPosition.CenterParent,FormBorderStyle=FormBorderStyle.FixedDialog,MaximizeBox=false,MinimizeBox=false,ShowInTaskbar=false}){
+            var desc=new Label{Left=12,Top=10,Width=436,Height=92,Text="Paste a Civitai API key to cache mature checkpoint and LoRA previews. Create one under Account settings → API Keys on civitai.com or civitai.red, and turn mature content on for that account.\n\nThe key stays on this PC and is sent only to Civitai. Clear it to hide NSFW previews again. Saving refreshes the cached previews in the background."};
+            var field=new TextBox{Left=12,Top=108,Width=436,UseSystemPasswordChar=true,AccessibleName="Civitai API key"};
+            var status=new Label{Left=12,Top=136,Width=436,Height=32,ForeColor=Muted,Text=saved?"A key is already saved. Enter a new one to replace it, or clear it to hide NSFW previews.":"No key saved. NSFW listing previews stay hidden."};
+            var save=new Button{Text="Save key",Left=248,Top=188,Width=96,DialogResult=DialogResult.None};
+            var clear=new Button{Text="Clear key",Left=350,Top=188,Width=98,Enabled=saved};
+            save.Click+=(s,e)=>{string value=field.Text.Trim();if(value==""){MessageBox.Show(dlg,"Paste a key, or use Clear key.");return;}if(!ValidCivitaiKey(value)){MessageBox.Show(dlg,"That does not look like a Civitai API key. Paste only the key, with no spaces.");return;}SaveCivitaiKey(value);dlg.DialogResult=DialogResult.OK;};
+            clear.Click+=(s,e)=>{try{if(File.Exists(CivitaiKeyFile()))File.Delete(CivitaiKeyFile());string tmp=CivitaiKeyFile()+".tmp";if(File.Exists(tmp))File.Delete(tmp);}catch(Exception ex){MessageBox.Show(dlg,ex.Message);return;}dlg.DialogResult=DialogResult.OK;};
+            dlg.Controls.AddRange(new Control[]{desc,field,status,save,clear});dlg.AcceptButton=save;dlg.CancelButton=null;
+            if(dlg.ShowDialog(monitor)==DialogResult.OK)RefreshCivitaiTip();
+        }
+    }
     void ShowMonitor(){
         if(monitor==null){
-            monitor=new Form{Text="ComfyBridge",Icon=tray.Icon,ClientSize=new Size(438,428),BackColor=Ink,ForeColor=Color.White,ShowInTaskbar=false,TopMost=true,StartPosition=FormStartPosition.Manual,FormBorderStyle=FormBorderStyle.None,AutoScaleMode=AutoScaleMode.Dpi};
+            monitor=new Form{Text="ComfyBridge",Icon=tray.Icon,ClientSize=new Size(492,428),BackColor=Ink,ForeColor=Color.White,ShowInTaskbar=false,TopMost=true,StartPosition=FormStartPosition.Manual,FormBorderStyle=FormBorderStyle.None,AutoScaleMode=AutoScaleMode.Dpi};
             monitor.SizeChanged+=(s,e)=>RoundPanel();RoundPanel();
             monitor.FormClosing+=(s,e)=>{
                 if(e.CloseReason==CloseReason.UserClosing){e.Cancel=true;HidePanel();return;}
@@ -118,7 +138,9 @@ partial class Bridge {
             head.Controls.Add(WindowButton("–","Hide to tray",(s,e)=>HidePanel()),2,0);
             head.Controls.Add(WindowButton("×","Hide to tray",(s,e)=>HidePanel()),3,0);Add(grid,head,44);
             badge=L("",10,Mint,true);badge.Dock=DockStyle.None;badge.Size=new Size(88,30);phone=L("",10,Red);phone.Dock=DockStyle.None;phone.Size=new Size(155,30);
-            power=B("",(s,e)=>{try{Server(!online,true);}catch(Exception ex){MessageBox.Show(monitor,ex.Message);}});power.Image=PowerIcon();power.TextImageRelation=TextImageRelation.ImageBeforeText;Add(grid,Row(badge,phone,power),38);
+            power=B("",(s,e)=>{try{Server(!online,true);}catch(Exception ex){MessageBox.Show(monitor,ex.Message);}});power.Image=PowerIcon();power.TextImageRelation=TextImageRelation.ImageBeforeText;
+            civitaiGear=B("",(s,e)=>{try{EditCivitaiKey();}catch(Exception ex){MessageBox.Show(monitor,ex.Message);}});civitaiGear.Text="";civitaiGear.Image=GearIcon();civitaiGear.AutoSize=false;civitaiGear.MinimumSize=new Size(34,32);civitaiGear.Size=new Size(34,32);civitaiGear.AccessibleName="Civitai preview settings";civitaiGear.ImageAlign=ContentAlignment.MiddleCenter;civitaiGear.TextImageRelation=TextImageRelation.Overlay;
+            Add(grid,Row(badge,phone,civitaiGear,power),38);
             Add(grid,L("1   PC address",10,Mint,true),23);
             addressBox=new ComboBox{DropDownStyle=ComboBoxStyle.DropDownList,Font=new Font("Segoe UI",12),Width=270,AccessibleName="PC address"};
             var copy=B("Copy",(s,e)=>{if(addressBox.SelectedItem!=null)Clipboard.SetText(addressBox.SelectedItem.ToString());});copy.MinimumSize=Size.Empty;copy.AutoSize=false;copy.Size=new Size(55,29);

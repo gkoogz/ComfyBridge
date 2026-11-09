@@ -85,3 +85,30 @@ Also exercise cold PC startup, an owned ComfyUI startup/shutdown cycle, overnigh
 - Private phone originals follow the recent-100 and conflict-review rules in the README. The sync runs while the paired app is open. Camera-roll export is separate.
 - Both ephemeral forwarding and the owner's permanent Windscribe static-IP rule were tested from the phone with pinned TLS and a live catalog fetch. Static access requires the PC to remain connected to the purchased static-IP location.
 - Windows executable is unsigned; APK uses the project's private local release signing identity.
+# Beta 59 integration
+
+The PC compact panel and expanded studio expose a Civitai preview-settings gear.
+The key is stored only in the PC's private data directory. The phone receives
+listing metadata and cached preview images, not the API key.
+
+Verified with isolated neutral fixtures: default hidden-preview notices,
+authenticated mature-image requests, rejected-key warnings, immediate filtering
+of cached mature previews after clearing a key (including while offline), and
+removal of Authorization on redirects outside Civitai's HTTPS API endpoints.
+Preview cache files use source-specific names so a background refresh does not
+overwrite a still-referenced image slot before its metadata is committed.
+
+Windows and signed Android builds passed. All 105 backend tests passed, as did
+the native panel and desktop integration tests and the model-browser and desktop
+Playwright checks. The expanded gear dispatches a native settings action with no
+credential in the WebView message. Native panel checks include its gear placement
+and hide-to-tray behavior.
+
+No real Civitai API key was available during integration; account-authenticated
+retrieval remains unverified against the live service. API behavior was checked
+against [Civitai's official image API documentation](https://github.com/civitai/civitai-developer-docs/blob/main/site/reference/images.md).
+The authenticated fixture tests use neutral generated test images only. No new
+physical-phone touch test or GPU generation was performed for this catalogue
+change.
+
+Installed Windows Beta 59 responded successfully to authenticated ping, status and model-library requests. The live catalogue retained 102 entries. All 225 jobs, 188 media records, profiles, workspace records, provenance and ratings matched the pre-install snapshot exactly; pairing credentials, model selection and signing-key hashes were unchanged.

@@ -105,6 +105,7 @@ partial class Bridge {
             case "power":Server(Convert.ToBoolean(args["on"]),true);result=DesktopStatus();break;
             case "code":if(online)Pairing.Issue();RefreshState();result=DesktopStatus();break;
             case "address":SetRemote();result=DesktopStatus();break;
+            case "civitaiKey":EditCivitaiKey();result=CivitaiKeySaved();break;
             case "copy":if(addressBox.Items.Contains(Convert.ToString(args["address"])))Clipboard.SetText(Convert.ToString(args["address"]));result=true;break;
             case "copyText":{string text=Convert.ToString(args["text"]);if(text.Length>1000000)throw new IOException("Text is too long to copy.");if(text.Length>0)Clipboard.SetText(text);result=true;break;}
             case "openListing":{var uri=new Uri(Convert.ToString(args["url"]));if(uri.Scheme!="https"||!new[]{"civitai.com","huggingface.co"}.Contains(uri.Host)||!String.IsNullOrEmpty(uri.UserInfo)||!uri.IsDefaultPort)throw new IOException("Invalid listing URL.");Process.Start(uri.AbsoluteUri);result=true;break;}

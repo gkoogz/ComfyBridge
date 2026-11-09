@@ -10,6 +10,7 @@ __pycache__/
 token.txt
 fingerprint.txt
 password.txt
+civitai-api-key.txt*
 *.log
 .env*
 
