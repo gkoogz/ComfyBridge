@@ -41,7 +41,7 @@ function generationDetails(host,node){
  if(node.offline)host.prepend(Object.assign(document.createElement('p'),{className:'muted',textContent:'Saved details · reconnect to refresh branches.'}));
  for(const source of node.sources){
   const box=document.createElement('div');box.className='sourceCard';
-  const b=provenanceButton(source.role==='mask'?'Input mask':source.kind==='video'?'Source video':'Source image',()=>inspectSource(node,source));
+  const b=provenanceButton(source.role==='mask'?'Input mask':source.role==='finalFrame'?'Final frame':source.kind==='video'?'Source video':'Source image',()=>inspectSource(node,source));
   const img=new Image();img.loading='lazy';img.alt='Saved '+source.role;img.src=source.thumbnail;b.prepend(img);box.append(b);
   if(source.media)box.append(provenanceButton('Open in Library ↗',()=>chainOutput(source.media)));
   if(source.branches?.length){
@@ -95,7 +95,7 @@ function initProvenance(view,item){
  const observers=[];view.releaseProvenance=()=>observers.forEach(o=>o.disconnect());load(item.job,tree);
 }
 async function inspectSource(node,source){
- openModal(source.role==='mask'?'Saved input mask':'Original source','<div class="sourceInspection"><p>Loading original…</p></div>');
+ openModal(source.role==='mask'?'Saved input mask':source.role==='finalFrame'?'Saved final frame':'Original source','<div class="sourceInspection"><p>Loading original…</p></div>');
  const host=$('.sourceInspection'),session=epoch;
  try{
   const response=await fetch(source.url);if(!response.ok)throw Error('The saved source is unavailable. Connect to the PC or check whether the file was moved.');

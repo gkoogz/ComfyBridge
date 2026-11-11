@@ -187,7 +187,7 @@ partial class Bridge {
     }
     static async Task<string> DesktopSource(string job,string role){
         Guid parsed;if(!Guid.TryParse(job,out parsed))throw new IOException("Invalid source generation.");
-        if(!new[]{"upload","mask","extension","upload-thumb","mask-thumb","extension-thumb"}.Contains(role))throw new IOException("Invalid source type.");
+        if(!new[]{"upload","mask","finalFrame","extension","upload-thumb","mask-thumb","finalFrame-thumb","extension-thumb"}.Contains(role))throw new IOException("Invalid source type.");
         var reply=DesktopJson().Deserialize<Dictionary<string,object>>(await StudioRequest("source-file/"+job+"/"+role,DesktopDevice(),""));
         if(!reply.ContainsKey("file"))throw new IOException(Convert.ToString(((Dictionary<string,object>)reply["data"])["error"]));
         return Convert.ToString(((Dictionary<string,object>)reply["file"])["path"]);

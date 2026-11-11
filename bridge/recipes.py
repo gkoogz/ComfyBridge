@@ -46,7 +46,7 @@ def preserve(root, source, suffix):
 
 
 def keep_images(root,settings):
-    for key in ('upload','mask'):
+    for key in ('upload','mask','finalFrame'):
         if settings.get(key):
             source=(root/'input'/settings[key]).resolve()
             if not source.is_relative_to((root/'input/ComfyBridge').resolve()):
@@ -79,9 +79,9 @@ def preserve_library(db,root):
         AND NOT EXISTS (SELECT 1 FROM legacy_sources WHERE job=jobs.id)""").fetchall()
     for job,raw in candidates:
         settings=json.loads(raw)
-        if settings.get('recipeVersion') or not any(settings.get(k) for k in ('upload','mask','extension')):
+        if settings.get('recipeVersion') or not any(settings.get(k) for k in ('upload','mask','finalFrame','extension')):
             continue
-        refs={key:settings[key] for key in ('upload','mask','extension') if settings.get(key)}
+        refs={key:settings[key] for key in ('upload','mask','finalFrame','extension') if settings.get(key)}
         try:
             keep_images(root,refs)
             if refs.get('extension'):
@@ -110,7 +110,7 @@ def graph_for_replay(db,kind,settings,new_id):
         return None
     previous=json.loads(row[0])
     keys=('model','loras','positive','negative','width','height','steps','cfg','denoise',
-          'upload','mask','frames','fps','extension','exactFrames','sound')
+          'upload','mask','finalFrame','frames','fps','extension','exactFrames','sound')
     if any(settings.get(k)!=previous.get(k) for k in keys):
         return None  # An edited recipe should use the newly selected inputs.
     graph=recorded_graph(db,original)

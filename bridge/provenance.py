@@ -29,11 +29,15 @@ def parents(settings, media_jobs):
     add(media_jobs.get(source),'Extended from' if settings.get('extension') else 'Source image')
     origin=settings.get('sourceOrigin')
     if isinstance(origin,dict):add(origin.get('job'),'Input reused from')
+    add(media_jobs.get(settings.get('finalFrameMedia')),'Final frame')
+    ending=settings.get('finalFrameOrigin')
+    if isinstance(ending,dict):add(ending.get('job'),'Final frame reused from')
     return result
 
 
 def generation_type(kind, settings):
-    if settings.get('extension'):return 'Extend video'
+    if settings.get('extension'):return 'Extend video + final frame' if settings.get('finalFrame') else 'Extend video'
+    if kind=='video' and settings.get('finalFrame'):return 'First + final frames to video' if settings.get('upload') else 'Text + final frame to video'
     if kind=='video':return 'Image to video' if settings.get('upload') else 'Text to video'
     return 'Image + mask to image' if settings.get('mask') else 'Image to image' if settings.get('upload') else 'Text to image'
 
@@ -55,18 +59,18 @@ def node(db, job):
         if any(link['job']==job for link in links):
             branches.append(branch(candidate))
     sources=[]
-    for role in ('upload','mask','extension'):
+    for role in ('upload','mask','finalFrame','extension'):
         if not s.get(role):continue
-        media_id=s.get('sourceMedia') if role!='mask' else None
+        media_id=s.get('finalFrameMedia') if role=='finalFrame' else s.get('sourceMedia') if role!='mask' else None
         if role=='extension':media_id=media_id or s[role].get('id')
         linked=next((m for m in media if m['id']==media_id),None)
-        origin=s.get('sourceOrigin') if role!='mask' else None
+        origin=s.get('finalFrameOrigin') if role=='finalFrame' else s.get('sourceOrigin') if role!='mask' else None
         origin=origin or dict(job=job,role=role)
         related=[]
         for candidate in candidates:
             other=json.loads(candidate['settings'])
             if candidate['id']==job:continue
-            if other.get('sourceOrigin')==origin:
+            if other.get('sourceOrigin')==origin or other.get('finalFrameOrigin')==origin:
                 related.append(branch(candidate))
         sources.append(dict(role=role,kind='video' if role=='extension' else 'image',media=linked,origin=origin,branches=related,
             url='/source/'+job+'/'+role,thumbnail='/source/'+job+'/'+role+'-thumb'))
@@ -88,7 +92,7 @@ def node(db, job):
 
 def source_file(db,root,data,job,role):
     thumb=role.endswith('-thumb');role=role.removesuffix('-thumb')
-    if role not in ('upload','mask','extension'):raise ValueError('Unknown source kind.')
+    if role not in ('upload','mask','finalFrame','extension'):raise ValueError('Unknown source kind.')
     _,s=settings_for(db,job)
     if not s.get(role):raise ValueError('No saved source for this generation.')
     if role=='extension':path=extension.source_path(db,root,s[role]['id']).resolve()

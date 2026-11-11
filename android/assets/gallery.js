@@ -145,7 +145,7 @@ function activateExtension(source){
  rememberTextCanvas(settings);
  Object.assign(settings,{extension:source,upload:null,mask:null,scale:0,width:source.width,height:source.height,
   fps:source.fps,seconds:10,exactFrames:true,frames:Math.max(1,Math.round(source.fps*10))});
- state.inputs.video={};
+ state.inputs.video=state.inputs.video.finalFrame?{finalFrame:state.inputs.video.finalFrame}:{};
  persist('video');navigate('video');
  const panel=$('#extensionSource').closest('.foldPanel');
  if(panel.classList.contains('folded'))$('.foldToggle',panel).click();

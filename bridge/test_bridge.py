@@ -557,6 +557,26 @@ class BridgeTests(unittest.IsolatedAsyncioTestCase):
         self.settings['width']=0;r,d=await self.submit();self.assertEqual(r.status,400)
         self.assertEqual(w.rows('SELECT * FROM jobs'),[])
 
+    async def test_final_frame_submission_preserves_source_and_queues_end_conditioning(self):
+        self.complete=False
+        s=copy.deepcopy(w.WF.defaults()['video'])
+        s.update(width=64,height=96,frames=180,fps=18,exactFrames=True,sound=False,
+                 positive='A ceramic bowl rotates on a table.',negative='',seed='31',
+                 upload='ComfyBridge/start.png',finalFrame='ComfyBridge/final.png')
+        for name,color in [('start.png','blue'),('final.png','green')]:
+            Image.new('RGB',(64,96),color).save(w.ROOT/'input/ComfyBridge'/name)
+        w.CATALOG['finalFrameSupported']=True
+        w.CATALOG['loras'].extend(l['name'] for l in s['loras'])
+        response,result=await self.request('generate',dict(kind='video',count=1,settings=s,requestId=str(uuid.uuid4())))
+        self.assertEqual(response.status,200,result)
+        job=w.rows('SELECT * FROM jobs WHERE id=?',(result['ids'][0],))[0];saved=json.loads(job['settings'])
+        self.assertNotEqual(saved['finalFrame'],'ComfyBridge/final.png')
+        (w.ROOT/'input/ComfyBridge/final.png').unlink()
+        self.assertTrue((w.ROOT/'input'/saved['finalFrame']).is_file())
+        graph=json.loads(w.rows('SELECT graph FROM generation_graphs WHERE job=?',(job['id'],))[0]['graph'])
+        self.assertEqual(graph['60']['inputs']['image'],saved['finalFrame'])
+        self.assertEqual(graph['6']['inputs']['last_frame'],['60',0]);self.assertEqual(graph['65']['inputs']['frame_idx'],179)
+
     async def test_video_duration_trims_only_the_model_padding(self):
         s=copy.deepcopy(w.WF.defaults()['video'])
         s.update(frames=39,fps=12,exactFrames=True)

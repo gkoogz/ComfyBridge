@@ -272,7 +272,7 @@ public class MainActivity extends Activity {
      case "export":m.export(MainActivity.this,id);break;
      case "exportSource":{
       String job=d.getString("job"),role=d.getString("role");UUID.fromString(job);
-      if(!Arrays.asList("upload","mask","extension").contains(role))throw new IOException("Invalid source type.");
+      if(!Arrays.asList("upload","mask","finalFrame","extension").contains(role))throw new IOException("Invalid source type.");
       HttpURLConnection conn=connection("api/studio/source-file/"+job+"/"+role,"GET");
       try{if(conn.getResponseCode()!=200)throw new IOException("The saved source is unavailable on the PC.");
        m.exportStream(MainActivity.this,conn.getInputStream(),role.equals("extension"),"ComfyBridge-source-"+job+"-"+role+(role.equals("extension")?".mp4":".png"));

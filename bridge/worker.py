@@ -191,6 +191,8 @@ async def load_catalogue():
         return field[0] if isinstance(field[0], list) else field[1].get('options', [])
     CATALOG = dict(defaults=WF.defaults(), models=choices('CheckpointLoaderSimple', 'ckpt_name'),
                    loras=choices('LoraLoader', 'lora_name'))
+    h3_inputs=obj.get('MiniMaxH3ImageToVideo',{}).get('input',{})
+    CATALOG['finalFrameSupported']=any('last_frame' in h3_inputs.get(key,{}) for key in ('required','optional'))
     CATALOG['videoModels']=WF.video_models(obj,choices('UNETLoader','unet_name'),choices('CLIPLoader','clip_name'),
                                             choices('VAELoader','vae_name'),CATALOG['loras'])
     CATALOG['audioMissing']=[name for name in ('LTXVAudioVAEDecode','TrimAudioDuration') if name not in obj]
@@ -466,7 +468,7 @@ async def run_jobs():
                 if j['batch'] in STOPPING:
                     update(j['id'], status='cancelled'); continue
                 if settings.get('recipeVersion'):
-                    for field in ('upload','mask'):
+                    for field in ('upload','mask','finalFrame'):
                         if settings.get(field):
                             await asyncio.to_thread(recipes.checked_source,ROOT/'input'/settings[field])
                 ext = settings.get('extension')
@@ -823,7 +825,7 @@ async def api(request):
                     j['etaSeconds']=None
                 else:
                     j['progress'],j['current_node']=TRACKER.sample()
-        return web.json_response(dict(protocol=18,build='0.1.0-beta.60',jobs=jobs, active=ACTIVE, preview=bool(PREVIEW), previewRevision=PREVIEW_REV,ownedComfy=bool(OWNED),queueEtaSeconds=total_eta))
+        return web.json_response(dict(protocol=19,build='0.1.0-beta.61',jobs=jobs, active=ACTIVE, preview=bool(PREVIEW), previewRevision=PREVIEW_REV,ownedComfy=bool(OWNED),queueEtaSeconds=total_eta))
     if path.startswith('preview/'):
         job=str(uuid.UUID(path[8:]))
         after=int(request.query.get('after','-1'))
@@ -902,7 +904,8 @@ async def api(request):
         if existing:
             if existing[0]['owner']!=device:raise web.HTTPForbidden()
             return web.json_response(dict(batch=batch,ids=[r['id'] for r in existing]))
-        checked_upload(s.get('upload')); checked_upload(s.get('mask'))
+        checked_upload(s.get('upload')); checked_upload(s.get('mask')); checked_upload(s.get('finalFrame'))
+        if s.get('finalFrame') and kind!='video':raise ValueError('Final frame is only available for video.')
         await asyncio.to_thread(recipes.keep_images,ROOT,s)
         if s.get('extension'):
             if kind!='video' or s.get('upload') or s.get('mask'):
@@ -914,6 +917,8 @@ async def api(request):
             info=await asyncio.to_thread(recipes.keep_clip,ROOT,source,info)
             s.update(extension=info,width=info['width'],height=info['height'],fps=info['fps'],scale=0)
         cat = await catalogue()
+        if s.get('finalFrame') and not cat.get('finalFrameSupported'):
+            raise ValueError('The PC H3 nodes do not support a final frame. Update ComfyUI before using this input.')
         existing=rows('SELECT id,owner FROM jobs WHERE batch=? ORDER BY ordinal',(batch,))
         if existing:
             if existing[0]['owner']!=device:raise web.HTTPForbidden()

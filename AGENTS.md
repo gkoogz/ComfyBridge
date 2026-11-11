@@ -104,6 +104,7 @@ node tests/android-assets.cjs
 node tests/desktop.cjs
 node tests/model-browser.cjs
 node tests/model-gallery.cjs
+node tests/final-frame.cjs
 ```
 
 - Use the relevant existing tests; add meaningful regressions for bugs. A docs

@@ -61,6 +61,7 @@ class Workflows:
                             'MiniMax H3 rounds frame count up to 17k+5. Duration uses the actual frame count / FPS.']}
 
     def build(self, kind, s, prefix, *, recorded_video_strength=None):
+        if kind!='video' and s.get('finalFrame'):raise ValueError('Final frame is only available for video.')
         g = {}
         def node(id, class_type, **inputs):
             g[str(id)] = {'class_type': class_type, 'inputs': inputs}
@@ -118,6 +119,7 @@ class Workflows:
                 raise ValueError('Choose an installed H3 video model.')
             eros=checkpoint==EROS_BETA7
             extension = s.get('extension')
+            final_frame = s.get('finalFrame')
             text_only = not extension and not s.get('upload')
             if text_only and (width % 32 or height % 32):
                 raise ValueError('Video width and height must be multiples of 32.')
@@ -141,6 +143,10 @@ class Workflows:
                 image = node(1, 'LoadImage', image=s['upload'])
             if not text_only:
                 image = node(2, 'CUDNNToggleAMD', any_input=image, enable_cudnn=False)
+            if final_frame:
+                if not extension and s.get('upload') and s.get('exactFrames') and int(s['frames'])<2:
+                    raise ValueError('First and final frames need at least two output frames.')
+                ending = node(60, 'LoadImage', image=final_frame)
             c = self.widgets('video', 3)
             clip = node(3, 'CLIPLoader', clip_name=c[0], type=c[1], device=c[2])
             if text_only:
@@ -161,20 +167,27 @@ class Workflows:
             if eros:
                 model=node(27,'MiniMaxH3SigmaShift',model=model,shift_video=12.,shift_audio=3.)
                 model=node(28,'ComfyBridgeErosVSA',model=model,min_tokens=12288)
-            first_frame = {'first_frame':image} if not extension and not text_only else {}
-            def h3_condition(text, encode_id, guide_id):
+            frame_inputs = {'first_frame':image} if not extension and not text_only else {}
+            if final_frame:frame_inputs['last_frame']=ending
+            kept_end = GUIDE_FRAMES+int(s['frames'])-1 if extension else int(s['frames'])-1 if s.get('exactFrames') else frames-1
+            def h3_condition(text, encode_id, guide_id, end_id):
                 condition = node(encode_id, 'MiniMaxH3ImageToVideo', clip=clip, vae=vae,
-                                 prompt=text, width=width, height=height, length=frames, **first_frame)
+                                 prompt=text, width=width, height=height, length=frames, **frame_inputs)
                 if extension:
                     condition = node(guide_id, 'MiniMaxH3AddGuide', positive=condition, latent=['6',1],
                                      vae=vae, image=image, frame_idx=0)
+                if final_frame and kept_end!=frames-1:
+                    # H3 rounds its internal length to 17k+5. Also anchor the last
+                    # frame actually kept after exact-length/extension trimming.
+                    condition=node(end_id,'MiniMaxH3AddGuide',positive=condition,latent=['6',1],
+                                   vae=vae,image=ending,frame_idx=kept_end)
                 return condition
 
-            cond = h3_condition(s.get('positive', ''), 6, 50)
+            cond = h3_condition(s.get('positive', ''), 6, 50, 65)
             negative = (s.get('negative') or '').strip()
             if negative:
                 # Give both passes the same visual reference so CFG contrasts the text alone.
-                avoid = h3_condition(negative, 55, 56)
+                avoid = h3_condition(negative, 55, 56, 66)
                 guider = node(9, 'CFGGuider', model=model, positive=cond, negative=avoid, cfg=2.0)
             else:
                 guider = node(9, 'BasicGuider', model=model, conditioning=cond)

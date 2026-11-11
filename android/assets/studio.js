@@ -163,6 +163,7 @@ async function restoreGeneration(job,button,stillHere=()=>true){
    const {kind,settings,inputs}=await api('studio/replay/'+job);
    await resolvePendingSubmission(kind);
    if(inputs.data){const img=await loadImg(inputs.data);inputs.width=img.naturalWidth;inputs.height=img.naturalHeight;}
+   if(inputs.finalFrame?.data){const img=await loadImg(inputs.finalFrame.data);inputs.finalFrame.width=img.naturalWidth;inputs.finalFrame.height=img.naturalHeight;}
    if(inputs.mask){
     const mask=await loadImg(inputs.mask),canvas=document.createElement('canvas');
     canvas.width=mask.naturalWidth;canvas.height=mask.naturalHeight;

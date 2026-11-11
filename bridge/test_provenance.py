@@ -38,6 +38,17 @@ class ProvenanceTests(unittest.TestCase):
         node=provenance.node(self.db,job)
         self.assertEqual(node['parents'],[]);self.assertIsNone(node['sources'][0]['media'])
         self.assertFalse(node['provenanceKnown'])
+
+    def test_final_frame_has_its_own_source_and_parent(self):
+        first,first_media=self.add();last,last_media=self.add()
+        job,_=self.add(kind='video',upload='ComfyBridge/first.png',finalFrame='ComfyBridge/last.png',
+                       sourceMedia=first_media,finalFrameMedia=last_media)
+        node=provenance.node(self.db,job)
+        self.assertEqual(node['type'],'First + final frames to video')
+        self.assertEqual({p['job'] for p in node['parents']},{first,last})
+        ending=next(s for s in node['sources'] if s['role']=='finalFrame')
+        self.assertEqual(ending['media']['id'],last_media)
+        self.assertEqual(ending['url'],'/source/'+job+'/finalFrame')
     def test_source_preserved_checked_and_confined(self):
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory);source=root/'input/ComfyBridge/input.png';source.parent.mkdir(parents=True)

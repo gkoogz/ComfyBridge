@@ -161,7 +161,7 @@ def replay(db, root, job):
         elif not source.is_file() or extension.revision(source)!=clip.get('revision'):
             raise ValueError('The original source video is missing or changed on the PC.')
     inputs={}
-    for field,key in [('upload','data'),('mask','mask')]:
+    for field,key in [('upload','data'),('mask','mask'),('finalFrame','finalFrame')]:
         if not settings.get(field):
             continue
         filename=(root/'input'/settings[field]).resolve()
@@ -169,7 +169,8 @@ def replay(db, root, job):
             raise ValueError('The original '+field+' is missing on the PC.')
         if filename.parent==(root/'input/ComfyBridge/recipes').resolve():
             recipes.checked_source(filename)
-        inputs[key]='data:image/png;base64,'+base64.b64encode(filename.read_bytes()).decode('ascii')
+        encoded='data:image/png;base64,'+base64.b64encode(filename.read_bytes()).decode('ascii')
+        inputs[key]=dict(data=encoded) if field=='finalFrame' else encoded
     return dict(kind=row['kind'],settings=settings,inputs=inputs)
 
 
