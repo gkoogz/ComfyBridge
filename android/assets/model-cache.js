@@ -184,7 +184,7 @@ const ModelPreviews={
   const config=window.Native?JSON.parse(Native.configuration()):{},scope=config.fingerprint||config.host||(window.Desktop?'desktop':'local');
   if(!this.store||this.scope!==scope){this.store?.close();this.scope=scope;this.store=new ListingPreviewCache({scope,
    canDownload:()=>connected&&!document.hidden&&window.Native?.listingPreviewsAllowed?.()!==false&&this.libraryEpoch===epoch&&!syncing&&!filling&&!originalTransfers.size&&!catalogLoading&&!profileBusy&&!profileLoad&&!(profileReady&&profileDirty)&&!settingsBusy,
-   isViewing:item=>!!modelBrowser&&$('#modal').open&&browserItems(modelBrowser).some(x=>x.kind===item.kind&&x.name===item.name),
+   isViewing:item=>!!modelBrowser&&$('#modal').open&&[modelBrowser.preview?.gallery.item,...browserItems(modelBrowser)].some(x=>x&&x.kind===item.kind&&x.name===item.name),
    changed:()=>{if(typeof modelPreviewCacheChanged==='function')modelPreviewCacheChanged();}});}
   await this.store.ready;return this.store;
  },

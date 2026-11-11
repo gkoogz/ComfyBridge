@@ -156,19 +156,30 @@ class Library:
         self.running=False;self.last=0
         with self.db() as db:
             db.execute('CREATE TABLE IF NOT EXISTS assets(id TEXT PRIMARY KEY,kind TEXT,name TEXT,stamp TEXT,hash TEXT,checked REAL,payload TEXT)')
+            db.execute('CREATE TABLE IF NOT EXISTS model_preferences(id TEXT PRIMARY KEY,archived INTEGER NOT NULL DEFAULT 0)')
     def db(self):
         db=sqlite3.connect(self.data/'catalog.sqlite',timeout=20);db.row_factory=sqlite3.Row
         db.execute('PRAGMA journal_mode=WAL');return closing_db(db)
     def snapshot(self):
-        with self.db() as db:items=[json.loads(row['payload']) for row in db.execute('SELECT payload FROM assets ORDER BY kind,name')]
+        with self.db() as db:
+            items=[json.loads(row['payload']) for row in db.execute('SELECT payload FROM assets ORDER BY kind,name')]
+            archived={row['id'] for row in db.execute('SELECT id FROM model_preferences WHERE archived=1')}
         has_token=bool(self.token())
         for item in items:
+            item['archived']=item['id'] in archived
             item['images']=[image for image in item.get('images',[]) if self.preview_allowed(item,image,has_token)]
             for image in item.get('images',[]):
                 revision=item['sha256'][:8]+hashlib.sha256(image['source'].encode()).hexdigest()[:8]
                 image['path']=image['path'].split('?')[0]+'?v='+revision
             item.pop('previewAuth',None)
         return dict(items=items,scanning=self.running,lastScan=self.last,nsfwHidden=not has_token)
+    def archive(self, identity, archived):
+        if not re.fullmatch('[a-f0-9]{32}',str(identity)) or type(archived) is not bool:raise ValueError('Invalid LoRA archive request')
+        with self.db() as db:
+            row=db.execute('SELECT kind FROM assets WHERE id=?',(identity,)).fetchone()
+            if not row or row['kind']!='loras':raise ValueError('LoRA listing is no longer available')
+            db.execute('INSERT OR REPLACE INTO model_preferences VALUES(?,?)',(identity,int(archived)))
+        return dict(id=identity,archived=archived)
     @staticmethod
     def preview_allowed(item,image,has_token):
         if has_token:return True

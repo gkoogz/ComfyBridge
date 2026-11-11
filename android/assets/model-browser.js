@@ -1,5 +1,90 @@
 'use strict';
 let modelListings=[],modelBrowser=null,modelBrowserTimer;
+const loraDownloads=new Map(),loraDownloadBusy=new Set(['checking','preparing','queued','downloading','verifying']);
+function appendModelKeywords(prompt,keywords){
+ const text=String(prompt||'').replace(/[,\s]+$/u,''),words=(keywords||[]).map(word=>String(word).replace(/^[,\s]+|[,\s]+$/gu,'')).filter(Boolean).join(', ');
+ return words?(text?text+', ':'')+words:text;
+}
+function loraDownloadState(version){
+ if(!version)return {status:'unavailable'};
+ if(loraDownloads.has(version))return loraDownloads.get(version);
+ const installed=(catalog?.listings||modelListings).find(item=>item.kind==='loras'&&String(item.versionId)===version);
+ return installed?{status:'installed',name:installed.name}:{status:'checking'};
+}
+function loraDownloadIcon(status){
+ if(loraDownloadBusy.has(status))return '<i class="spinner" aria-hidden="true"></i>';
+ return '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="'+(status==='installed'?'m4 10 4 4 8-8':'M10 4v12M4 10h12')+'"/></svg>';
+}
+function loraDownloadMessage(state){
+ if(state.status==='unavailable')return 'No downloadable LoRA version ID was supplied for this image.';
+ if(state.status==='error')return state.error||'Download failed. Tap + to retry.';
+ if(state.status==='checking')return 'Checking the PC library…';
+ if(state.status==='preparing')return 'Checking the LoRA download…';
+ if(state.status==='queued')return 'Queued on the PC';
+ if(state.status==='verifying')return 'Verifying the downloaded file…';
+ if(state.status==='downloading')return 'Downloading on the PC'+(state.total?' · '+Math.min(99,Math.floor(100*state.received/state.total))+'%':'');
+ return '';
+}
+function loraResourceButton(resource){
+ const version=String(resource.versionId||''),state=loraDownloadState(version);
+ return '<button class="resourceDownload" data-resource-download="'+esc(version)+'" aria-label="'+(state.status==='installed'?'LoRA already in your library':'Download LoRA to your PC')+'" '+(!version||loraDownloadBusy.has(state.status)||state.status==='installed'?'disabled':'')+'>'+loraDownloadIcon(state.status)+'</button>';
+}
+function loraResourceDetails(view,resource){
+ const version=String(resource.versionId||''),state=loraDownloadState(version),plan=view.downloadConfirm;
+ return '<small class="resourceDownloadStatus" data-resource-status="'+esc(version)+'" role="status">'+esc(loraDownloadMessage(state))+'</small>'+
+  (plan?.versionId===version?'<section class="resourceDownloadConfirm"><strong>Download '+esc(plan.title)+'?</strong><p>'+esc([plan.version,plan.baseModel,modelSize(plan.bytes)].filter(Boolean).join(' · '))+'</p><small>'+esc(plan.destination+'\\'+plan.filename)+'</small><div class="resourceActions"><button class="green" data-confirm-lora="'+esc(version)+'">Download to PC</button><button data-cancel-lora>Cancel</button></div></section>':'');
+}
+function updateLoraDownloadControls(view){
+ const host=$('#modelPreviewViewer');if(!host)return;
+ $$('[data-resource-download]',host).forEach(button=>{
+  const version=button.dataset.resourceDownload,state=loraDownloadState(version),installed=state.status==='installed';
+  button.innerHTML=loraDownloadIcon(state.status);button.disabled=!version||installed||loraDownloadBusy.has(state.status)||view.downloadConfirm?.versionId===version;
+  button.setAttribute('aria-label',installed?'LoRA already in your library':'Download LoRA to your PC');button.title=installed?'Already installed: '+(state.name||'this version'):loraDownloadMessage(state)||'Download this exact LoRA version';
+ });
+ $$('[data-resource-status]',host).forEach(el=>{const state=loraDownloadState(el.dataset.resourceStatus);el.textContent=loraDownloadMessage(state);el.classList.toggle('downloadError',state.status==='error');});
+}
+async function refreshDownloadedCatalogue(view){
+ const result=await api('model-library');if(modelBrowser!==view||view.session!==epoch)return;
+ modelListings=result.items||[];
+ if(catalog){catalog.listings=modelListings;catalog.nsfwHidden=result.nsfwHidden;catalog.scanning=result.scanning;catalog.loras=[...new Set([...(catalog.loras||[]),...modelListings.filter(x=>x.kind==='loras').map(x=>x.name)])];}
+ await ModelPreviews.register(modelListings,result.nsfwHidden,result.scanning);
+ if(['image','video'].includes(page))renderLoras();
+}
+async function checkLoraDownloads(view){
+ if(modelBrowser!==view||!view.preview||view.session!==epoch||document.hidden)return;
+ if(view.resourcesBusy)return;view.resourcesBusy=true;
+ try{
+  const versions=[...new Set((view.preview.gallery.items[view.preview.index]?.resources||[]).filter(x=>/lora|locon|lycoris/i.test(x.type)&&x.versionId).map(x=>String(x.versionId)))];
+  if(!versions.length)return;
+  const result=await api('lora-download/status',{versions});if(modelBrowser!==view||view.session!==epoch)return;
+  let added=false;
+  for(const version of versions){const state=result[version];if(!state)continue;
+   if(!['preparing'].includes(loraDownloads.get(version)?.status)){if(state.status==='installed'&&loraDownloadState(version).status!=='installed')added=true;loraDownloads.set(version,state);}
+  }
+  updateLoraDownloadControls(view);if(added)await refreshDownloadedCatalogue(view);
+ }catch(error){if(modelBrowser===view){for(const button of $$('[data-resource-download]')){const version=button.dataset.resourceDownload;if(loraDownloadState(version).status==='checking')loraDownloads.set(version,{status:'error',error:/404/.test(error.message)?'Update the Windows companion to download LoRAs.':error.message});}updateLoraDownloadControls(view);}}
+ finally{view.resourcesBusy=false;if(modelBrowser===view&&view.preview){const active=[...loraDownloads.values()].some(s=>loraDownloadBusy.has(s.status));clearTimeout(view.resourceTimer);view.resourceTimer=setTimeout(()=>checkLoraDownloads(view),active?1200:10000);}}
+}
+function wireLoraDownloads(view,host,resources){
+ $$('[data-resource-download]',host).forEach(button=>button.onclick=async()=>{
+  const version=button.dataset.resourceDownload,preview=view.preview;if(!version)return;
+  loraDownloads.set(version,{status:'preparing'});updateLoraDownloadControls(view);
+  try{const result=await api('lora-download/prepare/'+encodeURIComponent(version));if(modelBrowser!==view||view.session!==epoch||view.preview!==preview){loraDownloads.delete(version);return;}
+   if(result.status==='confirm'){view.downloadConfirm=result;loraDownloads.set(version,{status:'available'});paintModelPreview(view);}
+   else{loraDownloads.set(version,result);updateLoraDownloadControls(view);if(result.status==='installed')await refreshDownloadedCatalogue(view);}
+  }catch(error){loraDownloads.set(version,{status:'error',error:error.message});if(modelBrowser===view)updateLoraDownloadControls(view);}
+  finally{if(loraDownloads.get(version)?.status==='preparing')loraDownloads.delete(version);}
+ });
+ $('[data-cancel-lora]',host)?.addEventListener('click',()=>{view.downloadConfirm=null;paintModelPreview(view);});
+ $('[data-confirm-lora]',host)?.addEventListener('click',async button=>{
+  const plan=view.downloadConfirm;if(!plan)return;view.downloadConfirm=null;$('.resourceDownloadConfirm',host)?.remove();loraDownloads.set(plan.versionId,{status:'queued'});updateLoraDownloadControls(view);
+  try{const result=await api('lora-download/start',{confirmation:plan.confirmation});loraDownloads.set(plan.versionId,result);}
+  catch(error){loraDownloads.set(plan.versionId,{status:'error',error:error.message});}
+  if(modelBrowser===view){updateLoraDownloadControls(view);clearTimeout(view.resourceTimer);view.resourceTimer=setTimeout(()=>checkLoraDownloads(view),500);}
+ });
+ updateLoraDownloadControls(view);clearTimeout(view.resourceTimer);
+ if(resources.some(x=>x.versionId))view.resourceTimer=setTimeout(()=>checkLoraDownloads(view),0);
+}
 const modelKey=name=>String(name).replaceAll('\\','/').toLowerCase();
 function listing(kind,name){return (catalog?.listings||modelListings).find(x=>x.kind===kind&&modelKey(x.name)===modelKey(name));}
 function modelLabel(kind,name){const item=listing(kind,name);return item?.title?item.title+(item.version?' · '+item.version:''):name;}
@@ -7,30 +92,32 @@ function modelSize(bytes){return bytes?bytes>=1e9?(bytes/1e9).toFixed(2)+' GB':(
 function activeLora(kind,name){return state.settings[kind].loras.some(l=>modelKey(l.name)===modelKey(name));}
 function browserItems(view){
  const names=view.type==='checkpoints'?(catalog?.models||[]):view.type==='video'?(catalog?.videoModels||[]).map(x=>x.model):(catalog?.loras||[]);
- return [...new Set(names)].filter(n=>!view.only||n===view.only).map(name=>listing(view.type==='video'?'diffusion_models':view.type,name)||{name,title:name,kind:view.type,status:'pending',images:[]});
+ return [...new Set(names)].filter(n=>!view.only||n===view.only).map(name=>listing(view.type==='video'?'diffusion_models':view.type,name)||{name,title:name,kind:view.type,status:'pending',images:[]}).filter(item=>view.type!=='loras'||view.only||!!item.archived===!!view.archived);
 }
 async function openModelBrowser(type,only=null){
  if(!connected)return toast('Connect to the PC to browse your models.');
  clearTimeout(modelBrowserTimer);
  try{await ModelPreviews.register(catalog?.listings||modelListings,catalog?.nsfwHidden,catalog?.scanning);}catch{}
- const view={type,only,kind:page,session:epoch,galleries:new Map()};
+ const view={type,only,kind:page,session:epoch,archived:false,galleries:new Map()};
  view.title=type==='checkpoints'?'Checkpoint Browser':type==='video'?'Video model listing':only?'LoRA listing':'LoRA Browser';
  openModal(view.title,
-  '<div class="modelBrowser"><input id="modelSearch" type="search" placeholder="Search title, author, filename or activation keyword…" aria-label="Search model listings"><p id="modelStatus" role="status">Loading the PC catalogue…</p><p id="modelNsfwNote" class="modelNsfwNote" hidden></p><div id="modelCards"></div></div>');
+  '<div class="modelBrowser">'+(type==='loras'&&!only?'<div class="modelBrowserTools"><button id="modelArchiveLink">Archive ›</button></div>':'')+'<input id="modelSearch" type="search" placeholder="Search title, author, filename or activation keyword…" aria-label="Search model listings"><p id="modelStatus" role="status">Loading the PC catalogue…</p><p id="modelNsfwNote" class="modelNsfwNote" hidden></p><div id="modelCards"></div></div>');
  modelBrowser=view;$('#modal').classList.add('modelBrowserDialog');$('#modalClose').textContent='×';
  view.cancel=e=>{e.preventDefault();if(view.preview)closeModelPreview(view);else closeModal();};$('#modal').addEventListener('cancel',view.cancel);
  $('#modelSearch').oninput=()=>paintModelBrowser(view);
+ $('#modelArchiveLink')?.addEventListener('click',()=>{view.archived=!view.archived;view.title=view.archived?'LoRA Archive':'LoRA Browser';$('#modalTitle').textContent=view.title;$('#modelArchiveLink').textContent=view.archived?'‹ LoRAs':'Archive ›';$('#modelSearch').value='';paintModelBrowser(view);$('#modalBody').scrollTop=0;});
  paintModelBrowser(view);
  async function refresh(){
   if(modelBrowser!==view||!$('#modelCards')||!$('#modal').open||epoch!==view.session)return;
   try{
    const result=await api('model-library');
    if(modelBrowser!==view||!$('#modelCards')||epoch!==view.session)return;
-   modelListings=result.items||[];await ModelPreviews.register(modelListings,result.nsfwHidden,result.scanning);if(modelBrowser!==view)return;view.nsfwHidden=result.nsfwHidden!==false;if(catalog){catalog.listings=modelListings;catalog.nsfwHidden=result.nsfwHidden;catalog.scanning=result.scanning;}
+   const changed=!view.refreshed||JSON.stringify(modelListings)!==JSON.stringify(result.items||[])||view.nsfwHidden!==(result.nsfwHidden!==false)||view.scanning!==result.scanning;
+   modelListings=result.items||[];if(changed)await ModelPreviews.register(modelListings,result.nsfwHidden,result.scanning);if(modelBrowser!==view)return;view.nsfwHidden=result.nsfwHidden!==false;view.scanning=result.scanning;view.refreshed=true;if(catalog){catalog.listings=modelListings;catalog.nsfwHidden=result.nsfwHidden;catalog.scanning=result.scanning;}
    if(catalog)for(const [key,type] of [['models','checkpoints'],['loras','loras']])catalog[key]=[...new Set([...(catalog[key]||[]),...modelListings.filter(x=>x.kind===type).map(x=>x.name)])];
    $('#modelStatus').textContent=result.scanning?'Indexing new files and caching listing previews…':'Previews saved on this device · library downloads take priority';
-   paintModelBrowser(view);
-   if(result.scanning)modelBrowserTimer=setTimeout(refresh,4000);
+   if(changed)paintModelBrowser(view);
+   modelBrowserTimer=setTimeout(refresh,result.scanning?4000:30000);
   }catch(e){if($('#modelStatus'))$('#modelStatus').textContent='PC catalogue unavailable: '+e.message;}
  }
  await refresh();
@@ -54,10 +141,10 @@ function paintModelBrowser(view){
   const previewNote=item.previewWarning||(view.nsfwHidden!==false?'NSFW previews are hidden. Add a Civitai API key with the gear next to Turn server off on the PC panel.':'');
   const previewHtml='<div class="modelSampleHost" data-sample-gallery="'+esc(gallery.key)+'"></div>'+(previewNote?'<p class="modelNsfwNote">'+esc(previewNote)+'</p>':'');
   return '<article class="modelCard" data-model-index="'+index+'"><div class="modelCardHeading"><div><h2>'+esc(item.title||item.name)+'</h2><small>'+esc([item.version,item.author&&'by '+item.author].filter(Boolean).join(' · '))+'</small></div>'+
-   (isCheckpoint?'<label class="modelUse"><input type="checkbox" data-model-use="'+index+'" '+(selected?'checked':'')+'>Use</label>':isVideo?'':'<button class="modelAdd" data-model-add="'+index+'" '+(selected?'disabled':'')+'>'+(selected?'✓ Active':'＋ Add')+'</button>')+'</div>'+
+   (isCheckpoint?'<label class="modelUse"><input type="checkbox" data-model-use="'+index+'" '+(selected?'checked':'')+'>Use</label>':isVideo?'':'<div class="modelCardActions"><button class="modelAdd" data-model-add="'+index+'" '+(selected?'disabled':'')+'>'+(selected?'✓ Active':'＋ Add')+'</button><button class="modelArchive" data-model-archive="'+index+'" '+(!item.id?'disabled':'')+'>'+(item.archived?'Unarchive':'Archive')+'</button></div>')+'</div>'+
    previewHtml+
    '<div class="modelFacts"><span>'+esc(item.baseModel||'Base model unconfirmed')+'</span><span>'+modelSize(item.bytes)+'</span><span>'+esc(item.match||'Lookup pending')+'</span></div>'+
-   ((item.keywords||[]).length?'<div class="modelKeywords"><small>Activation keywords</small><p>'+item.keywords.map(esc).join(' · ')+'</p><button data-model-keywords="'+index+'">Copy keywords</button></div>':'<small class="modelNoKeywords">No verified activation keywords supplied.</small>')+
+   ((item.keywords||[]).length?'<div class="modelKeywords"><small>Activation keywords</small><p>'+item.keywords.map(esc).join(' · ')+'</p><button data-model-keywords="'+index+'">Copy keywords</button><button data-model-insert="'+index+'">Insert Keywords</button></div>':'<small class="modelNoKeywords">No verified activation keywords supplied.</small>')+
    (item.description?'<p class="modelExcerpt">'+esc(item.description.slice(0,360))+'</p>':'')+
    '<details data-model-details="'+esc(item.name)+'" '+(expanded.has(item.name)?'open':'')+'><summary>Author description & file details</summary><div class="modelDescription">'+esc(item.description||item.note||'No confirmed online description is available for this file.')+'</div>'+
    (item.versionDescription?'<h3>Version notes</h3><div class="modelDescription">'+esc(item.versionDescription)+'</div>':'')+
@@ -80,6 +167,8 @@ function paintModelBrowser(view){
   state.settings[view.kind].loras.push({name:item.name,strength:1,enabled:true});persist(view.kind);
   if(page===view.kind)renderLoras();paintModelBrowser(view);toast('LoRA added');
  });
+ $$('[data-model-archive]',host).forEach(button=>button.onclick=async()=>{const item=items[+button.dataset.modelArchive],archived=!item.archived;button.disabled=true;try{await api('model-library/archive',{id:item.id,archived});item.archived=archived;paintModelBrowser(view);}catch(error){toast(error.message);button.disabled=false;}});
+ $$('[data-model-insert]',host).forEach(button=>button.onclick=()=>{const s=state.settings[view.kind],item=items[+button.dataset.modelInsert];s.positive=appendModelKeywords(s.positive,item.keywords);delete s.replayOf;persist(view.kind);const field=$('textarea.promptEntry[data-setting=positive]');if(page===view.kind&&field){field.value=s.positive;sizePrompt(field,promptExpanded.positive===true);}toast('Keywords inserted into the positive prompt');});
  $$('[data-model-keywords]',host).forEach(button=>button.onclick=async()=>{
   const text=items[+button.dataset.modelKeywords].keywords.join(', ');
   try{if(window.Native?.copyText)await Native.copyText(text);else await navigator.clipboard.writeText(text);toast('Keywords copied');}catch{toast('Could not copy keywords');}
@@ -91,7 +180,7 @@ function paintModelBrowser(view){
 }
 
 function stopModelBrowser(){
- clearTimeout(modelBrowserTimer);
+ clearTimeout(modelBrowserTimer);clearTimeout(modelBrowser?.resourceTimer);
  if(modelBrowser){modelBrowser.observer?.disconnect();$('#modal')?.removeEventListener('cancel',modelBrowser.cancel);}
  $('#modelPreviewViewer')?.remove();$('#modal')?.classList.remove('modelBrowserDialog','modelPreviewOpen');modelBrowser=null;ModelPreviews.wake();
 }
@@ -184,7 +273,7 @@ function openModelPreview(view,gallery,index,origin){
  paintModelPreview(view);if(!gallery.items[index]?.id&&!gallery.started)loadModelSamples(view,gallery,true);viewer.scrollTop=0;$('#modalClose').focus({preventScroll:true});
 }
 function closeModelPreview(view){
- const origin=view.preview?.origin;view.preview=null;$('#modelPreviewViewer')?.remove();$('#modal').classList.remove('modelPreviewOpen');
+ const origin=view.preview?.origin;view.preview=null;clearTimeout(view.resourceTimer);view.downloadConfirm=null;$('#modelPreviewViewer')?.remove();$('#modal').classList.remove('modelPreviewOpen');
  $('#modalTitle').textContent=view.title;$('#modalClose').onclick=closeModal;origin?.focus({preventScroll:true});
 }
 async function advanceModelPreview(view,delta){
@@ -205,7 +294,7 @@ function paintModelPreview(view){
  $('#modalTitle').textContent=gallery.item.title+' · '+(index+1)+'/'+gallery.items.length+(moreModelSamples(gallery)?'＋':'');
  const resources=image.resources||[],loras=resources.filter(x=>/lora|locon|lycoris/i.test(x.type));
  const resourceHtml=resource=>'<li><strong>'+esc(resource.name||resource.type+(resource.versionId?' · version '+resource.versionId:''))+'</strong>'+((resource.weight!==''&&resource.weight!=null)?' <span>Strength '+esc(resource.weight)+'</span>':'')+
-  (resource.modelId?'<button data-resource-listing="https://'+(image.imageUrl?.startsWith('https://civitai.red/')?'civitai.red':'civitai.com')+'/models/'+esc(resource.modelId)+(resource.versionId?'?modelVersionId='+esc(resource.versionId):'')+'">Open resource listing ↗</button>':'')+'</li>';
+  '<div class="resourceActions">'+(resource.modelId?'<button data-resource-listing="https://'+(image.imageUrl?.startsWith('https://civitai.red/')?'civitai.red':'civitai.com')+'/models/'+esc(resource.modelId)+(resource.versionId?'?modelVersionId='+esc(resource.versionId):'')+'">Open resource listing ↗</button>':'')+(loras.includes(resource)?loraResourceButton(resource):'')+'</div>'+(loras.includes(resource)?loraResourceDetails(view,resource):'')+'</li>';
  host.innerHTML='<div class="modelPreviewHero"><img class="modelPreviewImage" src="'+esc(ModelPreviews.url(gallery.item,image,true)||ModelPreviews.url(gallery.item,image))+'" alt="'+esc(gallery.item.title)+' preview '+(index+1)+'">'+
   (image.fullPath?'<span class="modelPreviewLoading"><i class="spinner"></i> Loading full preview…</span>':'')+
   '<div class="modelPreviewNavigation"><button data-sample-prev aria-label="Previous preview" '+(index===0?'disabled':'')+'>‹</button><button data-sample-next aria-label="Next preview" '+(index===gallery.items.length-1&&!moreModelSamples(gallery)?'disabled':'')+'>›</button></div></div>'+
@@ -224,6 +313,7 @@ function paintModelPreview(view){
    if(displayed.isConnected){displayed.src=ModelPreviews.url(gallery.item,image,true)||displayed.src;loading?.remove();}
   }).catch(()=>{if(loading?.isConnected)loading.textContent='Full preview unavailable · showing device copy';});
  }
+ wireLoraDownloads(view,host,loras);
  $('[data-sample-prev]',host).onclick=()=>advanceModelPreview(view,-1);$('[data-sample-next]',host).onclick=()=>advanceModelPreview(view,1);
  $('[data-image-source]',host)?.addEventListener('click',()=>openModelSource(image.imageUrl));$('[data-listing-source]',host)?.addEventListener('click',()=>openModelSource(image.listingUrl||gallery.item.sourceUrl));
  $$('[data-resource-listing]',host).forEach(button=>button.onclick=()=>openModelSource(button.dataset.resourceListing));

@@ -20,6 +20,7 @@ import extension
 import recipes
 import gpu_handoff as gpu
 from model_gallery import Gallery
+from model_downloads import Downloads as ModelDownloads
 from model_library import Library as ModelLibrary
 from handoff import adopt
 
@@ -85,6 +86,7 @@ CATALOG_EROS_ON_DISK = None
 CATALOG_LOCK = asyncio.Lock()
 MODELS = ModelLibrary(ROOT, DATA)
 MODEL_GALLERY = Gallery(MODELS)
+MODEL_DOWNLOADS = ModelDownloads(MODELS)
 STOPPING = set()
 CANCEL_STARTED = {}
 HANDOFF_STAGE = {}
@@ -631,6 +633,7 @@ async def idle_watch():
             # Only the process tree launched by this worker is ours to stop.
             subprocess.run(['taskkill', '/PID', str(OWNED.pid), '/T', '/F'],
                            creationflags=subprocess.CREATE_NO_WINDOW, capture_output=True)
+        if MODEL_DOWNLOADS.busy():continue
         os._exit(0)
 
 
@@ -757,6 +760,15 @@ async def api(request):
     if path == 'catalog':
         snapshot=MODELS.snapshot()
         return web.json_response(dict(await catalogue(),listings=snapshot['items'],nsfwHidden=snapshot['nsfwHidden'],scanning=snapshot['scanning']))
+    if path == 'model-library/archive' and request.method=='POST':
+        payload=await request.json()
+        return web.json_response(MODELS.archive(payload.get('id'),payload.get('archived')))
+    if path == 'lora-download/status' and request.method=='POST':
+        return web.json_response(await asyncio.to_thread(MODEL_DOWNLOADS.status,(await request.json()).get('versions')))
+    if path.startswith('lora-download/prepare/') and request.method=='GET':
+        return web.json_response(await asyncio.to_thread(MODEL_DOWNLOADS.prepare,path.split('/')[-1]))
+    if path == 'lora-download/start' and request.method=='POST':
+        return web.json_response(await asyncio.to_thread(MODEL_DOWNLOADS.start,(await request.json()).get('confirmation')))
     if path == 'model-library':
         return web.json_response(MODELS.snapshot())
     if path.startswith('model-gallery/'):
@@ -826,7 +838,7 @@ async def api(request):
                     j['etaSeconds']=None
                 else:
                     j['progress'],j['current_node']=TRACKER.sample()
-        return web.json_response(dict(protocol=19,build='0.1.0-beta.66',jobs=jobs, active=ACTIVE, preview=bool(PREVIEW), previewRevision=PREVIEW_REV,ownedComfy=bool(OWNED),queueEtaSeconds=total_eta))
+        return web.json_response(dict(protocol=19,build='0.1.0-beta.67',jobs=jobs, active=ACTIVE, preview=bool(PREVIEW), previewRevision=PREVIEW_REV,ownedComfy=bool(OWNED),queueEtaSeconds=total_eta))
     if path.startswith('preview/'):
         job=str(uuid.UUID(path[8:]))
         after=int(request.query.get('after','-1'))
@@ -1006,6 +1018,7 @@ async def api(request):
 async def start(app):
     global SESSION
     SESSION = aiohttp.ClientSession()
+    await asyncio.to_thread(MODEL_DOWNLOADS.recover)
     app['tasks'] = [asyncio.create_task(f()) for f in (run_jobs, websocket, idle_watch, model_watch)]
 
 

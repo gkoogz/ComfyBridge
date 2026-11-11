@@ -48,6 +48,11 @@ def retire(home, data, root):
     # The tray holds its admission gate. Also protect requests from an earlier tray.
     if any(c.pid==proc.pid and c.laddr[1]==PORT and c.status=='ESTABLISHED' for c in sockets):
         return False
+    catalogue=data/'model-library/catalog.sqlite'
+    if catalogue.is_file():
+        with closing(sqlite3.connect(catalogue.as_uri()+'?mode=ro',uri=True,timeout=1)) as models:
+            exists=models.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='model_downloads'").fetchone()
+            if exists and models.execute("SELECT 1 FROM model_downloads WHERE status IN ('queued','downloading','verifying') LIMIT 1").fetchone():return False
     with closing(sqlite3.connect((data/'library.sqlite').as_uri()+'?mode=rw',uri=True,timeout=1)) as db, db:
         db.execute('BEGIN IMMEDIATE')
         if db.execute("SELECT 1 FROM jobs WHERE status IN ('running','submitting','pending','cancelling') LIMIT 1").fetchone():

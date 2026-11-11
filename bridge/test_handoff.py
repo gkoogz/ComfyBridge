@@ -31,6 +31,13 @@ class HandoffTests(unittest.TestCase):
                 self.assertFalse(h.retire(home,home,home))
                 worker.terminate.assert_not_called()
                 worker.cmdline.return_value=['python.exe',str(home/'worker.py')]
+                (home/'model-library').mkdir()
+                with closing(sqlite3.connect(home/'model-library/catalog.sqlite')) as catalogue, catalogue:
+                    catalogue.execute('CREATE TABLE model_downloads(status TEXT)')
+                    catalogue.execute("INSERT INTO model_downloads VALUES('downloading')")
+                self.assertFalse(h.retire(home,home,home));worker.terminate.assert_not_called()
+                with closing(sqlite3.connect(home/'model-library/catalog.sqlite')) as catalogue, catalogue:
+                    catalogue.execute("UPDATE model_downloads SET status='complete'")
                 self.assertTrue(h.retire(home,home,home))
                 worker.terminate.assert_called_once();gpu.terminate.assert_not_called()
                 self.assertEqual(json.loads((home/'launcher-handoff.json').read_text()),{'pid':456,'born':1.})
