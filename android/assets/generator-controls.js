@@ -233,3 +233,45 @@ function bindLoraTouch(slider){
  surface.addEventListener('pointerup',finish);surface.addEventListener('pointercancel',finish);
  surface.addEventListener('lostpointercapture',()=>pointer=null);
 }
+
+// Drag only from the grip. Carets remain accessible one-position moves.
+function bindLoraReorder(list){
+ const container=$('#loras'),workspace=$('#workspace');
+ container.querySelectorAll('[data-drag-lora]').forEach(grip=>{
+  let drag=null;
+  const clean=()=>{container.querySelectorAll('.lora').forEach(row=>{row.classList.remove('draggingLora','loraDropTarget');row.style.transform='';});};
+  grip.addEventListener('pointerdown',event=>{
+   if(event.button!==0||!event.isPrimary||grip.disabled)return;
+   event.preventDefault();event.stopPropagation();
+   const from=Number(grip.dataset.dragLora),rows=Array.from(container.querySelectorAll('.lora'));
+   drag={id:event.pointerId,from,to:from,y:event.clientY,scroll:workspace.scrollTop,rows,
+    centers:rows.map(row=>{const r=row.getBoundingClientRect();return r.top+r.height/2;}),moved:false};
+   grip.setPointerCapture(event.pointerId);
+  });
+  grip.addEventListener('pointermove',event=>{
+   if(!drag||drag.id!==event.pointerId)return;
+   const dy=event.clientY-drag.y+workspace.scrollTop-drag.scroll;
+   if(!drag.moved&&Math.abs(dy)<6)return;
+   drag.moved=true;clean();
+   const row=drag.rows[drag.from];row.classList.add('draggingLora');row.style.transform='translateY('+dy+'px)';
+   const center=drag.centers[drag.from]+dy;
+   // Stop at any locked entry; optional rows cannot cross a fixed turbo LoRA.
+   let first=drag.from,last=drag.from;
+   while(first>0&&!list[first-1].locked)first--;
+   while(last+1<list.length&&!list[last+1].locked)last++;
+   drag.to=drag.from;
+   for(let i=first;i<=last;i++)if(Math.abs(drag.centers[i]-center)<Math.abs(drag.centers[drag.to]-center))drag.to=i;
+   if(drag.to!==drag.from)drag.rows[drag.to].classList.add('loraDropTarget');
+  });
+  const finish=event=>{
+   if(!drag||drag.id!==event.pointerId)return;
+   const d=drag;drag=null;clean();
+   if(event.type==='pointerup'&&d.moved&&d.from!==d.to){
+    list.splice(d.to,0,list.splice(d.from,1)[0]);persist();renderLoras();
+    container.querySelector('[data-drag-lora="'+d.to+'"]').focus({preventScroll:true});
+   }
+  };
+  grip.addEventListener('pointerup',finish);grip.addEventListener('pointercancel',finish);
+  grip.addEventListener('lostpointercapture',()=>{drag=null;clean();});
+ });
+}

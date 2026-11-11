@@ -5,7 +5,7 @@ const assert=require('node:assert/strict'),path=require('node:path');
  try{
   const context=await browser.newContext({viewport:{width:390,height:844},isMobile:true,hasTouch:true});
   const p=await context.newPage(),errors=[];
-  p.on('pageerror',e=>errors.push(e.message));
+  p.on('pageerror',e=>{errors.push(e.message);console.error(e.stack);});
   await p.route('https://bridge.test/**',r=>r.fulfill({path:path.join(__dirname,'../android/assets',new URL(r.request().url()).pathname.slice(1)||'index.html')}));
   await p.addInitScript(()=>window.Native={configuration:()=>JSON.stringify({device:'fixture',paired:false}),notificationRoute:()=>'',sliderTick:()=>window.ticks=(window.ticks||0)+1});
   await p.goto('https://bridge.test');await p.waitForSelector('#connect');
@@ -32,10 +32,11 @@ const assert=require('node:assert/strict'),path=require('node:path');
   assert.deepEqual(await p.evaluate(()=>state.settings.image.loras.map(l=>l.name)),['Lighting','Watercolor']);
   async function geometry(){
    const result=await p.locator('.lora').first().evaluate(row=>{
-    const r=row.getBoundingClientRect(),s=row.querySelector('input[type=range]').getBoundingClientRect(),a=row.querySelector('.loraActions').getBoundingClientRect(),button=row.querySelector('.loraRemove'),style=getComputedStyle(button);
-    return {ratio:s.width/(r.width-parseFloat(getComputedStyle(row).paddingLeft)-parseFloat(getComputedStyle(row).paddingRight)-2),overlap:s.right>a.left,border:style.borderStyle,width:parseFloat(style.borderWidth),overflow:row.scrollWidth>row.clientWidth};
+    const r=row.getBoundingClientRect(),s=row.querySelector('input[type=range]').getBoundingClientRect(),a=row.querySelector('.loraReorder').getBoundingClientRect(),button=row.querySelector('.loraRemove'),style=getComputedStyle(button);
+    const x=button.getBoundingClientRect(),icon=button.querySelector('svg').getBoundingClientRect(),head=row.querySelector('.loraHeader').getBoundingClientRect();
+    return {centered:Math.abs(x.left+x.width/2-icon.left-icon.width/2)<.5&&Math.abs(x.top+x.height/2-icon.top-icon.height/2)<.5,xLeft:x.right<a.left,ratio:s.width/(r.width-parseFloat(getComputedStyle(row).paddingLeft)-parseFloat(getComputedStyle(row).paddingRight)-2),overlap:s.right>a.left,border:style.borderStyle,width:parseFloat(style.borderWidth),overflow:row.scrollWidth>row.clientWidth};
    });
-   assert(Math.abs(result.ratio-.6)<.01,JSON.stringify(result));assert(!result.overlap);assert(!result.overflow);assert.equal(result.border,'solid');assert(result.width>=1);
+   assert(result.centered,'Remove glyph is geometrically centered');assert(result.xLeft,'Remove is left of the unified reorder control');assert(Math.abs(result.ratio-.6)<.01,JSON.stringify(result));assert(!result.overlap);assert(!result.overflow);assert.equal(result.border,'solid');assert(result.width>=1);
   }
   await geometry();
   // Trusted browser touch events exercise actual scroll-vs-range arbitration.
@@ -45,6 +46,12 @@ const assert=require('node:assert/strict'),path=require('node:path');
    for(let n=1;n<=10;n++){await cdp.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:x+dx*n/10,y:y+dy*n/10}]});await p.waitForTimeout(16);}
    await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});await p.waitForTimeout(100);
   }
+  await p.locator('[data-drag-lora="0"]').scrollIntoViewIfNeeded();
+  const g=await p.locator('[data-drag-lora="0"]').boundingBox(),dest=await p.locator('[data-drag-lora="1"]').boundingBox();
+  await gesture(g.x+g.width/2,g.y+g.height/2,0,dest.y-g.y);
+  assert.deepEqual(await p.evaluate(()=>state.settings.image.loras.map(l=>l.name)),['Watercolor','Lighting'],'Grip drag reorders whole entries');
+  assert(!await p.locator('#drawer').evaluate(e=>e.classList.contains('open')),'Grip drag must not open sidebar');
+  await p.locator('[data-move-lora="1"][data-direction="-1"]').click();
   async function thumb(){
    await range(0).scrollIntoViewIfNeeded();
    return range(0).evaluate(e=>{const r=e.getBoundingClientRect();return{x:r.left+9.5+(e.valueAsNumber+2)/4*(r.width-19),y:r.top+r.height/2,left:r.left,width:r.width};});
@@ -64,19 +71,23 @@ const assert=require('node:assert/strict'),path=require('node:path');
   await p.setViewportSize({width:1440,height:900});await geometry();
   const rail=await range(0).boundingBox();await p.mouse.click(rail.x+rail.width-12,rail.y+rail.height/2);
   assert(+await number(0).inputValue()>1.5,'Mouse track click remains usable');
-  if(process.env.LORA_SHOT)await p.screenshot({path:process.env.LORA_SHOT});
+  if(process.env.LORA_SHOT){await p.setViewportSize({width:390,height:844});await p.locator('.lora').first().scrollIntoViewIfNeeded();await p.screenshot({path:process.env.LORA_SHOT});await p.setViewportSize({width:1440,height:900});}
   await p.evaluate(()=>{
    state.settings.video={...structuredClone(state.settings.image),model:'standard',frames:40,fps:12,scale:0,loras:[{name:'Lighting',strength:.5,enabled:true},{name:'Watercolor',strength:.8,enabled:true}]};
    navigate('video');
   });
   if(await fold.getAttribute('aria-expanded')==='false')await fold.click();
   assert.equal(await number(0).isDisabled(),true);
+  assert.equal(await p.locator('[data-drag-lora="0"]').isDisabled(),true);
   assert.equal(await p.locator('[data-remove-lora="0"]').isDisabled(),true);
   assert.equal(await p.locator('[data-move-lora="1"][data-direction="-1"]').isDisabled(),true);
   await p.locator('[data-move-lora="2"][data-direction="-1"]').click();
   assert.deepEqual(await p.evaluate(()=>state.settings.video.loras.map(l=>l.name)),['turbo','Watercolor','Lighting']);
   assert.equal(await number(0).inputValue(),'1');
+  const optional=await p.locator('[data-drag-lora="2"]').boundingBox(),fixed=await p.locator('[data-drag-lora="0"]').boundingBox();
+  await gesture(optional.x+optional.width/2,optional.y+optional.height/2,0,fixed.y-optional.y);
+  assert.deepEqual(await p.evaluate(()=>state.settings.video.loras.map(l=>l.name)),['turbo','Lighting','Watercolor'],'Grip cannot cross a mandatory LoRA');
   assert.deepEqual(errors,[]);
-  console.log('LoRA controls: narrow marked slider, precise override, full-object reorder, mandatory lock, outlined removal, mobile/desktop layout, touch scroll safety and haptics passed.');
+  console.log('LoRA controls: narrow marked slider, precise override, full-object reorder, mandatory lock, centered removal, caret/grip reorder, mobile/desktop layout, touch scroll safety and haptics passed.');
  }finally{await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;});
