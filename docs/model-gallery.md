@@ -1,5 +1,9 @@
 # Model preview galleries
 
+Beta 66 adds [persistent device previews and startup download priority](device-preview-cache.md).
+The first three images warm across the catalogue before any extras; cached sets
+remain visible during staggered replacement. The PC behavior below is retained.
+
 Beta 60 adds a larger X in the top-right corner of model listing
 popups. A model's sample carousel preserves portrait and landscape aspect ratios.
 Reaching its right edge requests the next Civitai page; there is also a More

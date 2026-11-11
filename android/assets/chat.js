@@ -58,7 +58,8 @@ function chatStops(){
  return [28,dock,Math.max(dock,Math.min(v.height*.5,roof)),Math.max(dock,roof)];
 }
 function sizeChat(){
- const tray=$('#chatTray'),field=$('#chatText');if(!tray||!field||chatDragging)return;
+ // Viewport events can fire while later entry-page scripts are still loading.
+ const tray=document.getElementById('chatTray'),field=document.getElementById('chatText');if(!tray||!field||chatDragging)return;
  const v=chatViewport();tray.style.setProperty('--chat-viewport',v.height+'px');tray.style.bottom=v.bottom+'px';
  const style=getComputedStyle(field),tenLines=10*parseFloat(style.lineHeight)+parseFloat(style.paddingTop)+parseFloat(style.paddingBottom);
  const expandedCap=Math.min(v.height*.4,chat.snap<=1?v.height*.4:Math.max(60,v.height*(chat.snap===2?.5:.9)-156));

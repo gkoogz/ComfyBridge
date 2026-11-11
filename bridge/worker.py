@@ -755,7 +755,8 @@ async def api(request):
         if not p:raise web.HTTPNotFound()
         return web.json_response(json.loads(p[0]['state']))
     if path == 'catalog':
-        return web.json_response(dict(await catalogue(),listings=MODELS.snapshot()['items']))
+        snapshot=MODELS.snapshot()
+        return web.json_response(dict(await catalogue(),listings=snapshot['items'],nsfwHidden=snapshot['nsfwHidden'],scanning=snapshot['scanning']))
     if path == 'model-library':
         return web.json_response(MODELS.snapshot())
     if path.startswith('model-gallery/'):
@@ -825,7 +826,7 @@ async def api(request):
                     j['etaSeconds']=None
                 else:
                     j['progress'],j['current_node']=TRACKER.sample()
-        return web.json_response(dict(protocol=19,build='0.1.0-beta.65',jobs=jobs, active=ACTIVE, preview=bool(PREVIEW), previewRevision=PREVIEW_REV,ownedComfy=bool(OWNED),queueEtaSeconds=total_eta))
+        return web.json_response(dict(protocol=19,build='0.1.0-beta.66',jobs=jobs, active=ACTIVE, preview=bool(PREVIEW), previewRevision=PREVIEW_REV,ownedComfy=bool(OWNED),queueEtaSeconds=total_eta))
     if path.startswith('preview/'):
         job=str(uuid.UUID(path[8:]))
         after=int(request.query.get('after','-1'))

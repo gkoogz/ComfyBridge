@@ -71,12 +71,38 @@ partial class Bridge {
                 await Until(async()=>await web.ExecuteScriptAsync("window.fixtureResult!==null")=="true","video streaming");
                 var result=await web.ExecuteScriptAsync("window.fixtureResult");
                 if(result!="\"passed\"")throw new Exception("Media test: "+result);
+                await web.ExecuteScriptAsync(@"window.devicePreviewResult=null;(async()=>{
+                    const originalFetch=window.fetch;
+                    try{
+                        const scope='native-smoke-'+Date.now();localStorage.setItem('previewSmokeScope',scope);
+                        const item={id:'native',kind:'loras',name:'Pottery',images:[0,1,2].map(i=>({source:'fixture-'+i,path:'model-preview/native/'+i}))};
+                        localStorage.setItem('previewSmokeItem',JSON.stringify(item));
+                        window.fetch=(url,options)=>originalFetch(String(url).startsWith('/model-preview/native/')?'/source/11111111-1111-4111-8111-111111111111/upload':url,options);
+                        const cache=new ListingPreviewCache({scope,canDownload:()=>true});
+                        await cache.register([item]);await cache.ensure(item,item.images);
+                        if(cache.samples(item).length!==3)throw Error('Native preview cache incomplete');
+                        const image=new Image();image.src=cache.url(item,item.images[0]);await image.decode();
+                        if(image.naturalWidth!==32)throw Error('Native preview blob decode failed');
+                        cache.close();window.devicePreviewResult=true;
+                    }catch(e){window.devicePreviewResult=e.message;}finally{window.fetch=originalFetch;}
+                })();");
+                await Until(async()=>await web.ExecuteScriptAsync("window.devicePreviewResult!==null")=="true","device preview cache");
+                if(await web.ExecuteScriptAsync("window.devicePreviewResult")!="true")throw new Exception(await web.ExecuteScriptAsync("window.devicePreviewResult"));
                 var processId=web.BrowserProcessId;
                 app.CollapseDesktop();
                 await Until(()=>Task.FromResult(!app.expanded&&app.desktop==null&&app.compactPanel.Visible),"collapse");
                 await Until(()=>Task.FromResult(!System.Diagnostics.Process.GetProcessesByName("msedgewebview2").Any(p=>p.Id==processId)),"browser process release");
                 app.ExpandDesktop();
                 await Until(async()=>app.desktop!=null&&app.desktop.CoreWebView2!=null&&await app.desktop.CoreWebView2.ExecuteScriptAsync("!!document.querySelector('#desktopPower')")=="true","reopen");
+                await app.desktop.CoreWebView2.ExecuteScriptAsync(@"window.previewReopen=null;(async()=>{try{
+                    const item=JSON.parse(localStorage.getItem('previewSmokeItem'));
+                    const cache=new ListingPreviewCache({scope:localStorage.getItem('previewSmokeScope'),canDownload:()=>false});
+                    await cache.ready;await cache.register([item]);await cache.ensure(item,item.images);
+                    const image=new Image();image.src=cache.url(item,item.images[1]);await image.decode();
+                    window.previewReopen=cache.samples(item).length===3&&image.naturalWidth===32;cache.close();
+                }catch(e){window.previewReopen=e.message;}})();");
+                await Until(async()=>await app.desktop.CoreWebView2.ExecuteScriptAsync("window.previewReopen!==null")=="true","preview cache after browser restart");
+                if(await app.desktop.CoreWebView2.ExecuteScriptAsync("window.previewReopen")!="true")throw new Exception(await app.desktop.CoreWebView2.ExecuteScriptAsync("window.previewReopen"));
                 await app.desktop.CoreWebView2.ExecuteScriptAsync("setTimeout(()=>document.querySelector('.desktopClose').click(),100)");
                 await Until(()=>Task.FromResult(app.desktop==null&&!app.expanded&&!app.monitor.Visible),"X hides studio");
                 app.ShowMonitor();app.Server(true,false);
@@ -88,7 +114,7 @@ partial class Bridge {
                 if(app.monitor.Visible||!app.tray.Visible||!online)throw new Exception("Compact X stopped bridge");
                 if(!app.tray.ContextMenuStrip.Items.Cast<ToolStripItem>().Any(i=>i.Text.StartsWith("Close ComfyBridge")))throw new Exception("Tray Close missing");
                 app.Server(false,false);
-                Console.WriteLine("Native WebView chat model selectors and persistence, power on/off, authenticated ping, identity, local range playback, seeking, collapse, browser process release, reopen and hide passed.");
+                Console.WriteLine("Native WebView device preview blobs and offline restart cache, chat model selectors and persistence, power on/off, authenticated ping, identity, local range playback, seeking, collapse, browser process release, reopen and hide passed.");
                 Environment.ExitCode=0;
                 if(inspect){
                     app.ShowMonitor();app.ExpandDesktop();

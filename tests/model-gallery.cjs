@@ -12,7 +12,7 @@ const assert=require('node:assert/strict'),path=require('node:path');
   });
   await p.addInitScript(()=>window.Native={configuration:()=>JSON.stringify({device:'one',paired:false}),notificationRoute:()=>'',copyText:text=>window.copied=text,openListing:url=>window.opened=url});
   await p.goto('https://bridge.test');await p.waitForSelector('#connect');
-  await p.evaluate(()=>{
+  await p.evaluate(async()=>{
    heartbeat=poll=syncSettings=()=>{};persist=()=>{};connected=true;window.galleryRequests=[];
    const id='a'.repeat(32),item={id,kind:'loras',name:'ceramic.safetensors',title:'Ceramic Detail',source:'Civitai',sourceUrl:'https://civitai.com/models/8',images:[]};
    catalog={models:[],loras:[item.name],listings:[item]};state.settings.image={loras:[],width:512,height:768,steps:4,cfg:5,denoise:1,model:'',positive:'A bowl.',negative:'',seed:'1'};
@@ -28,7 +28,7 @@ const assert=require('node:assert/strict'),path=require('node:path');
     }
     return {};
    };
-   navigate('image');openModelBrowser('loras',item.name);
+   ModelPreviews.synced();await ModelPreviews.start(catalog);navigate('image');openModelBrowser('loras',item.name);
   });
   await p.waitForFunction(()=>document.querySelectorAll('.modelSample').length===2);
   assert.equal(await p.locator('#modalClose').textContent(),'×');

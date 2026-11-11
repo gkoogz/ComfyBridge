@@ -9,11 +9,11 @@ async function mapState(x,fn){if(x&&typeof x==='object'){const y=await fn(x);if(
 function backupState(){const {settings,presets,prompts,inputs}=state;return {settings,presets,prompts,inputs};}
 function profileMessage(text){profileStatus=text;if(document.querySelector('#backupStatus'))document.querySelector('#backupStatus').textContent=text;}
 function scheduleBackup(){profileDirty=true;clearTimeout(profileTimer);if(profileReady&&connected)profileTimer=setTimeout(flushProfile,1000);}
-async function flushProfile(){if(profileBusy||!profileReady||!connected||!profileDirty||!Object.keys(state.settings).length)return;profileBusy=true;profileDirty=false;const id=epoch;
+async function flushProfile(){if(profileBusy||!profileReady||!connected||!profileDirty||!Object.keys(state.settings).length)return;profileBusy=true;ModelPreviews.pause();profileDirty=false;const id=epoch;
  try{profileMessage('Saving settings…');const copy=await encodeShared(structuredClone(backupState()),id);
   if(id!==epoch)throw Error('Connection changed');await api('profile',{name:info().name,state:copy});profileMessage('Saved on PC · '+new Date().toLocaleTimeString());
  }catch(e){profileDirty=true;profileMessage('Backup pending: '+e.message);}
- finally{profileBusy=false;if(profileDirty&&connected&&profileReady)profileTimer=setTimeout(flushProfile,5000);}
+ finally{profileBusy=false;ModelPreviews.wake();if(profileDirty&&connected&&profileReady)profileTimer=setTimeout(flushProfile,5000);}
 }
 async function restoreProfile(device,id=epoch){
  const saved=await api('profile/'+device);const restored=await mapState(saved,async x=>x&&typeof x==='object'&&typeof x.bridgeInput==='string'?(await api('profile-blob/'+x.bridgeInput)).value:x);

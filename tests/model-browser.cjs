@@ -9,15 +9,15 @@ const assert=require('node:assert/strict'),path=require('node:path');
   await p.route('**/model-preview/**',r=>r.fulfill({contentType:'image/svg+xml',body:'<svg xmlns="http://www.w3.org/2000/svg" width="200" height="250"><rect width="200" height="250" fill="#638d89"/><circle cx="100" cy="125" r="55" fill="#e1c9a8"/></svg>'}));
   await p.addInitScript(()=>window.Native={configuration:()=>JSON.stringify({device:'one',paired:false}),notificationRoute:()=>'',copyText:text=>window.copied=text,openListing:url=>window.opened=url});
   await p.goto('https://bridge.test');await p.waitForSelector('#connect');
-  await p.evaluate(()=>{
+  await p.evaluate(async()=>{
    heartbeat=poll=syncSettings=()=>{};persist=()=>{};connected=true;
    window.items=[['checkpoints','raw-a.safetensors','Ceramic Realism'],['checkpoints','raw-b.safetensors','Watercolor Studio'],['loras','raw-lora.safetensors','Ceramic Detail'],['loras','second.safetensors','Warm Lighting']].map(([kind,name,title],i)=>({id:String(i),kind,name,title,version:'v2',author:'Studio Artist',bytes:456000000,sha256:'a'.repeat(64),baseModel:'SDXL',keywords:['ceramic glaze'],description:'Author description with useful details.\nSecond paragraph. <script>should stay text</script>',source:'Civitai',sourceUrl:'https://civitai.com/models/123',match:'Exact SHA-256 file match',images:[0,1,2].map(n=>({path:'model-preview/'+i+'/'+n}))}));
    catalog={models:['raw-a.safetensors','raw-b.safetensors'],loras:['raw-lora.safetensors','second.safetensors'],listings:items};
    state.settings.image={width:512,height:768,steps:4,cfg:5,denoise:1,model:'raw-a.safetensors',positive:'A pottery studio.',negative:'',loras:[{name:'raw-lora.safetensors',strength:1,enabled:true}],seed:'1',batch:1};
    api=async route=>{if(route==='model-library')return {items,scanning:false};return {};};
-   navigate('image');
+   ModelPreviews.synced();await ModelPreviews.start(catalog);navigate('image');
   });
-  await p.locator('#checkpointBrowser').click();await p.waitForSelector('.modelCard');
+  await p.locator('#checkpointBrowser').click();await p.waitForSelector('.modelCard');await p.waitForFunction(()=>document.querySelectorAll('.modelSamples img').length===6);
   assert.equal(await p.locator('.modelCard').count(),2);assert.equal(await p.locator('.modelSamples img').count(),6);
   assert.match(await p.locator('#modelNsfwNote').textContent(),/NSFW previews are hidden/);
   assert.equal(await p.locator('.modelCard .modelNsfwNote').count(),2);
@@ -35,7 +35,7 @@ const assert=require('node:assert/strict'),path=require('node:path');
   await p.waitForSelector('.modelAdd');assert.equal(await p.locator('.modelAdd:disabled').count(),1);
   await p.locator('.modelAdd:not(:disabled)').click();assert.equal(await p.evaluate(()=>state.settings.image.loras.length),2);
   assert.equal(await p.locator('.modelAdd:disabled').count(),2);
-  await p.locator('#modalClose').click();await p.locator('[data-see-lora]').first().click();
+  await p.locator('#modalClose').click();await p.locator('[data-see-lora]').first().click();await p.waitForSelector('.modelCard');
   assert.equal(await p.locator('.modelCard').count(),1);assert.match(await p.locator('.modelCard h2').textContent(),/Ceramic Detail/);
   assert.equal(await p.locator('[data-setting=model]').inputValue(),'raw-b.safetensors');
   await p.locator('#modalClose').click();

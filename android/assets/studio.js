@@ -32,7 +32,7 @@ const decodeShared=value=>mapState(value,async x=>x&&typeof x==='object'&&typeof
 async function syncSettings(){
  if(!connected||!profileReady||document.hidden)return;
  if(settingsBusy){settingsAgain=true;return;}
- settingsBusy=true;nextSettings=Date.now()+600000;
+ settingsBusy=true;ModelPreviews.pause();nextSettings=Date.now()+600000;
  const session=epoch,updates={};
  try{
   if(clockEpoch!==session){
@@ -72,7 +72,7 @@ async function syncSettings(){
   persist(null);
   if(redraw&&!$('#modal').open)renderGenerator();
  }catch(e){nextSettings=Date.now()+30000;profileMessage('Sync pending · '+e.message);}
- finally{settingsBusy=false;if(settingsAgain){settingsAgain=false;clearTimeout(settingsTimer);settingsTimer=setTimeout(syncSettings,200);}}
+ finally{settingsBusy=false;ModelPreviews.wake();if(settingsAgain){settingsAgain=false;clearTimeout(settingsTimer);settingsTimer=setTimeout(syncSettings,200);}}
 }
 
 let queueHistory=[],historyOffset=0,historyFailure='';

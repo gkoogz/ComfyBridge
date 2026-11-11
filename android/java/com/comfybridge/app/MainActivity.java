@@ -44,6 +44,12 @@ public class MainActivity extends Activity {
  private volatile boolean foreground=false,prefetchAllowed=false;
  private final java.util.concurrent.atomic.AtomicLong prefetchEpoch=new java.util.concurrent.atomic.AtomicLong();
  private volatile HttpURLConnection prefetchConnection;
+ private volatile HttpURLConnection listingPreviewConnection;
+ private void stopListingPreviews(){
+  HttpURLConnection c=listingPreviewConnection;listingPreviewConnection=null;
+  if(c!=null)new Thread(()->c.disconnect(),"Stop listing preview").start();
+  runOnUiThread(()->{if(web!=null)web.evaluateJavascript("if(window.ModelPreviews)ModelPreviews.pause();",null);});
+ }
  private void stopPrefetch(){
   prefetchAllowed=false;prefetchEpoch.incrementAndGet();HttpURLConnection c=prefetchConnection;
   prefetchConnection=null;if(c!=null)new Thread(()->c.disconnect(),"Stop media prefetch").start();
@@ -88,17 +94,20 @@ public class MainActivity extends Activity {
       return new WebResourceResponse(thumb?"image/jpeg":"image/png",null,new FileInputStream(f));
      }
      if(path.startsWith("/source/")||path.startsWith("/model-preview/")||path.startsWith("/thumb/")||path.equals("/preview")||path.startsWith("/preview/")){
+      boolean listingPreview=path.startsWith("/model-preview/");
+      if(listingPreview&&!foreground)return response(503,"Paused","text/plain",new byte[0]);
       String query=uri.getEncodedQuery();
       HttpURLConnection c=connection((path.startsWith("/source/")?"api/studio/source-file/"+path.substring(8):"api"+path)+(query==null?"":"?"+query),"GET");String range=r.getRequestHeaders().get("Range");if(range!=null)c.setRequestProperty("Range",range);
+      if(listingPreview){listingPreviewConnection=c;if(!foreground){stopListingPreviews();return response(503,"Paused","text/plain",new byte[0]);}}
       int code=c.getResponseCode();Map<String,String> headers=new HashMap<>();
       for(String h:new String[]{"Content-Length","Content-Range","Accept-Ranges","Cache-Control","X-Preview-Revision"})if(c.getHeaderField(h)!=null)headers.put(h,c.getHeaderField(h));
       String mime=c.getContentType();if(mime==null)mime="application/octet-stream";mime=mime.split(";")[0];
       InputStream stream=code>=400?c.getErrorStream():c.getInputStream();if(stream==null)stream=new ByteArrayInputStream(new byte[0]);
       final InputStream input=stream;
-      return new WebResourceResponse(mime,null,code,c.getResponseMessage()==null?"Response":c.getResponseMessage(),headers,new FilterInputStream(input){@Override public void close()throws IOException{super.close();c.disconnect();}});
+      return new WebResourceResponse(mime,null,code,c.getResponseMessage()==null?"Response":c.getResponseMessage(),headers,new FilterInputStream(input){@Override public void close()throws IOException{try{super.close();}finally{c.disconnect();if(listingPreviewConnection==c)listingPreviewConnection=null;}}});
      }
      if(path.equals("/"))path="/index.html";
-     if(!Arrays.asList("/index.html","/style.css","/app.js","/profile.js","/gallery.js","/gallery.css","/studio.css","/studio.js","/notepad.js","/live-image.js","/generator-controls.js","/generator.css","/desktop.js","/desktop.css","/provenance.js","/chat.js","/quick-edit.js","/chat-format.js","/chat.css","/provenance.css","/model-browser.js","/model-browser.css").contains(path))return response(404,"Not Found","text/plain",new byte[0]);
+     if(!Arrays.asList("/index.html","/style.css","/app.js","/profile.js","/gallery.js","/gallery.css","/studio.css","/studio.js","/notepad.js","/live-image.js","/generator-controls.js","/generator.css","/desktop.js","/desktop.css","/provenance.js","/chat.js","/quick-edit.js","/chat-format.js","/chat.css","/provenance.css","/model-cache.js","/model-browser.js","/model-browser.css").contains(path))return response(404,"Not Found","text/plain",new byte[0]);
      String mime=path.endsWith("css")?"text/css":path.endsWith("js")?"application/javascript":"text/html";
      return new WebResourceResponse(mime,"UTF-8",getAssets().open(path.substring(1)));
     }catch(Exception e){return response(503,"Unavailable","text/plain",new byte[0]);}
@@ -161,6 +170,7 @@ public class MainActivity extends Activity {
   @JavascriptInterface public void prefetchEnabled(boolean enabled){
    if(enabled&&foreground)prefetchAllowed=true;else if(prefetchAllowed||prefetchConnection!=null)stopPrefetch();
   }
+  @JavascriptInterface public boolean listingPreviewsAllowed(){return foreground;}
   @JavascriptInterface public boolean pickedVideo(){
    Uri uri=pickedUri;
    String type=uri==null?null:getContentResolver().getType(uri);
@@ -297,7 +307,7 @@ public class MainActivity extends Activity {
   if(explicit){Intent i=new Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(android.provider.Settings.EXTRA_APP_PACKAGE,getPackageName());startActivity(i);}
  }
  @Override protected void onResume(){super.onResume();foreground=true;if(prefs!=null)JobWatch.resume(this);updates.foreground(this,io);if(web!=null)web.evaluateJavascript("if(typeof prefetchVisibility==='function'){prefetchVisibility();fillShelf();}",null);}
- @Override protected void onPause(){foreground=false;stopPrefetch();updates.background();super.onPause();}
+ @Override protected void onPause(){foreground=false;stopPrefetch();stopListingPreviews();updates.background();super.onPause();}
  @Override protected void onActivityResult(int request,int result,Intent data){super.onActivityResult(request,result,data);
   if(request==100 && chooser!=null){
    pickedUri=result==RESULT_OK&&data!=null?data.getData():null;
@@ -305,5 +315,5 @@ public class MainActivity extends Activity {
   }
  }
  @Override public void onBackPressed(){web.evaluateJavascript("bridgeBack()",null);}
- @Override protected void onDestroy(){foreground=false;stopPrefetch();prefetchIO.shutdownNow();heartbeat.shutdownNow();io.shutdownNow();mediaIO.shutdownNow();super.onDestroy();}
+ @Override protected void onDestroy(){foreground=false;stopPrefetch();stopListingPreviews();prefetchIO.shutdownNow();heartbeat.shutdownNow();io.shutdownNow();mediaIO.shutdownNow();super.onDestroy();}
 }

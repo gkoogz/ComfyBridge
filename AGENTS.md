@@ -29,7 +29,7 @@
 | GPU handoff, pause checkpoints and cancellation | `bridge/gpu_handoff.py`, `comfybridge_checkpoint.py`, `comfybridge_eros_vsa.py`, `cancel_recovery.py`, `handoff.py` |
 | Inputs, reproducible recipes and ancestry | `bridge/recipes.py`, `provenance.py`, `extension.py` |
 | Live result selection, previews and completed playback | `android/assets/live-image.js`, `app.js`, `gallery.js`, `gallery.css` |
-| Model listing catalogue and sample galleries | `bridge/model_library.py`, `model_gallery.py`; `android/assets/model-browser.js` and CSS |
+| Model listing catalogue and sample galleries | `bridge/model_library.py`, `model_gallery.py`; `android/assets/model-browser.js`, `model-cache.js` and CSS |
 | Build/install | `Build.ps1`, `bridge/Install.ps1`, `bridge/WebView2.ps1` |
 | Verification | `bridge/test_*.py`, `tests/`; historical evidence in `docs/BETA-TESTING.md` |
 
@@ -106,6 +106,8 @@ node tests/desktop.cjs
 node tests/model-browser.cjs
 node tests/lora-controls.cjs
 node tests/model-gallery.cjs
+node tests/model-preview-cache.cjs
+node tests/media-prefetch.cjs
 node tests/final-frame.cjs
 node tests/live-results.cjs
 node tests/queue-preview.cjs
