@@ -22,7 +22,7 @@ using Microsoft.Win32;
 [assembly: System.Reflection.AssemblyDescription("Phone to ComfyUI bridge")]
 [assembly: System.Reflection.AssemblyVersion("0.1.0.0")]
 [assembly: System.Reflection.AssemblyFileVersion("0.1.0.58")]
-[assembly: System.Reflection.AssemblyInformationalVersion("0.1.0-beta.64")]
+[assembly: System.Reflection.AssemblyInformationalVersion("0.1.0-beta.65")]
 
 partial class Bridge : ApplicationContext {
     static readonly string Home = AppDomain.CurrentDomain.BaseDirectory;

@@ -33,10 +33,12 @@ const assert=require('node:assert/strict'),path=require('node:path');
   async function geometry(){
    const result=await p.locator('.lora').first().evaluate(row=>{
     const r=row.getBoundingClientRect(),s=row.querySelector('input[type=range]').getBoundingClientRect(),a=row.querySelector('.loraReorder').getBoundingClientRect(),button=row.querySelector('.loraRemove'),style=getComputedStyle(button);
-    const x=button.getBoundingClientRect(),icon=button.querySelector('svg').getBoundingClientRect(),head=row.querySelector('.loraHeader').getBoundingClientRect();
-    return {centered:Math.abs(x.left+x.width/2-icon.left-icon.width/2)<.5&&Math.abs(x.top+x.height/2-icon.top-icon.height/2)<.5,xLeft:x.right<a.left,ratio:s.width/(r.width-parseFloat(getComputedStyle(row).paddingLeft)-parseFloat(getComputedStyle(row).paddingRight)-2),overlap:s.right>a.left,border:style.borderStyle,width:parseFloat(style.borderWidth),overflow:row.scrollWidth>row.clientWidth};
+    const x=button.getBoundingClientRect(),icon=button.querySelector('svg').getBoundingClientRect(),listing=row.querySelector('.seeListing'),listingRect=listing.getBoundingClientRect(),reorder=row.querySelector('.loraReorder');
+    const borders=[listing,button,reorder].map(e=>{const c=getComputedStyle(e);return [c.borderWidth,c.borderStyle,c.borderColor,c.borderRadius,c.backgroundColor].join('|');});
+    reorder.hidden=true;const compactHeight=row.getBoundingClientRect().height;reorder.hidden=false;
+    return {noAddedHeight:r.height===compactHeight,aligned:Math.abs(x.top-a.top)<.5&&Math.abs(x.height-a.height/2)<.5&&Math.abs(listingRect.top-x.top)<.5&&Math.abs(listingRect.height-x.height)<.5,bordersMatch:borders.every(b=>b===borders[0]),evenGaps:Math.abs((x.left-listingRect.right)-(a.left-x.right))<.5,centered:Math.abs(x.left+x.width/2-icon.left-icon.width/2)<.5&&Math.abs(x.top+x.height/2-icon.top-icon.height/2)<.5,xLeft:x.right<a.left,ratio:s.width/(r.width-parseFloat(getComputedStyle(row).paddingLeft)-parseFloat(getComputedStyle(row).paddingRight)-2),overlap:s.right>a.left,border:style.borderStyle,width:parseFloat(style.borderWidth),overflow:row.scrollWidth>row.clientWidth};
    });
-   assert(result.centered,'Remove glyph is geometrically centered');assert(result.xLeft,'Remove is left of the unified reorder control');assert(Math.abs(result.ratio-.6)<.01,JSON.stringify(result));assert(!result.overlap);assert(!result.overflow);assert.equal(result.border,'solid');assert(result.width>=1);
+   assert(result.noAddedHeight,'Reorder control must not increase row height');assert(result.aligned,'See Listing and Remove align with the top half of reorder');assert(result.bordersMatch,'Listing, Remove and reorder share border, corners and fill');assert(result.evenGaps,'Action buttons have equal horizontal gaps');assert(result.centered,'Remove glyph is geometrically centered');assert(result.xLeft,'Remove is left of the unified reorder control');assert(Math.abs(result.ratio-.6)<.01,JSON.stringify(result));assert(!result.overlap);assert(!result.overflow);assert.equal(result.border,'solid');assert(result.width>=1);
   }
   await geometry();
   // Trusted browser touch events exercise actual scroll-vs-range arbitration.
@@ -88,6 +90,6 @@ const assert=require('node:assert/strict'),path=require('node:path');
   await gesture(optional.x+optional.width/2,optional.y+optional.height/2,0,fixed.y-optional.y);
   assert.deepEqual(await p.evaluate(()=>state.settings.video.loras.map(l=>l.name)),['turbo','Lighting','Watercolor'],'Grip cannot cross a mandatory LoRA');
   assert.deepEqual(errors,[]);
-  console.log('LoRA controls: narrow marked slider, precise override, full-object reorder, mandatory lock, centered removal, caret/grip reorder, mobile/desktop layout, touch scroll safety and haptics passed.');
+  console.log('LoRA controls: narrow marked slider, precise override, full-object reorder, mandatory lock, compact matched action controls, centered removal, caret/grip reorder, mobile/desktop layout, touch scroll safety and haptics passed.');
  }finally{await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;});

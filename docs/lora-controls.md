@@ -1,4 +1,4 @@
-# LoRA controls (Beta 64)
+# LoRA controls (Beta 65)
 
 Image and Video share a compact LoRA row. Its slider occupies 60% of the row's
 content width, ranges from −2 to 2 in 0.1 steps, and marks −1, 0 and 1. The number
@@ -8,7 +8,10 @@ reordering; only the thumb is clamped to the end of the track.
 
 The right side contains one outlined reorder control with an up caret, a
 three-line draggable grip and a down caret. A separate outlined Remove button
-sits to its left; its SVG cross is geometrically centered. Carets move one
+sits to its left; its SVG cross is geometrically centered. The 72-pixel reorder
+control is positioned outside grid sizing so it never adds row height. Its upper
+half aligns with the 36-pixel Remove and See Listing buttons. All three use the
+same border color, thickness, corner radius and fill, with equal horizontal gaps. Carets move one
 position. Dragging the grip moves a whole entry to the indicated destination
 and commits on release; cancelling a drag leaves the order unchanged.
 Reordering swaps whole entries, retaining strength, enabled state and any
@@ -33,6 +36,7 @@ slider feedback.
 
 - `node tests/lora-controls.cjs`: isolated neutral fixtures verify phone-sized
   and desktop geometry, marks, precise overrides, complete-entry reordering,
+  zero added row height, matched borders and spacing, top-half alignment,
   centered removal, touch grip dragging, caret moves, mandatory locks, keyboard
   and mouse editing. Trusted Chromium touch
   events verify vertical scrolling without changing strength, inert track taps,

@@ -14,8 +14,8 @@ body:is([data-page=image],[data-page=video]) .modeRow{margin:2px 0 7px}
 .foldBody .upload{min-height:95px}.foldBody .uploadtools{margin-top:4px;gap:5px}
 .foldBody .sourceDims{min-width:0;line-height:1.2}.sourceDims strong{display:block;font-size:clamp(17px,4.5vw,22px);font-variant-numeric:tabular-nums}.sourceDims small{display:block;margin-top:2px}
 .foldBody .lora{padding:7px 0}.foldBody .lora .row{margin-bottom:3px}.foldBody .controlrow{gap:8px}
-.foldBody .lora{display:grid;grid-template-columns:60% minmax(0,1fr) 44px;gap:4px 8px;align-items:center}
-.lora .loraHeader{grid-column:1/3;grid-row:1;min-width:0;padding-right:44px}.loraHeader input[type=checkbox]{flex:none}.loraHeader select{flex:1;min-width:0}.loraHeader .seeListing{flex:none}
+.foldBody .lora{display:grid;position:relative;grid-template-columns:60% minmax(0,1fr) 36px;gap:4px 8px;align-items:center}
+.foldBody .lora .loraHeader{margin-bottom:0;grid-column:1/3;grid-row:1;min-width:0;padding-right:44px}.loraHeader input[type=checkbox]{flex:none}.loraHeader select{flex:1;min-width:0}.loraHeader .seeListing{flex:none}
 .loraSlider{touch-action:pan-y;grid-column:1;grid-row:2;position:relative;height:46px;display:flex;align-items:center;padding-bottom:16px;min-width:0}
 .loraSlider input[type=range]{position:relative;z-index:1;width:100%;height:5px;margin:0;pointer-events:none;touch-action:pan-y;user-select:none}
 .loraMarks{position:absolute;inset:0 9.5px;pointer-events:none}.loraMarks span{position:absolute;top:15px;transform:translateX(-50%);padding-top:7px;font-size:10px;color:var(--muted);font-variant-numeric:tabular-nums}.loraMarks span:before{content:'';position:absolute;top:-5px;left:50%;width:1px;height:10px;background:#a7b8b2}
@@ -23,8 +23,10 @@ body:is([data-page=image],[data-page=video]) .modeRow{margin:2px 0 7px}
 .loraActions{display:contents}
 .loraActions button{display:grid;place-items:center;padding:0;line-height:1}
 .loraActions svg{display:block;width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;pointer-events:none}
-.loraActions .loraRemove{grid-column:2;grid-row:1;justify-self:end;align-self:center;width:36px;min-width:36px;height:36px;min-height:36px;border:1px solid #775059;border-radius:9px;background:var(--panel2)}
-.loraReorder{grid-column:3;grid-row:1/4;align-self:center;display:grid;grid-template-rows:24px 28px 24px;width:36px;justify-self:end;border:1px solid #4b5e67;border-radius:9px;background:var(--panel2);overflow:hidden}
+.loraHeader .seeListing,.loraActions .loraRemove,.loraReorder{border:1px solid #4b5e67;border-radius:9px;background:var(--panel2)}
+.loraHeader .seeListing{height:36px;min-height:36px;display:grid;place-items:center}
+.loraActions .loraRemove{grid-column:2;grid-row:1;justify-self:end;align-self:center;width:36px;min-width:36px;height:36px;min-height:36px;}
+.loraReorder{position:absolute;right:0;top:7px;display:grid;grid-template-rows:1fr 28px 1fr;width:36px;height:72px;overflow:hidden}
 .loraReorder button{width:100%;min-width:0;min-height:0;height:100%;border:0;border-radius:0;background:transparent;touch-action:manipulation}
 .loraReorder .loraGrip{cursor:grab;touch-action:none;user-select:none;color:var(--muted)}
 .loraReorder .loraGrip:active{cursor:grabbing}.loraGrip svg{width:16px;height:16px}
