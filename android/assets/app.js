@@ -264,23 +264,36 @@ function renderLoras(){
  }
  if(page==='video'&&state.settings.video.model!==erosModel){
   const fixed=catalog?.defaults?.video?.loras?.[0];
-  if(fixed&&list[0]?.name!==fixed.name)list.unshift({...fixed});
+  if(fixed&&list[0]?.name!==fixed.name)list.unshift({...fixed,locked:true,enabled:true});
   else if(list[0]){
    const strength=state.settings.video.replayOf?list[0].strength:(fixed?.strength??1);
    Object.assign(list[0],fixed,{locked:true,enabled:true,strength});
   }
  }
- $('#loras').innerHTML=list.length?list.map((l,i)=>`<div class="lora" data-lora="${i}"><div class="row"><input type="checkbox" data-enable="${i}" ${l.enabled?'checked':''} ${l.locked?'disabled':''} aria-label="Enable LoRA">${l.locked?`<span class="lockedname">▣ ${esc(modelLabel('loras',l.name))}</span><button type="button" data-see-lora="${i}" class="seeListing">See Listing</button>`:`<select data-lora-name="${i}">${[...new Set([l.name,...(catalog?.loras||[])])].map(n=>`<option value="${esc(n)}" ${n===l.name?'selected':''} ${list.some((x,j)=>j!==i&&modelKey(x.name)===modelKey(n))?'disabled':''}>${esc(modelLabel('loras',n))}</option>`).join('')}</select><button type="button" data-see-lora="${i}" class="seeListing">See Listing</button><button data-remove-lora="${i}" class="icon danger" aria-label="Remove LoRA">×</button>`}</div><div class="controlrow"><input type="range" data-strength="${i}" ${l.locked?'disabled':''} min="-5" max="5" step=".1" value="${l.strength}" aria-label="LoRA strength"><input type="number" data-strength="${i}" ${l.locked?'disabled':''} min="-20" max="20" step="any" value="${l.strength}" aria-label="LoRA strength"></div>${l.locked?'<small>Required turbo LoRA · fixed strength</small>':''}</div>`).join(''):page==='video'&&state.settings.video.model===erosModel?'<small>Eros Turbo is built in. Add optional LoRAs here.</small>':'<small>No LoRAs added.</small>';
+ $('#loras').innerHTML=list.length?list.map((l,i)=>`<div class="lora" data-lora="${i}" role="group" aria-label="${esc(modelLabel('loras',l.name))}">
+ <div class="row loraHeader"><input type="checkbox" data-enable="${i}" ${l.enabled?'checked':''} ${l.locked?'disabled':''} aria-label="Enable LoRA">${l.locked?`<span class="lockedname">▣ ${esc(modelLabel('loras',l.name))}</span>`:`<select data-lora-name="${i}">${[...new Set([l.name,...(catalog?.loras||[])])].map(n=>`<option value="${esc(n)}" ${n===l.name?'selected':''} ${list.some((x,j)=>j!==i&&modelKey(x.name)===modelKey(n))?'disabled':''}>${esc(modelLabel('loras',n))}</option>`).join('')}</select>`}<button type="button" data-see-lora="${i}" class="seeListing">See Listing</button></div>
+ <div class="loraSlider"><div class="loraMarks" aria-hidden="true">${[-1,0,1].map(n=>`<span style="left:${(n+2)/4*100}%">${n===-1?'−1':n}</span>`).join('')}</div><input type="range" data-strength="${i}" ${l.locked?'disabled':''} min="-2" max="2" step=".1" value="${esc(l.strength)}" aria-label="LoRA strength" title="Drag the handle to adjust strength"></div>
+ <div class="loraNumber"><input type="number" data-strength="${i}" ${l.locked?'disabled':''} min="-20" max="20" step="any" value="${esc(l.strength)}" aria-label="LoRA strength" title="Precise strength; may exceed the slider range"></div>
+ <div class="loraActions"><button type="button" data-remove-lora="${i}" class="loraRemove danger" ${l.locked?'disabled':''} aria-label="Remove LoRA">×</button><button type="button" data-move-lora="${i}" data-direction="-1" ${l.locked||i===0||list[i-1]?.locked?'disabled':''} aria-label="Move LoRA up">↑</button><button type="button" data-move-lora="${i}" data-direction="1" ${l.locked||i===list.length-1||list[i+1]?.locked?'disabled':''} aria-label="Move LoRA down">↓</button></div>
+ ${l.locked?'<small class="loraNote">Required turbo LoRA · fixed strength</small>':''}</div>`).join(''):page==='video'&&state.settings.video.model===erosModel?'<small>Eros Turbo is built in. Add optional LoRAs here.</small>':'<small>No LoRAs added.</small>';
  $$('[data-see-lora]').forEach(b=>b.onclick=()=>openModelBrowser('loras',list[+b.dataset.seeLora].name));
  $$('[data-enable]').forEach(e=>e.onchange=()=>{list[+e.dataset.enable].enabled=e.checked;persist();});$$('[data-lora-name]').forEach(e=>e.onchange=()=>{list[+e.dataset.loraName].name=e.value;persist();});
- $$('[data-remove-lora]').forEach(e=>e.onclick=()=>{list.splice(+e.dataset.removeLora,1);persist();renderLoras();});$$('[data-strength]').forEach(el=>{
+ $$('[data-remove-lora]').forEach(button=>button.onclick=()=>{const i=+button.dataset.removeLora;if(list[i].locked)return;list.splice(i,1);persist();renderLoras();});
+ $$('[data-move-lora]').forEach(button=>button.onclick=()=>{
+  const from=+button.dataset.moveLora,to=from+Number(button.dataset.direction);
+  if(!list[to]||list[from].locked||list[to].locked)return;
+  [list[from],list[to]]=[list[to],list[from]];persist();renderLoras();
+  $('#loras [data-move-lora="'+to+'"][data-direction="'+button.dataset.direction+'"]').focus({preventScroll:true});
+ });
+ $$('[data-strength]').forEach(el=>{
   const i=Number(el.dataset.strength);
   el.oninput=()=>{
    if(list[i].locked||!Number.isFinite(el.valueAsNumber))return;
-   const value=limit(el.valueAsNumber,-20,20);
+   const value=el.type==='range'?limit(Math.round(el.valueAsNumber*10)/10,-2,2):limit(el.valueAsNumber,-20,20);
    list[i].strength=value;delete list[i].clipStrength;
-   $$('[data-strength="'+i+'"]').forEach(peer=>{if(peer!==el)peer.value=value;});persist();
+   $$('[data-strength="'+i+'"]').forEach(peer=>{if(peer!==el)peer.value=value;if(peer.type==='range')peer.setAttribute('aria-valuetext',String(value));});persist();
   };
+  if(el.type==='range'){el.setAttribute('aria-valuetext',String(list[i].strength));bindLoraTouch(el);}
   if(el.type==='number')el.onblur=()=>{el.value=list[i].strength;};
  });
 }

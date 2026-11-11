@@ -186,8 +186,50 @@ function bindSteps(s,maxSteps){
  typed.onblur=()=>{typed.value=s.steps;};
 }
 let lastTick=-Infinity;
+function sliderFeedback(){
+ const now=performance.now();if(now-lastTick>=48){lastTick=now;window.Native?.sliderTick?.();}
+}
 document.addEventListener('input',e=>{
  if(!e.isTrusted||!e.target.matches('#textVideoResolution,#videoSeconds,#main input[type=range][data-setting],#main input[type=range][data-strength]'))return;
- const now=performance.now();
- if(now-lastTick>=48){lastTick=now;window.Native?.sliderTick?.();}
+ sliderFeedback();
 });
+
+// The track surface handles pointers so native touch range jumps cannot compete
+// with scrolling. The real range retains keyboard and accessibility semantics.
+function bindLoraTouch(slider){
+ const surface=slider.parentElement;
+ let pointer=null;
+ const update=(value,event)=>{
+  value=limit(Math.round(value*10)/10,Number(slider.min),Number(slider.max));
+  if(value===slider.valueAsNumber)return;
+  slider.value=value;slider.dispatchEvent(new Event('input',{bubbles:true}));
+  if(event.isTrusted)sliderFeedback();
+ };
+ surface.addEventListener('pointerdown',event=>{
+  if(slider.disabled||event.button>0)return;
+  const rect=slider.getBoundingClientRect(),travel=Math.max(1,rect.width-19);
+  const min=Number(slider.min),max=Number(slider.max),value=slider.valueAsNumber;
+  const thumb=rect.left+9.5+(value-min)/(max-min)*travel,isTouch=event.pointerType==='touch';
+  pointer={id:event.pointerId,x:event.clientX,y:event.clientY,value,min,max,travel,
+   left:rect.left+9.5,isTouch,handle:Math.abs(event.clientX-thumb)<=24,dragging:!isTouch};
+  surface.setPointerCapture(event.pointerId);
+  if(!isTouch){event.preventDefault();slider.focus({preventScroll:true});update(min+(event.clientX-pointer.left)/travel*(max-min),event);}
+ });
+ surface.addEventListener('pointermove',event=>{
+  if(!pointer||event.pointerId!==pointer.id)return;
+  const dx=event.clientX-pointer.x,dy=event.clientY-pointer.y;
+  if(!pointer.dragging){
+   if(Math.abs(dy)>8&&Math.abs(dy)>Math.abs(dx)){pointer=null;return;}
+   if(!pointer.handle||Math.abs(dx)<8||Math.abs(dx)<Math.abs(dy)*1.3)return;
+   pointer.dragging=true;
+  }
+  update(pointer.isTouch?pointer.value+dx/pointer.travel*(pointer.max-pointer.min):pointer.min+(event.clientX-pointer.left)/pointer.travel*(pointer.max-pointer.min),event);
+ });
+ const finish=event=>{
+  if(!pointer||event.pointerId!==pointer.id)return;
+  if(pointer.dragging&&event.type==='pointerup')slider.dispatchEvent(new Event('change',{bubbles:true}));
+  pointer=null;
+ };
+ surface.addEventListener('pointerup',finish);surface.addEventListener('pointercancel',finish);
+ surface.addEventListener('lostpointercapture',()=>pointer=null);
+}

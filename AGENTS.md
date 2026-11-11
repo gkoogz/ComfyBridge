@@ -104,6 +104,7 @@ node tests/android-assets.cjs
 # Set PLAYWRIGHT_MODULE to an available Playwright installation if needed:
 node tests/desktop.cjs
 node tests/model-browser.cjs
+node tests/lora-controls.cjs
 node tests/model-gallery.cjs
 node tests/final-frame.cjs
 node tests/live-results.cjs

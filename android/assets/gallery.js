@@ -320,7 +320,7 @@ document.addEventListener('pointerdown',e=>{
  if(window.Desktop)return;
  const note=e.target.closest('#noteText');
  const noteSwipe=note&&e.pointerType!=='mouse'&&note.selectionStart===note.selectionEnd;
- if(!e.isPrimary||e.button!==0||viewerClosing||(!noteSwipe&&e.target.closest('input,textarea,select,canvas,#carousel,#chatGrab,[contenteditable]')))return;
+ if(!e.isPrimary||e.button!==0||viewerClosing||(!noteSwipe&&e.target.closest('input,textarea,select,canvas,.loraSlider,#carousel,#chatGrab,[contenteditable]')))return;
  if(e.target.closest('.chatWords')&&window.getSelection()?.type==='Range')return;
  const type=$('#modal').open?'modal':viewerOpen()?'viewer':$('#drawer').classList.contains('open')?'closeDrawer':page==='library'&&archived?'archive':'drawer';
  if(type)drag={id:e.pointerId,type,x:e.clientX,y:e.clientY,t:performance.now(),dx:0,active:false,note:noteSwipe?note:null,queue:e.target.closest('.historyCard')};
