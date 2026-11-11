@@ -46,7 +46,7 @@ function renderLibrary(){
 }
 function wireMedia(root){$$('[data-media]',root).forEach(b=>b.onclick=()=>{
  const item=library.find(x=>x.id===b.dataset.media);if(!item)return;
- if(root.id==='carousel'){liveSelection=null;delete $('#result').dataset.live;mountResult(item);refreshCarouselSelection();pruneFrames();return;}
+ if(root.id==='carousel'){liveSelection=null;delete $('#result').dataset.live;$('#result').dataset.latest=library.find(x=>x.kind===page&&!x.archived)?.id||item.id;mountResult(item);refreshCarouselSelection();pruneFrames();return;}
  if($('#modal').open)closeModal();originTile=b;openMedia(item);
 });}
 
@@ -137,6 +137,13 @@ function extendVideoButton(item){
  return button;
 }
 
+function regenerateButton(item){
+ const button=document.createElement('button');button.type='button';button.className='regenerate';button.textContent='↗ Regenerate';
+ button.disabled=!item.job;
+ button.onclick=()=>restoreGeneration((library.find(entry=>entry.id===item.id)||item).job,button,()=>button.isConnected);
+ return button;
+}
+
 function activateExtension(source){
  const settings=state.settings.video;
 
@@ -153,7 +160,7 @@ function activateExtension(source){
 }
 
 // Both surfaces use the same player. Only verified, complete originals are playable.
-function mountAsset(host,item,isViewer){
+function mountAsset(host,item,isViewer,posterOverride=null){
  assetObservers.get(host)?.disconnect();assetObservers.delete(host);
  const id=item.id;host.className='asset'+(isViewer?' galleryAsset':'');host.replaceChildren();
  const toggleChrome=()=>{if(isViewer)$('#viewer').classList.toggle('quiet');else host.classList.toggle('quiet');};
@@ -181,7 +188,8 @@ function mountAsset(host,item,isViewer){
     }
     return;
    }
-   host.innerHTML='<video playsinline preload="metadata" poster="'+media(id,true)+'" aria-label="Generated video"></video><button class="bigPlay" aria-label="Play video">▶</button><div class="transport"><button class="transportPlay" aria-label="Play">▶</button><input type="range" min="0" max="1" step="any" value="0" aria-label="Video position"><small></small></div>';
+   const videoPoster=posterOverride||media(id,true);
+   host.innerHTML='<video playsinline preload="metadata" poster="'+esc(videoPoster)+'" aria-label="Generated video"></video><button class="bigPlay" aria-label="Play video">▶</button><div class="transport"><button class="transportPlay" aria-label="Play">▶</button><input type="range" min="0" max="1" step="any" value="0" aria-label="Video position"><small></small></div>';
    const video=$('video',host),middle=$('.bigPlay',host),btn=$('.transportPlay',host),seek=$('input',host);
    const chrome=on=>(isViewer?$('#viewer'):host).classList.toggle('quiet',!on);
    const tick=()=>{const end=Number.isFinite(video.duration)?video.duration:item.duration||0;seek.max=end||1;seek.value=video.currentTime;$('small',host).textContent=duration(video.currentTime)+' / '+duration(end);};
@@ -217,7 +225,7 @@ function mountAsset(host,item,isViewer){
     host.style.setProperty('--content-right',(outer.right-rect.right+(rect.width-width)/2)+'px');
     host.style.setProperty('--content-bottom',(outer.bottom-rect.bottom+(rect.height-height)/2)+'px');
    };
-   poster.onload=layout;poster.src=media(id,true);
+   poster.onload=layout;poster.src=videoPoster;
    const observer=new ResizeObserver(layout);observer.observe(video);assetObservers.set(host,observer);
    video.ontimeupdate=tick;video.onloadedmetadata=()=>{tick();layout();};tick();
    video.onerror=()=>{if(host.isConnected){chrome(true);msg(window.Desktop?'Windows could not decode this video. Use Open file location to play it in another app.':'Android could not decode this video. Your phone copy is still available to save.');}};
@@ -226,21 +234,21 @@ function mountAsset(host,item,isViewer){
  }
  load(isViewer||item.kind==='image'&&(connected||!!item.local));
 }
-function mountResult(j){
+function mountResult(j,posterOverride=null){
  const box=$('#result');if(!box)return;
  let host=$('.asset',box);
  if(host&&host.dataset.id===j.id&&host.dataset.hash===(j.local||'')){refreshRatings();return;}
- box.replaceChildren();host=document.createElement('div');host.dataset.id=j.id;host.dataset.hash=j.local||'';box.append(host);mountAsset(host,j,false);
- const actions=document.createElement('div');actions.className='resultActions';if(j.kind==='video')actions.append(extendVideoButton(j));actions.append(ratingButtons(j));host.after(actions);refreshRatings();
+ box.replaceChildren();host=document.createElement('div');host.dataset.id=j.id;host.dataset.hash=j.local||'';box.append(host);mountAsset(host,j,false,posterOverride);
+ const actions=document.createElement('div');actions.className='resultActions';if(j.kind==='video')actions.append(extendVideoButton(j),regenerateButton(j));actions.append(ratingButtons(j));host.after(actions);refreshRatings();
 }
 function renderResults(){
  const box=$('#result');if(!box)return;
  const items=library.filter(x=>x.kind===page&&!x.archived),first=items[0];
- if(page==='image'&&imagePreviewProtocol&&!liveSelection){
-  if(!first&&currentImage())liveSelection={id:active};
-  else if(first&&!first.local&&frames.has(first.job))liveSelection={id:first.job};
+ if(['image','video'].includes(page)&&!liveSelection){
+  if(!first&&currentGeneration(page))liveSelection={id:active,kind:page};
+  else if(first&&!first.local&&frames.has(first.job))liveSelection={id:first.job,kind:page};
  }
- if(renderLiveImage(box)){renderCarousel();return;}
+ if(renderLiveGeneration(box)){renderCarousel();return;}
  if(first){
   const current=items.find(j=>j.id===$('.asset',box)?.dataset.id);
   const playing=$('video',box);

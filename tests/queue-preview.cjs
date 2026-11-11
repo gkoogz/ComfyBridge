@@ -24,12 +24,15 @@ const assert=require('node:assert/strict'),path=require('node:path');
    queueHistory=jobs;renderGenerator();updateProgress();
   });
   const rows=p.locator('.queueJob');
+  assert(await p.locator('.inflightThumb').isEnabled());await p.locator('.inflightThumb').click();
+  assert(await p.locator('#result .previewBusy').isVisible());
   const rings=()=>rows.locator('.jobSpinner').count();
   assert.equal(await rings(),2);assert.equal(await rows.nth(1).locator('img').count(),0);
   assert.equal(await rows.nth(0).locator('.jobSpinner').evaluate(el=>getComputedStyle(el).animationPlayState),'running');
   for(const rev of [1,2]){
    await p.waitForFunction(()=>!!window.deliver);await p.evaluate(n=>deliver(n),rev);
    await p.waitForFunction(n=>{const img=$('.queuePreview'),head=$('#livePreview');return frames.get('first')?.revision===n&&img?.naturalWidth===4&&!img.hidden&&head.src===img.src;},rev);
+   await p.waitForFunction(()=>$('#result .watchPixels')?.naturalWidth===4&&$('#result .watchPixels').src===$('#livePreview').src);
   }
   assert.deepEqual(await p.evaluate(()=>requests),['/preview/first?after=-1','/preview/first?after=1','/preview/first?after=2']);
   await p.evaluate(()=>{jobs[0].status='complete';jobs[0].media='output';active='next';jobs[1].status='running';updateProgress();});

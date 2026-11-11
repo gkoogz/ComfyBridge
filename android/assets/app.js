@@ -74,7 +74,7 @@ async function init(){
  };window.openJobAlert();
 }
 function drawer(open){if(window.Desktop){$('#drawer').inert=false;return;}document.querySelector('#drawer').inert=!open;$('#drawer').classList.toggle('open',open);$('#shade').hidden=!open;}
-function navigate(to){if(window.Desktop){if(to==='bridge'){$('#desktopPower').focus();return;}localStorage.setItem('desktopPage',to);}if(page!==to&&['image','video'].includes(to))promptExpanded={};if(page!==to&&(page==='image'||!['image','video','bridge'].includes(to)))leaveLiveImage();if(viewerOpen())closeViewer(true);const forward=page==='bridge'&&['image','video'].includes(to),out=forward?outgoingBridge():null;page=to;archived=false;presetName='';drawer(false);render();$('#workspace').scrollTop=0;if(out)enterGenerator(out);if(connected){poll();if(['image','video'].includes(to))syncSettings();if(to==='notepad')syncNotes();}}
+function navigate(to){if(window.Desktop){if(to==='bridge'){$('#desktopPower').focus();return;}localStorage.setItem('desktopPage',to);}if(page!==to&&['image','video'].includes(to))promptExpanded={};if(page!==to&&(['image','video'].includes(page)||!['image','video','bridge'].includes(to)))leaveLivePreview();if(viewerOpen())closeViewer(true);const forward=page==='bridge'&&['image','video'].includes(to),out=forward?outgoingBridge():null;page=to;archived=false;presetName='';drawer(false);render();$('#workspace').scrollTop=0;if(out)enterGenerator(out);if(connected){poll();if(['image','video'].includes(to))syncSettings();if(to==='notepad')syncNotes();}}
 function connection(value){connected=value;prefetchVisibility();paintChatStatus();$$('.dot').forEach(d=>d.classList.toggle('connected',value));$('#statusDot').setAttribute('aria-label',value?'Connected':'Disconnected');$('#drawerStatus').textContent=value?(window.Desktop?'Local studio':'PC connected'):'Disconnected';}
 function render(){
  document.body.dataset.page=page;
@@ -86,7 +86,7 @@ const pcIcon='<svg viewBox="0 0 64 64"><rect x="7" y="10" width="50" height="34"
 let editPair=false,pairAddress=null,bridgeError="";
 let wanted=false,epoch=0,probing=false,nextProbe=0,misses=0,catalogLoading=false,retryCatalogAt=0,workerBuild='',serviceNote='',pollNote='';
 function notice(){const el=$('#linkNotice'),n=library.filter(j=>['missing','changed'].includes(j.warning)).length;const review=n?n+' PC file(s) changed or disappeared. Open Library to review your protected phone copies.':'';el.textContent=[wanted&&!connected?(window.Desktop?'Reconnecting to the local bridge. ':'Reconnecting to your PC. ')+bridgeError+' Accepted jobs continue on the PC.':connected?(/after the previous worker goes idle/i.test(serviceNote+' '+pollNote)?'PC connected. The Windows bridge is updating; retrying automatically.':[serviceNote,pollNote].filter(Boolean).join(' ')):'',page==='library'?'':review].filter(Boolean).join(' ');el.hidden=!el.textContent;}
-function clearSession(){leaveLiveImage();imagePreviewProtocol=false;
+function clearSession(){leaveLivePreview();imagePreviewProtocol=false;
  queueProtocol=0;rollingSkip=false;rollingStopAll=false;queueEtaSeconds=null;jobs=[];active=null;queueHistory=[];historyFailure='';
  ++epoch;profileReady=false;clearTimeout(profileTimer);wanted=false;misses=0;nextProbe=0;catalogLoading=false;retryCatalogAt=0;workerBuild='';serviceNote=pollNote=bridgeError='';connection(false);notice();
 }
@@ -522,18 +522,18 @@ function updateProgress(){if(!$('#play'))return;
   $('#batchLabel').textContent=j.total>1?j.total+' in batch':'Single generation';
  }
  else{const last=jobs.find(j=>j.kind===page);$('#jobMessage').textContent=last?.status==='complete'?'Generation complete':last?.status==='error'?'Generation failed — details below':'';if(last?.status==='error')$('#genError').innerHTML='<div class="errorbox">'+esc(last.error)+'</div>';}
- if(page==='image'&&imagePreviewProtocol){
-  if(!liveSelection&&currentImage()&&!library.some(x=>x.kind==='image'&&!x.archived))liveSelection={id:active};
-  if(liveSelection)renderLiveImage($('#result'));
+ if(['image','video'].includes(page)){
+  if(!liveSelection&&currentGeneration(page)&&!library.some(x=>x.kind===page&&!x.archived))liveSelection={id:active,kind:page};
+  if(liveSelection)renderLiveGeneration($('#result'));
  }
  renderCarousel();
 }
 function refreshCarouselSelection(){
  const box=$('#result');if(!box)return;
- const live=box.querySelector('.watchImage')?box.dataset.live:null;
+ const live=box.querySelector('.watchGeneration')?box.dataset.live:null;
  const selected=live?null:box.querySelector('.asset')?.dataset.id;
  $$('#carousel .thumb').forEach(tile=>{
-  const current=tile.classList.contains('inflightThumb')?!!live&&tile.querySelector('img')?.dataset.frameJob===live:!!selected&&tile.dataset.media===selected;
+  const current=tile.classList.contains('inflightThumb')?!!live&&tile.dataset.liveJob===live:live?library.find(x=>x.id===tile.dataset.media)?.job===live:!!selected&&tile.dataset.media===selected;
   tile.setAttribute('aria-current',String(current));
  });
 }
@@ -548,18 +548,17 @@ function renderCarousel(){
   strip.innerHTML=items.map(x=>`<button class="thumb" data-media="${x.id}"><img src="${media(x.id,true)}" alt="Generated ${x.kind}">${x.kind==='video'?'<span>▶ '+duration(x.duration)+'</span>':''}</button>`).join('');
   wireMedia(carousel);
  }
- const live=page==='image'&&imagePreviewProtocol?nextImage():null;
- const pending=jobs.some(j=>j.kind===page&&liveStatus(j.status));
+ const live=nextGeneration(page);
+ const pending=!!live;
  let tile=carousel.querySelector('.inflightThumb');
  if(!pending){tile?.remove();}
  else{
   if(!tile){tile=document.createElement('button');tile.className='thumb inflightThumb';tile.innerHTML='<img hidden alt=""><i class="spinner"></i>';carousel.prepend(tile);}
   const image=tile.querySelector('img');
-  tile.disabled=!live;tile.setAttribute('aria-label',live?'View live image preview':'Generation in progress');
-  if(live){
-   bindFrame(image,live.id);tile.onclick=()=>selectLiveImage(live.id);
-  }else if(imagePreviewProtocol){
-   bindFrame(image,jobs.some(j=>j.id===active&&j.kind===page)?active:null);
+  tile.disabled=false;tile.dataset.liveJob=live.id;tile.setAttribute('aria-label','View live '+live.kind+' preview');
+  tile.onclick=()=>selectLiveGeneration(live.id);
+  if(imagePreviewProtocol){
+   bindFrame(image,live.id);
   }else{
    delete image.dataset.frameJob;image.hidden=!previewAvailable||!jobs.some(j=>j.id===active&&j.kind===page);
    if(!image.hidden)image.src='/preview?t='+Date.now();

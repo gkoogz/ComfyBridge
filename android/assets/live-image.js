@@ -1,11 +1,11 @@
 'use strict';
 
-// Keep a decoded preview on the phone until its matching original has decoded.
+// Keep a decoded generation preview visible until its finished media is ready.
 let imagePreviewProtocol=false, liveSelection=null, frameStream=null, lastCaptured=null;
 const frames=new Map();
 const liveJob=id=>jobs.find(j=>j.id===id);
-const currentImage=()=>{const j=liveJob(active);return j?.kind==='image'&&liveStatus(j.status)?j:null;};
-const nextImage=()=>currentImage()||jobs.filter(j=>j.kind==='image'&&liveStatus(j.status))
+const currentGeneration=(kind=page)=>{const j=liveJob(active);return j?.kind===kind&&liveStatus(j.status)?j:null;};
+const nextGeneration=(kind=page)=>currentGeneration(kind)||jobs.filter(j=>j.kind===kind&&liveStatus(j.status))
  .sort((a,b)=>a.queuePosition-b.queuePosition||a.created-b.created)[0];
 function stopFrames(){
  if(frameStream)frameStream.controller.abort();
@@ -16,13 +16,13 @@ function pruneFrames(){
   URL.revokeObjectURL(frame.url);frames.delete(id);
  }
 }
-function leaveLiveImage(){
+function leaveLivePreview(){
  liveSelection=null;lastCaptured=null;stopFrames();
  for(const frame of frames.values())URL.revokeObjectURL(frame.url);
  frames.clear();
 }
-function selectLiveImage(id){
- liveSelection={id,skip:false,busy:false,error:''};
+function selectLiveGeneration(id){
+ liveSelection={id,kind:liveJob(id)?.kind||queueHistory.find(j=>j.id===id)?.kind||page,skip:false,busy:false,error:''};
  renderResults();
 }
 function paintFrame(id){
@@ -71,39 +71,42 @@ async function watchFrames(){
 }
 document.addEventListener('visibilitychange',()=>{if(document.hidden)stopFrames();else watchFrames();});
 
-function renderLiveImage(box){
- const view=liveSelection;if(page!=='image'||!view)return false;
+function renderLiveGeneration(box){
+ const view=liveSelection;if(!box||!view||!['image','video'].includes(page))return false;
  const job=liveJob(view.id),history=queueHistory.find(j=>j.id===view.id);
+ const kind=view.kind||job?.kind||history?.kind||page;if(kind!==page)return false;
  const status=job?.status||history?.status;
- const output=library.find(j=>j.job===view.id&&j.kind==='image');
- if(status==='cancelled'&&nextImage()&&nextImage().id!==view.id){
-  selectLiveImage(nextImage().id);return true;
+ const output=library.find(j=>j.job===view.id&&j.kind===kind);
+ if(status==='cancelled'&&nextGeneration(kind)&&nextGeneration(kind).id!==view.id){
+  selectLiveGeneration(nextGeneration(kind).id);return true;
  }
- if(box.dataset.live!==view.id||!$('.watchImage',box)){
+ if(box.dataset.live!==view.id||!$('.watchGeneration',box)){
   box.dataset.live=view.id;
-  box.innerHTML='<div class="asset watchImage"><img class="watchPixels" alt="Live image preview" hidden><small class="watchCaption" role="status"></small><button class="skipImage" hidden>Skip image</button><button class="retryImage" hidden>Retry download</button></div>';
+  box.innerHTML='<div class="asset watchGeneration"><img class="watchPixels" alt="Live '+kind+' preview" hidden><span class="previewBusy" role="status" aria-label="Generation in progress"><i class="spinner" aria-hidden="true"></i></span><small class="watchCaption" role="status"></small><button class="skipImage" hidden>Skip '+kind+'</button><button class="retryImage" hidden>Retry download</button></div>';
   $('.watchPixels',box).dataset.frameJob=view.id;
-  $('.skipImage',box).onclick=()=>skipImage(view);
-  $('.retryImage',box).onclick=()=>{view.error='';renderLiveImage(box);};
+  $('.skipImage',box).onclick=()=>skipLiveGeneration(view);
+  $('.retryImage',box).onclick=()=>{view.error='';renderLiveGeneration(box);};
  }
  const skip=$('.skipImage',box),retry=$('.retryImage',box);
  skip.hidden=!(connected&&(window.Desktop||job?.owner===info().device)&&job?.id===active&&job.status==='running'&&imagePreviewProtocol);
- skip.disabled=view.skip;skip.textContent=view.skip?'Skipping…':'Skip image';
+ skip.disabled=view.skip;skip.textContent=view.skip?'Skipping…':'Skip '+kind;
  retry.hidden=!view.error||!output||!connected;
  const label=view.error||(output||status==='complete'?'Downloading original…':
-  status==='cancelled'?'Image skipped':status==='error'?'Generation failed':
-  view.skip||status==='cancelling'?'Skipping image…':frames.has(view.id)?'Live preview':
+  status==='cancelled'?'Generation skipped':status==='error'?'Generation failed':
+  view.skip||status==='cancelling'?'Skipping '+kind+'…':frames.has(view.id)?'Live preview':
   view.id===active?'Waiting for the first preview…':'Queued for generation');
  $('.watchCaption',box).textContent=label;
+ $('.previewBusy',box).hidden=!!view.error||status==='cancelled'||status==='error';
  paintFrame(view.id);
  const pixels=$('.watchPixels',box);
+ if(!imagePreviewProtocol&&view.id===active&&previewAvailable){pixels.src='/preview?t='+Date.now();pixels.hidden=false;}
  if(output&&!frames.has(view.id)&&!pixels.hasAttribute('src')){
   const cover=media(output.id,true);if(cover){pixels.src=cover;pixels.hidden=false;}
  }
- if(output&&!view.busy&&!view.error&&(output.local||connected))finishLiveImage(view,output);
+ if(output&&!view.busy&&!view.error&&(output.local||connected))finishLiveGeneration(view,output);
  return true;
 }
-async function finishLiveImage(view,item){
+async function finishLiveGeneration(view,item){
  view.busy=true;const session=epoch;
  try{
   if(!item.local){
@@ -111,23 +114,37 @@ async function finishLiveImage(view,item){
    if(session!==epoch)return;
    updateItem(item);
   }
-  const img=new Image();img.className='original';img.alt='Generated image';img.src=media(item.id);
-  await img.decode();
-  if(liveSelection!==view||page!=='image'||session!==epoch)return;
+  let img,poster;
+  if(item.kind==='image'){
+   img=new Image();img.className='original';img.alt='Generated image';img.src=media(item.id);await img.decode();
+  }else{
+   poster=media(item.id,true);const cover=new Image();cover.src=poster;
+   try{await cover.decode();}catch{
+    const frame=frames.get(view.id);
+    if(frame){const fallback=new Image();fallback.src=frame.url;await fallback.decode();
+     const canvas=document.createElement('canvas');canvas.width=fallback.naturalWidth;canvas.height=fallback.naturalHeight;
+     canvas.getContext('2d').drawImage(fallback,0,0);poster=canvas.toDataURL('image/jpeg',.85);
+    }
+   }
+  }
+  if(liveSelection!==view||page!==item.kind||session!==epoch)return;
   const box=$('#result');if(!box)return;
-  const host=document.createElement('div');host.className='asset';host.dataset.id=item.id;host.dataset.hash=item.local;
-  host.append(img);const actions=document.createElement('div');actions.className='resultActions';actions.append(makeVideoButton(item),ratingButtons(item));box.replaceChildren(host,actions);refreshRatings();delete box.dataset.live;
-  box.dataset.latest=library.find(j=>j.kind==='image'&&!j.archived)?.id||item.id;
+  if(item.kind==='image'){
+   const host=document.createElement('div');host.className='asset';host.dataset.id=item.id;host.dataset.hash=item.local;
+   host.append(img);const actions=document.createElement('div');actions.className='resultActions';actions.append(makeVideoButton(item),ratingButtons(item));box.replaceChildren(host,actions);refreshRatings();
+  }else mountResult(item,poster);
+  delete box.dataset.live;
+  box.dataset.latest=library.find(j=>j.kind===item.kind&&!j.archived)?.id||item.id;
   if(lastCaptured===item.job)lastCaptured=null;
   liveSelection=null;pruneFrames();renderCarousel();
  }catch(e){view.error='Could not load the original: '+e.message;}
- finally{view.busy=false;if(liveSelection===view&&view.error&&$('#result'))renderLiveImage($('#result'));}
+ finally{view.busy=false;if(liveSelection===view&&view.error&&$('#result'))renderLiveGeneration($('#result'));}
 }
-async function skipImage(view){
+async function skipLiveGeneration(view){
  if(view.skip||view!==liveSelection)return;
- view.skip=true;renderLiveImage($('#result'));
+ view.skip=true;renderLiveGeneration($('#result'));
  try{await api('skip',{id:view.id});}
  catch(e){view.skip=false;toast(e.message);}
  await poll();
- if(liveSelection===view&&$('#result'))renderLiveImage($('#result'));
+ if(liveSelection===view&&$('#result'))renderLiveGeneration($('#result'));
 }

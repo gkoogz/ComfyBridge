@@ -46,7 +46,7 @@ const assert=require('node:assert/strict'),path=require('node:path');
  assert.equal(await p.locator('#carousel [aria-current=true]').getAttribute('data-media'),'one');
  await p.locator('#carousel [data-media=three]').click();
  assert.equal(await p.locator('#carousel [aria-current=true]').getAttribute('data-media'),'three');
- await p.evaluate(()=>{jobs=[{id:'live-job',kind:'image',status:'running'}];active='live-job';imagePreviewProtocol=true;selectLiveImage('live-job');});
+ await p.evaluate(()=>{jobs=[{id:'live-job',kind:'image',status:'running'}];active='live-job';imagePreviewProtocol=true;selectLiveGeneration('live-job');});
  assert.equal(await p.locator('#carousel .inflightThumb').getAttribute('aria-current'),'true');
  assert.equal(await p.locator('#carousel [aria-current=true]').count(),1);
  assert.deepEqual(errors,[]);console.log('Ratings, clear selection, both surfaces, player geometry, edge-tap paging without chevrons and stationary-media back swipe passed.');

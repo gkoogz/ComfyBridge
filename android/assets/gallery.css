@@ -51,7 +51,11 @@ body[data-page=library] #linkNotice:not([hidden]){margin:0;padding:4px 12px;font
 .resultbox video,.resultbox img{max-height:none;border-radius:0}
 .resultbox>.makeVideo{margin:6px auto;color:var(--mint)}
 .recentStrip{display:contents}
-.watchImage{min-height:160px}
+.watchGeneration{min-height:160px;position:relative}
+.watchGeneration:has(.watchPixels:not([hidden])){min-height:0}
+.previewBusy{position:absolute;inset:0;display:grid;place-items:center;pointer-events:none}
+.previewBusy[hidden]{display:none}.previewBusy .spinner{width:36px;height:36px;border-width:3px;background:#08100966;box-shadow:0 0 0 8px #08100966}
+.resultActions .regenerate{margin-right:auto}
 .watchPixels{image-rendering:pixelated}
 .watchCaption{position:absolute;bottom:8px;left:8px;background:#080d12cf;color:white;padding:6px 9px;border-radius:5px}
 .skipImage,.retryImage{position:absolute;top:8px;right:8px;z-index:1;padding:9px 14px;border-radius:7px}
