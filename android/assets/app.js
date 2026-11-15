@@ -159,10 +159,15 @@ function renderGenerator(){
  if(kind==='video'&&!ext&&!s.exactFrames)s.frames=5+17*Math.max(0,Math.ceil((s.frames-5)/17));
  if(textVideo)[s.width,s.height]=videoSize(s,0);
  if(!inp.data)s.denoise=1;
- $('#main').innerHTML=`<div class="gentoolbar"><div class="row spread"><div class="row"><span id="runSpinner" class="spinner" hidden></span><div class="playwrap"><button id="play" class="green">▶ Generate</button><button id="batchButton" class="green" aria-label="Choose batch">⌄</button><div class="pop" id="batchMenu" hidden>${[2,4,8,16].map(n=>`<button data-batch="${n}" style="display:block;width:100%">Batch of ${n}</button>`).join('')}</div></div></div><button id="stopBatch" class="stop" hidden>■ Stop mine</button><span class="batchlabel" id="batchLabel">${s.batch>1?s.batch+' in batch':'Single generation'}</span></div><div class="progressrow" id="progressRow" hidden><img class="preview" id="livePreview" alt="Generation preview"><div class="progress"><i id="progressFill"></i><span id="progressText"></span></div></div><div class="statusmessage" id="jobMessage"></div></div><div id="genError"></div>${window.Desktop?'':'<div id="queueList"></div>'}<div class="row spread modeRow"><p class="eyebrow">${kind==='image'?'A STILL, A STORY':'VIDEO STUDIO'}</p><span class="pill" id="mode">${ext?(inp.finalFrame?.data||s.finalFrame?'EXTEND → FINAL FRAME':'EXTEND VIDEO'):textVideo?(inp.finalFrame?.data||s.finalFrame?'TEXT → FINAL FRAME':'TEXT → VIDEO'):kind==='video'?(inp.finalFrame?.data||s.finalFrame?'FIRST → FINAL FRAME':'IMAGE → VIDEO'):inp.mask?'INPAINT':inp.data?'IMAGE → IMAGE':'TEXT → IMAGE'}</span></div><section class="card"><div class="row spread"><h2>${ext?'Source video':kind==='video'?'Starting image or video':'Starting image'}</h2><small>${ext?'Original clip':'Optional'}</small></div><div class="upload">${ext?extensionSource(ext):inp.data?`<img src="${inp.data}" alt="Starting image">`:`<div><strong>＋</strong><span>${kind==='video'?'Choose a photo or video':'Choose an image'}</span><br><small>${window.Desktop?'Browse files on your PC':'Tap to browse your phone'}</small></div>`}<input type="file" id="upload" accept="${kind==='video'?'image/*,video/*':'image/*'}" aria-label="Choose starting media"></div><div class="uploadtools">${inp.data?`<div class="sourceDims"><strong>${inp.width} × ${inp.height}</strong><small>Source · ${aspect(inp.width,inp.height)}</small></div>`:`<small>${ext?'Select another photo or video to replace this clip.':kind==='image'?'Leave empty for text to image':'Text only, a photo to animate, or a video to extend.'}</small>`}<div>${kind==='image'?'<button id="maskButton" '+(!inp.data?'disabled':'')+'>'+(inp.mask?'Edit mask':'◌ Apply mask')+'</button>':''} <button id="clearUpload" class="danger" ${!inp.data&&!ext?'disabled':''}>Clear ×</button></div></div>${inp.mask?'<button id="clearMask" class="textbutton danger">Reset mask</button>':''}${kind==='image'&&inp.data&&(inp.width>1256||inp.height>1256)?'<div class="warning">ⓘ Large source image · above 1256 × 1256.</div>':''}</section>${kind==='video'?finalFrameField(s,inp):''}<section class="card"><h2>Canvas & model</h2>${kind==='image'?canvasInputs(s):`${textVideo?canvasInputs(s,32)+'<div class="field scaleField"><label for="textVideoResolution">Resolution</label><div id="resolutionInfo"></div><input id="textVideoResolution" class="scaleRange" type="range" aria-label="Video resolution"><small>Red starts above 768 × 1152 pixels.</small></div>' :`<div class="field scaleField"><div class="row spread"><label for="videoScale">Scale from source</label><strong id="scaleValue"></strong></div><div id="resolutionInfo"></div><input id="videoScale" class="scaleRange" type="range" data-setting="scale" step="1"><div class="row spread"><small id="scaleBounds"></small><button type="button" id="originalScale" class="textbutton">Original · 0%</button></div></div>`}<div class="field"><div class="row spread"><label for="videoSeconds">${ext?'Time to add':'Video length'}</label><strong id="secondsValue"></strong></div><input id="videoSeconds" type="range" min="1" max="20" step="0.25"></div><div class="grid2 field"><div><label>${ext?'Frames to add':'Frames'}</label><input type="number" data-setting="frames" min="1" max="${ext?3570:3592}" value="${s.frames}"></div><div><label>FPS</label><input type="number" data-setting="fps" step="any" ${ext?'disabled':''} min="1" max="120" value="${s.fps}"></div></div><div id="durationInfo" aria-label="Video duration"></div><label class="togglelabel soundToggle"><input type="checkbox" id="videoSound" ${s.sound!==false?'checked':''}><span><strong>Include sound</strong><small>${ext?'Off saves a silent copy of the entire extension.':'Generate a soundtrack with the video.'}</small></span></label>`}<div class="field"><label>${kind==='video'?'Video model':'Checkpoint'}</label>${kind==='video'?`<div id="videoModelControls">${videoModelField(s)}</div>`:`<div class="checkpointPicker"><select data-setting="model">${[...new Set([s.model,...(catalog?.models||[])])].map(m=>`<option value="${esc(m)}" ${m===s.model?'selected':''}>${esc(modelLabel('checkpoints',m))}</option>`).join('')}</select><button type="button" id="checkpointBrowser">Checkpoint Browser</button></div>`}</div></section><section class="card"><div class="row spread"><h2>LoRAs</h2><button id="addLora" class="textbutton">＋ Add</button></div><div id="loras"></div></section>${promptField('positive','Positive prompt')}${promptField('negative','Negative prompt')}<section class="card"><h2>Generation settings</h2>${slider('steps','Steps',1,maxSteps)}${kind==='image'?slider('cfg','CFG',0,20,.1)+slider('denoise','Denoise'+(!inp.data?' · locked for text to image':''),0,1,.01,!inp.data):''}<div class="field"><label>Seed</label><input type="text" inputmode="numeric" data-setting="seed" value="${esc(s.seed)}"></div><div class="seedActions"><button id="randomSeed" type="button" class="seedRandom">Randomize</button><label class="togglelabel"><input type="checkbox" id="increment" ${s.increment?'checked':''}>Increment seed after each generation</label></div></section><section id="latestPanel"><div class="sectionline"><h2>Latest result</h2><button id="toLibrary" class="textbutton">Library ↗</button></div><div class="resultbox" id="result"></div><div class="carousel" id="carousel"></div></section>`;
- $('#upload').onchange=e=>loadStartingMedia(e.target);$('#clearUpload').onclick=()=>{state.inputs[kind]=kind==='video'&&inp.finalFrame?{finalFrame:inp.finalFrame}:{};delete s.extension;delete s.sourceMedia;delete s.sourceOrigin;delete s.replayOf;s.upload=null;s.mask=null;s.scale=0;if(kind==='video'&&s.textCanvas)Object.assign(s,s.textCanvas);if(kind==='image'){s.width=1024;s.height=1536;s.denoise=1;if(s.aspectLock)s.aspectLock=[s.width,s.height];}persist();renderGenerator();};
+ $('#main').innerHTML=`<div class="gentoolbar"><div class="row spread"><div class="row"><span id="runSpinner" class="spinner" hidden></span><div class="playwrap"><button id="play" class="green">▶ Generate</button><button id="batchButton" class="green" aria-label="Choose batch">⌄</button><div class="pop" id="batchMenu" hidden>${[2,4,8,16].map(n=>`<button data-batch="${n}" style="display:block;width:100%">Batch of ${n}</button>`).join('')}</div></div></div><button id="stopBatch" class="stop" hidden>■ Stop mine</button><span class="batchlabel" id="batchLabel">${s.batch>1?s.batch+' in batch':'Single generation'}</span></div><div class="progressrow" id="progressRow" hidden><img class="preview" id="livePreview" alt="Generation preview"><div class="progress"><i id="progressFill"></i><span id="progressText"></span></div></div><div class="statusmessage" id="jobMessage"></div></div><div id="genError"></div>${window.Desktop?'':'<div id="queueList"></div>'}<div class="row spread modeRow"><p class="eyebrow">${kind==='image'?'A STILL, A STORY':'VIDEO STUDIO'}</p><span class="pill" id="mode">${kind==='video'&&hasCharacterReference(s,inp)?(ext?'EXTEND WITH CHARACTER':'CHARACTER → VIDEO'):ext?(inp.finalFrame?.data||s.finalFrame?'EXTEND → FINAL FRAME':'EXTEND VIDEO'):textVideo?(inp.finalFrame?.data||s.finalFrame?'TEXT → FINAL FRAME':'TEXT → VIDEO'):kind==='video'?(inp.finalFrame?.data||s.finalFrame?'FIRST → FINAL FRAME':'IMAGE → VIDEO'):inp.mask?'INPAINT':inp.data?'IMAGE → IMAGE':'TEXT → IMAGE'}</span></div>${kind==='video'?videoFrameFields(s,inp)+characterReferenceField(s,inp):imageSourceField(inp)}<section class="card"><h2>Canvas & model</h2>${kind==='image'?canvasInputs(s):`${textVideo?canvasInputs(s,32)+'<div class="field scaleField"><label for="textVideoResolution">Resolution</label><div id="resolutionInfo"></div><input id="textVideoResolution" class="scaleRange" type="range" aria-label="Video resolution"><small>Red starts above 768 × 1152 pixels.</small></div>' :`<div class="field scaleField"><div class="row spread"><label for="videoScale">Scale from source</label><strong id="scaleValue"></strong></div><div id="resolutionInfo"></div><input id="videoScale" class="scaleRange" type="range" data-setting="scale" step="1"><div class="row spread"><small id="scaleBounds"></small><button type="button" id="originalScale" class="textbutton">Original · 0%</button></div></div>`}<div class="field"><div class="row spread"><label for="videoSeconds">${ext?'Time to add':'Video length'}</label><strong id="secondsValue"></strong></div><input id="videoSeconds" type="range" min="1" max="20" step="0.25"></div><div class="grid2 field"><div><label>${ext?'Frames to add':'Frames'}</label><input type="number" data-setting="frames" min="1" max="${ext?3570:3592}" value="${s.frames}"></div><div><label>FPS</label><input type="number" data-setting="fps" step="any" ${ext?'disabled':''} min="1" max="120" value="${s.fps}"></div></div><div id="durationInfo" aria-label="Video duration"></div><label class="togglelabel soundToggle"><input type="checkbox" id="videoSound" ${s.sound!==false?'checked':''}><span><strong>Include sound</strong><small>${ext?'Off saves a silent copy of the entire extension.':'Generate a soundtrack with the video.'}</small></span></label>`}<div class="field"><label>${kind==='video'?'Video model':'Checkpoint'}</label>${kind==='video'?`<div id="videoModelControls">${videoModelField(s)}</div>`:`<div class="checkpointPicker"><select data-setting="model">${[...new Set([s.model,...(catalog?.models||[])])].map(m=>`<option value="${esc(m)}" ${m===s.model?'selected':''}>${esc(modelLabel('checkpoints',m))}</option>`).join('')}</select><button type="button" id="checkpointBrowser">Checkpoint Browser</button></div>`}</div></section><section class="card"><div class="row spread"><h2>LoRAs</h2><button id="addLora" class="textbutton">＋ Add</button></div><div id="loras"></div></section>${promptField('positive','Positive prompt')}${promptField('negative','Negative prompt')}<section class="card"><h2>Generation settings</h2>${slider('steps','Steps',1,maxSteps)}${kind==='image'?slider('cfg','CFG',0,20,.1)+slider('denoise','Denoise'+(!inp.data?' · locked for text to image':''),0,1,.01,!inp.data):''}<div class="field"><label>Seed</label><input type="text" inputmode="numeric" data-setting="seed" value="${esc(s.seed)}"></div><div class="seedActions"><button id="randomSeed" type="button" class="seedRandom">Randomize</button><label class="togglelabel"><input type="checkbox" id="increment" ${s.increment?'checked':''}>Increment seed after each generation</label></div></section><section id="latestPanel"><div class="sectionline"><h2>Latest result</h2><button id="toLibrary" class="textbutton">Library ↗</button></div><div class="resultbox" id="result"></div><div class="carousel" id="carousel"></div></section>`;
+ $('#upload').onchange=e=>loadStartingMedia(e.target);$('#clearUpload').onclick=()=>{state.inputs[kind]=kind==='video'?videoReferenceInputs(inp):{};delete s.extension;delete s.sourceMedia;delete s.sourceOrigin;delete s.replayOf;s.upload=null;s.mask=null;s.scale=0;if(kind==='video'&&s.textCanvas)Object.assign(s,s.textCanvas);if(kind==='image'){s.width=1024;s.height=1536;s.denoise=1;if(s.aspectLock)s.aspectLock=[s.width,s.height];}persist();renderGenerator();};
  if($('#maskButton'))$('#maskButton').onclick=openMask;if($('#clearMask'))$('#clearMask').onclick=()=>{delete inp.mask;delete s.mask;persist();renderGenerator();};
- if(kind==='video'){$('#uploadFinal').onchange=e=>loadFinalFrame(e.target.files[0]);$('#clearFinalFrame').onclick=clearFinalFrame;}
+ if(kind==='video'){
+  for(const [key,upload,clear] of videoReferenceFields){
+   $(upload).onchange=e=>loadVideoReference(key,e.target.files[0]);
+   $(clear).onclick=()=>clearVideoReference(key);
+  }
+ }
  if(kind==='video')$('#videoSound').onchange=e=>{s.sound=e.target.checked;persist(kind);};
  $('#increment').onchange=e=>{s.increment=e.target.checked;persist();};
  $$('[data-setting]').forEach(el=>el.oninput=()=>{let key=el.dataset.setting;s[key]=['model','seed'].includes(key)?el.value:Number(el.value);$$(`[data-setting="${key}"]`).forEach(other=>{if(other!==el)other.value=el.value;});if(kind==='video'&&['frames','fps'].includes(key))updateVideo(false);persist();});
@@ -176,31 +181,100 @@ function renderGenerator(){
  bindPromptSizing();
  renderResults();updateProgress();
 }
-function finalFrameField(settings,input){
- const ending=input.finalFrame,selected=!!(ending?.data||settings.finalFrame);
- return '<section class="card finalFrameCard"><div class="row spread"><h2>Final frame</h2><small>Optional</small></div>'+
-  '<div class="upload finalFrameUpload">'+(ending?.data?'<img src="'+esc(ending.data)+'" alt="Final frame">':'<div><strong>＋</strong><span>'+(selected?'Final frame saved on PC':'Choose a final image')+'</span></div>')+
-  '<input type="file" id="uploadFinal" accept="image/*" aria-label="Choose final frame"></div>'+
-  '<div class="uploadtools">'+(ending?.width?'<div class="sourceDims"><strong>'+ending.width+' × '+ending.height+'</strong><small>Final frame · '+aspect(ending.width,ending.height)+'</small></div>':'<small>A target image for the end of the video.</small>')+
-  '<button type="button" id="clearFinalFrame" class="danger" '+(!selected?'disabled':'')+'>Clear ×</button></div>'+
-  (selected?'<small>Uses the current video canvas. A different aspect ratio is center-cropped to fit.</small>':'')+'</section>';
+function imageSourceField(input){
+ return `<section class="card">
+  <div class="row spread"><h2>Starting image</h2><small>Optional</small></div>
+  <div class="upload">${input.data?'<img src="'+esc(input.data)+'" alt="Starting image">':
+   '<div><strong>＋</strong><span>Choose an image</span><br><small>'+(window.Desktop?'Browse files on your PC':'Tap to browse your phone')+'</small></div>'}
+   <input type="file" id="upload" accept="image/*" aria-label="Choose starting media">
+  </div>
+  <div class="uploadtools">
+   ${input.data?'<div class="sourceDims"><strong>'+input.width+' × '+input.height+'</strong><small>Source · '+aspect(input.width,input.height)+'</small></div>':'<small>Leave empty for text to image</small>'}
+   <div><button id="maskButton" ${input.data?'':'disabled'}>${input.mask?'Edit mask':'◌ Apply mask'}</button>
+    <button id="clearUpload" class="danger" ${input.data?'':'disabled'}>Clear ×</button></div>
+  </div>
+  ${input.mask?'<button id="clearMask" class="textbutton danger">Reset mask</button>':''}
+  ${input.data&&(input.width>1256||input.height>1256)?'<div class="warning">ⓘ Large source image · above 1256 × 1256.</div>':''}
+ </section>`;
 }
-async function loadFinalFrame(file){
+const ref2vaModel = 'minimax_h3_ref2va_pruned_fp8_scaled.safetensors';
+const videoReferenceFields = [
+ ['finalFrame', '#uploadFinal', '#clearFinalFrame'],
+ ['characterReference', '#uploadCharacter', '#clearCharacterReference']
+];
+function videoReferenceInputs(input){
+ const {finalFrame,characterReference}=input||{};
+ return {...(finalFrame&&{finalFrame}),...(characterReference&&{characterReference})};
+}
+function hasCharacterReference(settings,input=state.inputs.video){
+ return !!(settings?.characterReference||input?.characterReference?.data);
+}
+function videoFrameFields(settings,input){
+ const ext=settings.extension;
+ const first=ext?extensionSource(ext):input.data?'<img src="'+esc(input.data)+'" alt="First frame">':
+  '<div><strong>＋</strong><span>Photo or video</span></div>';
+ return '<section class="card videoFramesCard"><h2>First / last frame</h2><div class="videoFrameGrid">'+
+  '<div class="videoFrame"><strong>'+(ext?'Source clip':'First frame')+'</strong><div class="upload videoFrameUpload">'+first+
+  '<input type="file" id="upload" accept="image/*,video/*" aria-label="Choose first frame or source video"></div>'+
+  '<div class="videoFrameTools">'+videoReferenceDimensions(input)+
+  '<button type="button" id="clearUpload" class="danger" '+(!ext&&!input.data?'disabled':'')+'>Clear</button></div></div>'+
+  '<div class="videoFrame finalFrameCard"><strong>Last frame</strong>'+
+  videoReferencePicker({value:input.finalFrame,saved:settings.finalFrame,upload:'uploadFinal',clear:'clearFinalFrame',
+   label:'Last frame',choose:'Choose image',compact:true})+'</div></div></section>';
+}
+function videoReferenceDimensions(value){
+ return value?.width&&value?.height?'<div class="sourceDims"><strong>'+value.width+' × '+value.height+
+  '</strong><small>'+aspect(value.width,value.height)+'</small></div>':'';
+}
+function videoReferencePicker({value,saved,upload,clear,label,choose,compact=false}){
+ const picture=value?.data||(value?.job?'/source/'+encodeURIComponent(value.job)+'/characterReference-thumb':'');
+ const preview=picture?'<img src="'+esc(picture)+'" alt="'+esc(label)+'">':
+  '<div><strong>＋</strong><span>'+(saved?'Saved on PC':choose)+'</span></div>';
+ return '<div class="upload '+(compact?'videoFrameUpload':'characterReferenceUpload')+'">'+preview+
+  '<input type="file" id="'+upload+'" accept="image/*" aria-label="Choose '+esc(label.toLowerCase())+'"></div>'+
+  '<div class="videoFrameTools">'+videoReferenceDimensions(value)+
+  '<button type="button" id="'+clear+'" class="danger" '+(!value?.data&&!saved?'disabled':'')+'>Clear</button></div>';
+}
+function characterReferenceField(settings,input){
+ return '<section class="card characterReferenceCard"><h2>Stable Character reference</h2>'+
+  videoReferencePicker({value:input.characterReference,saved:settings.characterReference,upload:'uploadCharacter',
+   clear:'clearCharacterReference',label:'Character reference',choose:'Choose character image'})+
+  '<small>Uses Ref2VA and carries this image into each extension.</small></section>';
+}
+function beginCharacterReference(settings){
+ settings.stepsBeforeCharacter=settings.steps;
+ settings.steps=catalog?.characterVideo?.steps||20;
+}
+function dropCharacterReference(settings){
+ delete state.inputs.video.characterReference;
+ delete settings.characterReference;
+ delete settings.characterReferenceOrigin;
+ if(settings.model===ref2vaModel)settings.model=settings.videoModelBeforeCharacter||catalog?.defaults?.video?.model;
+ if(settings.stepsBeforeCharacter!=null)settings.steps=settings.stepsBeforeCharacter;
+ delete settings.stepsBeforeCharacter;
+ delete settings.videoModelBeforeCharacter;
+}
+async function loadVideoReference(key,file){
  if(!file)return;
  const session=epoch,settings=state.settings.video;
  try{
-  if(file.type.startsWith('video/'))throw Error('Choose an image for the final frame.');
-  const ending=await readStartingImage(file);await resolvePendingSubmission('video');
+  const image=await readStartingImage(file);
+  await resolvePendingSubmission('video');
   if(page!=='video'||epoch!==session||settings!==state.settings.video)return;
-  state.inputs.video.finalFrame=ending;delete settings.finalFrame;delete settings.finalFrameMedia;delete settings.finalFrameOrigin;delete settings.replayOf;
+  if(key==='characterReference'&&!hasCharacterReference(settings))beginCharacterReference(settings);
+  state.inputs.video[key]=image;
+  delete settings[key];delete settings[key+'Media'];delete settings[key+'Origin'];delete settings.replayOf;
   persist('video');renderGenerator();
  }catch(error){toast(error.message);}
 }
-async function clearFinalFrame(){
+async function clearVideoReference(key){
  const session=epoch,settings=state.settings.video;
  try{
-  await resolvePendingSubmission('video');if(page!=='video'||epoch!==session||settings!==state.settings.video)return;
-  delete state.inputs.video.finalFrame;delete settings.finalFrame;delete settings.finalFrameMedia;delete settings.finalFrameOrigin;delete settings.replayOf;
+  await resolvePendingSubmission('video');
+  if(page!=='video'||epoch!==session||settings!==state.settings.video)return;
+  if(key==='characterReference')dropCharacterReference(settings);
+  else{delete state.inputs.video[key];delete settings[key];delete settings[key+'Media'];delete settings[key+'Origin'];}
+  delete settings.replayOf;
   persist('video');renderGenerator();
  }catch(error){toast(error.message);}
 }
@@ -216,6 +290,11 @@ function wirePrompts(){
 }
 const erosModel='10Eros_Max_h3_8stepTURBO_beta7_int8HQ.safetensors';
 function videoModelField(s){
+ if(hasCharacterReference(s)){
+  const missing=catalog?.characterVideo?.missing;
+  const detail=missing?.length?'Missing on PC: '+missing.join(', '):!catalog?.characterVideo?'Stable Character reference requires the updated Windows bridge.':'';
+  return '<strong>MiniMax H3 · Ref2VA</strong>'+(detail?'<small class="warning">'+esc(detail)+'</small>':'');
+ }
  const profiles=catalog?.videoModels;
  if(!profiles)return '<input readonly aria-label="Video model" value="'+esc(s.model)+'">';
  const options=profiles.map(p=>'<button type="button" value="'+esc(p.model)+'" aria-pressed="'+(p.model===s.model)+'" '+
@@ -255,6 +334,12 @@ async function switchVideoModel(model){
  persist('video');renderGenerator();
 }
 function renderLoras(){
+ if(page==='video'&&hasCharacterReference(state.settings.video)){
+  $('#loras').innerHTML='<small>Ref2VA uses its base weights. Clear the character reference to use your video LoRAs.</small>';
+  $('#addLora').disabled=true;
+  return;
+ }
+ $('#addLora').disabled=false;
  const list=state.settings[page].loras;
  if(page==='video'&&state.settings.video.model===erosModel){
   const stock=catalog?.defaults?.video?.loras?.[0]?.name;
@@ -343,8 +428,7 @@ async function readStartingImage(blob){
 function setStartingImage(kind,input){
  const s=state.settings[kind];
  if(kind==='video')rememberTextCanvas(s);
- const ending=kind==='video'&&state.inputs.video.finalFrame;
- state.inputs[kind]=ending?{...input,finalFrame:ending}:input;delete s.extension;delete s.sourceMedia;delete s.sourceOrigin;delete s.replayOf;
+ state.inputs[kind]=kind==='video'?{...input,...videoReferenceInputs(state.inputs.video)}:input;delete s.extension;delete s.sourceMedia;delete s.sourceOrigin;delete s.replayOf;
  s.upload=null;s.mask=null;s.scale=0;
  s.width=input.width;s.height=input.height;
  if(kind==='video')[s.width,s.height]=videoSize(input,0);
@@ -461,6 +545,8 @@ async function generate(){
  snapshot.steps=limit(Math.round(Number(snapshot.steps))||1,1,s.replayOf?Math.max(stepLimit(kind),s.steps):stepLimit(kind));
  state.pendingByKind??={};if(state.pendingRequest){state.pendingByKind[state.pendingRequest.kind]=state.pendingRequest;delete state.pendingRequest;}
  let payload=state.pendingByKind[kind];
+ const character=kind==='video'&&hasCharacterReference(snapshot,inp);
+ if(!payload&&character&&queueProtocol<20)return toast('Stable Character reference requires the updated Windows bridge.');
  if(kind==='video'&&(inp.finalFrame?.data||snapshot.finalFrame)&&queueProtocol<19)return toast('Final frame needs Windows beta 61. Update the PC bridge before generating.');
  if(kind==='video'&&(snapshot.negative||'').trim()&&queueProtocol<15)return toast('Update Windows to beta 24 for video negative prompts.');
  if(kind==='video'){snapshot.sound=s.sound!==false;if(queueProtocol<14)return toast('Video sound needs Windows beta 23. If the PC just updated, its active queue will finish first.');}
@@ -473,11 +559,26 @@ async function generate(){
  }
  submitting=true;$('#play').disabled=true;$('#batchButton').disabled=true;$('#runSpinner').hidden=false;
  try{
+  if(!payload&&character){
+   if(!catalog?.characterVideo||catalog.characterVideo.missing?.length)catalog=await api('catalog');
+   if(!catalog?.characterVideo||catalog.characterVideo.missing?.length){
+    if(page===kind)refreshVideoModelField();
+    const missing=catalog?.characterVideo?.missing?.join(', ')||'the updated Windows bridge';
+    throw Error('Stable Character reference needs '+missing+'.');
+   }
+   if(snapshot.model!==ref2vaModel)snapshot.videoModelBeforeCharacter=snapshot.model;
+   snapshot.model=catalog.characterVideo.model;
+   snapshot.loras=[];
+  }
   if(!payload){
    if(inp.data&&!snapshot.upload)snapshot.upload=(await api('upload',{data:inp.data})).name;
    if(inp.mask&&!snapshot.mask)snapshot.mask=(await api('upload',{data:inp.mask})).name;
    if(kind==='video'&&inp.finalFrame?.data&&!snapshot.finalFrame)snapshot.finalFrame=(await api('upload',{data:inp.finalFrame.data})).name;
    if(kind==='video'&&inp.finalFrame?.data===state.inputs.video.finalFrame?.data)s.finalFrame=snapshot.finalFrame;
+   if(character&&inp.characterReference?.data&&!snapshot.characterReference){
+    snapshot.characterReference=(await api('upload',{data:inp.characterReference.data})).name;
+    if(inp.characterReference.data===state.inputs.video.characterReference?.data)s.characterReference=snapshot.characterReference;
+   }
    if(inp.data===state.inputs[kind].data&&inp.mask===state.inputs[kind].mask){s.upload=snapshot.upload;s.mask=snapshot.mask;}
    payload={kind,count,settings:snapshot,requestId:crypto.randomUUID()};state.pendingByKind[kind]=payload;persist(kind);
   }

@@ -161,7 +161,7 @@ def replay(db, root, job):
         elif not source.is_file() or extension.revision(source)!=clip.get('revision'):
             raise ValueError('The original source video is missing or changed on the PC.')
     inputs={}
-    for field,key in [('upload','data'),('mask','mask'),('finalFrame','finalFrame')]:
+    for field,key in [('upload','data'),('mask','mask'),('finalFrame','finalFrame'),('characterReference','characterReference')]:
         if not settings.get(field):
             continue
         filename=(root/'input'/settings[field]).resolve()
@@ -170,7 +170,7 @@ def replay(db, root, job):
         if filename.parent==(root/'input/ComfyBridge/recipes').resolve():
             recipes.checked_source(filename)
         encoded='data:image/png;base64,'+base64.b64encode(filename.read_bytes()).decode('ascii')
-        inputs[key]=dict(data=encoded) if field=='finalFrame' else encoded
+        inputs[key]=dict(data=encoded) if field in ('finalFrame', 'characterReference') else encoded
     return dict(kind=row['kind'],settings=settings,inputs=inputs)
 
 
@@ -330,9 +330,8 @@ def serve():
                 continue
             elif route.startswith('extension/'):
                 # Let the editor open while an older worker finishes its queue.
-                import extension
                 media_id=route.split('/',1)[1]
-                result=extension.describe(extension.source_path(db,Path(config['comfyRoot']),media_id),media_id)
+                result=provenance.extension_description(db,Path(config['comfyRoot']),media_id)
             elif route=='desktop-file':
                 result=desktop_file(db,Path(config['comfyRoot']),data,body)
             elif route=='settings':

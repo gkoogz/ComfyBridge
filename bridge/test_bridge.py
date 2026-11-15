@@ -577,6 +577,57 @@ class BridgeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(graph['60']['inputs']['image'],saved['finalFrame'])
         self.assertEqual(graph['6']['inputs']['last_frame'],['60',0]);self.assertEqual(graph['65']['inputs']['frame_idx'],179)
 
+    async def test_reference_extension_uses_saved_character_and_tail_independently(self):
+        settings = copy.deepcopy(w.WF.defaults()['video'])
+        settings.update(frames=120, exactFrames=True, sound=False, upload=None,
+                        positive='A puppet walks along a trail.', negative='blur',
+                        characterReference='ComfyBridge/character.png', finalFrame='ComfyBridge/end.png')
+        for name in ('character.png', 'end.png'):
+            Image.new('RGB', (64, 96), 'blue').save(w.ROOT/'input/ComfyBridge'/name)
+        source = w.ROOT/'output/ComfyBridge/reference-fixture.mp4'
+        w.extension.ffmpeg('-f','lavfi','-i','color=c=blue:s=64x96:r=24','-t','1','-c:v','libx264',source)
+        settings['extension'] = w.extension.describe(source, 'character-fixture-a')
+        with w.DB:
+            w.DB.execute("INSERT INTO media(id,path,kind) VALUES(?,?,'video')", ('character-fixture-a', str(source)))
+        w.CATALOG['characterVideo'] = dict(model=w.H3_REF2VA, steps=20, missing=[])
+        response, result = await self.request('generate', dict(kind='video', settings=settings, requestId=str(uuid.uuid4())))
+        self.assertEqual(response.status, 200, result)
+        parent = result['ids'][0]
+        saved = json.loads(w.rows('SELECT settings FROM jobs WHERE id=?',(parent,))[0]['settings'])
+        graph = w.recipes.recorded_graph(w.DB, parent)
+        self.assertEqual(saved['model'], w.H3_REF2VA)
+        self.assertEqual(saved['loras'], [])
+        self.assertTrue((w.ROOT/'input'/saved['characterReference']).is_file())
+        self.assertNotEqual(saved['characterReference'], settings['characterReference'])
+        self.assertEqual(graph['6']['class_type'], 'MiniMaxH3ReferenceToVideo')
+        self.assertEqual(graph['6']['inputs']['ref_images.ref_image_0'], ['61', 0])
+        self.assertEqual(graph['55']['inputs']['ref_images.ref_image_0'], ['61', 0])
+        self.assertIn('<Picture 1>', graph['6']['inputs']['prompt'])
+        self.assertEqual(graph['50']['inputs']['frame_idx'], 0)
+        self.assertEqual(graph['50']['inputs']['image'], ['43', 0])
+        self.assertEqual(graph['6']['inputs']['clip'], ['2', 0])
+        self.assertEqual(graph['2']['inputs']['any_input'], ['3', 0])
+        self.assertEqual(graph['65']['inputs']['frame_idx'], 124)
+        self.assertEqual(graph['51']['inputs']['batch_index'], 5)
+        self.assertEqual(graph['51']['inputs']['length'], 120)
+        self.assertNotIn('LoraLoaderModelOnly', [node['class_type'] for node in graph.values()])
+        with w.DB:
+            w.DB.execute("UPDATE media SET job=? WHERE id='character-fixture-a'", (parent,))
+        _, description = await self.request('extension/character-fixture-a')
+        inherited = description.pop('characterReference')
+        self.assertEqual(inherited['name'], saved['characterReference'])
+        self.assertEqual(inherited['job'], parent)
+        settings.update(extension=description, characterReference=inherited['name'],
+                        characterReferenceOrigin=inherited['origin'])
+        second, result = await self.request('generate', dict(kind='video', settings=settings, requestId=str(uuid.uuid4())))
+        self.assertEqual(second.status, 200, result)
+        child = result['ids'][0]
+        child_settings = json.loads(w.rows('SELECT settings FROM jobs WHERE id=?',(child,))[0]['settings'])
+        self.assertEqual(child_settings['characterReference'], saved['characterReference'])
+        self.assertEqual(child_settings['characterReferenceOrigin'], dict(job=parent, role='characterReference'))
+        from studio import replay
+        self.assertTrue(replay(w.DB,w.ROOT,child)['inputs']['characterReference']['data'].startswith('data:image/png;base64,'))
+
     async def test_video_duration_trims_only_the_model_padding(self):
         s=copy.deepcopy(w.WF.defaults()['video'])
         s.update(frames=39,fps=12,exactFrames=True)

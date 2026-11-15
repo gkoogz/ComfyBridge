@@ -32,10 +32,15 @@ def parents(settings, media_jobs):
     add(media_jobs.get(settings.get('finalFrameMedia')),'Final frame')
     ending=settings.get('finalFrameOrigin')
     if isinstance(ending,dict):add(ending.get('job'),'Final frame reused from')
+    character = settings.get('characterReferenceOrigin')
+    if isinstance(character, dict):
+        add(character.get('job'), 'Character reference reused from')
     return result
 
 
 def generation_type(kind, settings):
+    if kind == 'video' and settings.get('characterReference'):
+        return 'Extend video with character reference' if settings.get('extension') else 'Character reference to video'
     if settings.get('extension'):return 'Extend video + final frame' if settings.get('finalFrame') else 'Extend video'
     if kind=='video' and settings.get('finalFrame'):return 'First + final frames to video' if settings.get('upload') else 'Text + final frame to video'
     if kind=='video':return 'Image to video' if settings.get('upload') else 'Text to video'
@@ -59,18 +64,20 @@ def node(db, job):
         if any(link['job']==job for link in links):
             branches.append(branch(candidate))
     sources=[]
-    for role in ('upload','mask','finalFrame','extension'):
+    for role in (*recipes.IMAGE_SOURCES, 'extension'):
         if not s.get(role):continue
-        media_id=s.get('finalFrameMedia') if role=='finalFrame' else s.get('sourceMedia') if role!='mask' else None
+        media_id=s.get('finalFrameMedia') if role=='finalFrame' else s.get('sourceMedia') if role in ('upload', 'extension') else None
         if role=='extension':media_id=media_id or s[role].get('id')
         linked=next((m for m in media if m['id']==media_id),None)
-        origin=s.get('finalFrameOrigin') if role=='finalFrame' else s.get('sourceOrigin') if role!='mask' else None
+        origin_key = {'finalFrame':'finalFrameOrigin', 'characterReference':'characterReferenceOrigin',
+                      'upload':'sourceOrigin', 'extension':'sourceOrigin'}.get(role)
+        origin = s.get(origin_key) if origin_key else None
         origin=origin or dict(job=job,role=role)
         related=[]
         for candidate in candidates:
             other=json.loads(candidate['settings'])
             if candidate['id']==job:continue
-            if other.get('sourceOrigin')==origin or other.get('finalFrameOrigin')==origin:
+            if any(other.get(key) == origin for key in ('sourceOrigin', 'finalFrameOrigin', 'characterReferenceOrigin')):
                 related.append(branch(candidate))
         sources.append(dict(role=role,kind='video' if role=='extension' else 'image',media=linked,origin=origin,branches=related,
             url='/source/'+job+'/'+role,thumbnail='/source/'+job+'/'+role+'-thumb'))
@@ -92,7 +99,7 @@ def node(db, job):
 
 def source_file(db,root,data,job,role):
     thumb=role.endswith('-thumb');role=role.removesuffix('-thumb')
-    if role not in ('upload','mask','finalFrame','extension'):raise ValueError('Unknown source kind.')
+    if role not in (*recipes.IMAGE_SOURCES, 'extension'):raise ValueError('Unknown source kind.')
     _,s=settings_for(db,job)
     if not s.get(role):raise ValueError('No saved source for this generation.')
     if role=='extension':path=extension.source_path(db,root,s[role]['id']).resolve()
@@ -116,3 +123,25 @@ def source_file(db,root,data,job,role):
                     image.thumbnail((400,400));image.convert('RGB').save(cover,quality=85)
             path=cover
     return dict(path=str(path),mime='image/jpeg' if thumb else 'video/mp4' if role=='extension' else 'image/png')
+
+
+def extension_description(db, root, media_id):
+    result = extension.describe(extension.source_path(db, root, media_id), media_id)
+    return with_character_reference(db, media_id, result)
+
+
+def with_character_reference(db, media_id, result):
+    parent = db.execute("SELECT job FROM media WHERE id=? AND kind='video'", (media_id,)).fetchone()
+    if not parent or not parent[0]:
+        return result
+    try:
+        _, settings = settings_for(db, parent[0])
+    except ValueError:
+        return result
+    if settings.get('characterReference'):
+        result['characterReference'] = {
+            'name': settings['characterReference'],
+            'job': parent[0],
+            'origin': settings.get('characterReferenceOrigin') or dict(job=parent[0], role='characterReference'),
+        }
+    return result

@@ -59,6 +59,18 @@ body:is([data-page=image],[data-page=video]) .modeRow{margin:2px 0 7px}
 #durationInfo.overBudget span,#resolutionInfo.overBudget small{color:var(--red)}
 #extensionSource{display:grid;justify-items:center;gap:4px}
 #extensionSource img{max-height:130px;object-fit:contain}
+.videoFrameGrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.videoFrame{min-width:0}
+.videoFrame>strong{display:block;margin-bottom:4px;font-size:13px}
+.foldBody .videoFrameUpload,.foldBody .characterReferenceUpload{height:105px;min-height:0}
+.videoFrameUpload img,.characterReferenceUpload img{max-width:100%;max-height:100%;object-fit:contain}
+.videoFrameUpload #extensionSource{max-height:100%;overflow:hidden;padding:5px;text-align:center}
+.videoFrameUpload #extensionSource img{max-height:57px}
+.videoFrameUpload #extensionSource small{font-size:10px}
+.videoFrameTools{display:flex;align-items:center;justify-content:space-between;gap:4px;margin-top:5px}
+.videoFrameTools button{margin-left:auto;padding:5px 10px;min-height:33px}
+.videoFrameTools .sourceDims strong{font-size:clamp(11px,3.8vw,17px)}
+.characterReferenceCard .foldBody>small{display:block;margin-top:4px}
 
 #videoModel{display:flex;gap:4px;margin:4px 0}
 #videoModel button{flex:1;padding:6px 4px;font-size:13px}

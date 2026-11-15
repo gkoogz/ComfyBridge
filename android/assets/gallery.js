@@ -148,11 +148,24 @@ function activateExtension(source){
  const settings=state.settings.video;
 
  if(!settings)throw Error('Wait for the PC to load your video settings.');
+ const {characterReference, ...clip}=source;
+ const wasUsingReference=hasCharacterReference(settings);
+ const input=videoReferenceInputs(state.inputs.video);
+ // Follow the selected library branch, even when its saved reference was cleared.
+ if(characterReference){
+  if(!wasUsingReference)beginCharacterReference(settings);
+  settings.characterReference=characterReference.name;
+  settings.characterReferenceOrigin=characterReference.origin;
+  input.characterReference={job:characterReference.job};
+ }else if(settings.extension&&settings.extension.id!==clip.id&&!clip.id.startsWith('upload-')){
+  dropCharacterReference(settings);
+  delete input.characterReference;
+ }
  delete settings.sourceMedia;delete settings.sourceOrigin;delete settings.replayOf;
  rememberTextCanvas(settings);
- Object.assign(settings,{extension:source,upload:null,mask:null,scale:0,width:source.width,height:source.height,
-  fps:source.fps,seconds:10,exactFrames:true,frames:Math.max(1,Math.round(source.fps*10))});
- state.inputs.video=state.inputs.video.finalFrame?{finalFrame:state.inputs.video.finalFrame}:{};
+ Object.assign(settings,{extension:clip,upload:null,mask:null,scale:0,width:clip.width,height:clip.height,
+  fps:clip.fps,seconds:10,exactFrames:true,frames:Math.max(1,Math.round(clip.fps*10))});
+ state.inputs.video=input;
  persist('video');navigate('video');
  const panel=$('#extensionSource').closest('.foldPanel');
  if(panel.classList.contains('folded'))$('.foldToggle',panel).click();

@@ -18,6 +18,7 @@ import threading
 from pathlib import Path
 import extension
 import recipes
+import provenance
 import gpu_handoff as gpu
 from model_gallery import Gallery
 from model_downloads import Downloads as ModelDownloads
@@ -30,7 +31,7 @@ from PIL import Image, ImageOps
 
 from queue_progress import LIVE_JOBS, positions, prepare
 from studio import prepare as prepare_studio, mark_skipping
-from workflows import Workflows, EROS_BETA7, H3_AUDIO_VAE
+from workflows import Workflows, EROS_BETA7, H3_AUDIO_VAE, H3_REF2VA, H3_REFERENCE_STEPS
 from progress import Progress
 from queue_eta import QueueEta
 from cancel_recovery import can_recover
@@ -82,7 +83,7 @@ if not CLIENT_FILE.exists():
 CLIENT = CLIENT_FILE.read_text().strip()
 CATALOG = None
 CATALOG_AT = 0
-CATALOG_EROS_ON_DISK = None
+CATALOG_VIDEO_ON_DISK = None
 CATALOG_LOCK = asyncio.Lock()
 MODELS = ModelLibrary(ROOT, DATA)
 MODEL_GALLERY = Gallery(MODELS)
@@ -172,8 +173,8 @@ async def _ensure_comfy():
 
 async def catalogue():
     global CATALOG
-    installed=(ROOT/'models/diffusion_models'/EROS_BETA7).is_file()
-    if CATALOG_EROS_ON_DISK is not None and installed!=CATALOG_EROS_ON_DISK:
+    installed=video_models_on_disk()
+    if CATALOG_VIDEO_ON_DISK is not None and installed!=CATALOG_VIDEO_ON_DISK:
         CATALOG=None
     if MODELS.last>CATALOG_AT:CATALOG=None
     if CATALOG is not None:return CATALOG
@@ -181,12 +182,17 @@ async def catalogue():
         return await load_catalogue()
 
 
+def video_models_on_disk():
+    folder = ROOT/'models/diffusion_models'
+    return tuple((folder/name).is_file() for name in (EROS_BETA7, H3_REF2VA))
+
+
 async def load_catalogue():
-    global CATALOG, CATALOG_EROS_ON_DISK, CATALOG_AT
+    global CATALOG, CATALOG_VIDEO_ON_DISK, CATALOG_AT
     if CATALOG is not None:
         return CATALOG
     await ensure_comfy()
-    eros_on_disk=(ROOT/'models/diffusion_models'/EROS_BETA7).is_file()
+    video_on_disk=video_models_on_disk()
     obj = await comfy('/object_info')
     def choices(cls, name):
         field = obj[cls]['input']['required'][name]
@@ -197,10 +203,19 @@ async def load_catalogue():
     CATALOG['finalFrameSupported']=any('last_frame' in h3_inputs.get(key,{}) for key in ('required','optional'))
     CATALOG['videoModels']=WF.video_models(obj,choices('UNETLoader','unet_name'),choices('CLIPLoader','clip_name'),
                                             choices('VAELoader','vae_name'),CATALOG['loras'])
+    reference_dependencies = (
+        (H3_REF2VA, choices('UNETLoader', 'unet_name')),
+        (WF.widgets('video', 3)[0], choices('CLIPLoader', 'clip_name')),
+        (WF.widgets('video', 4)[0], choices('VAELoader', 'vae_name')),
+        ('MiniMaxH3ReferenceToVideo', obj),
+        ('MiniMaxH3AddGuide', obj),
+    )
+    CATALOG['characterVideo'] = dict(model=H3_REF2VA, steps=H3_REFERENCE_STEPS,
+                                     missing=[name for name, available in reference_dependencies if name not in available])
     CATALOG['audioMissing']=[name for name in ('LTXVAudioVAEDecode','TrimAudioDuration') if name not in obj]
     if H3_AUDIO_VAE not in choices('VAELoader','vae_name'):
         CATALOG['audioMissing'].append(H3_AUDIO_VAE)
-    CATALOG_EROS_ON_DISK=eros_on_disk
+    CATALOG_VIDEO_ON_DISK=video_on_disk
     CATALOG_AT=time.time()
     return CATALOG
 
@@ -470,7 +485,7 @@ async def run_jobs():
                 if j['batch'] in STOPPING:
                     update(j['id'], status='cancelled'); continue
                 if settings.get('recipeVersion'):
-                    for field in ('upload','mask','finalFrame'):
+                    for field in recipes.IMAGE_SOURCES:
                         if settings.get(field):
                             await asyncio.to_thread(recipes.checked_source,ROOT/'input'/settings[field])
                 ext = settings.get('extension')
@@ -838,7 +853,7 @@ async def api(request):
                     j['etaSeconds']=None
                 else:
                     j['progress'],j['current_node']=TRACKER.sample()
-        return web.json_response(dict(protocol=19,build='0.1.0-beta.67',jobs=jobs, active=ACTIVE, preview=bool(PREVIEW), previewRevision=PREVIEW_REV,ownedComfy=bool(OWNED),queueEtaSeconds=total_eta))
+        return web.json_response(dict(protocol=20,build='0.1.0-beta.68',jobs=jobs, active=ACTIVE, preview=bool(PREVIEW), previewRevision=PREVIEW_REV,ownedComfy=bool(OWNED),queueEtaSeconds=total_eta))
     if path.startswith('preview/'):
         job=str(uuid.UUID(path[8:]))
         after=int(request.query.get('after','-1'))
@@ -862,7 +877,8 @@ async def api(request):
     if path.startswith('extension/'):
         media_id = path.split('/',1)[1]
         source = extension.source_path(DB,ROOT,media_id)
-        return web.json_response(await asyncio.to_thread(extension.describe,source,media_id))
+        result = await asyncio.to_thread(extension.describe, source, media_id)
+        return web.json_response(provenance.with_character_reference(DB, media_id, result))
     if path == 'media-index':
         items = rows('SELECT id,job,kind,duration,created,archived,path FROM media ORDER BY created DESC,id DESC')
         return web.json_response(await asyncio.to_thread(media_manifest, items, ROOT, DATA))
@@ -917,8 +933,12 @@ async def api(request):
         if existing:
             if existing[0]['owner']!=device:raise web.HTTPForbidden()
             return web.json_response(dict(batch=batch,ids=[r['id'] for r in existing]))
-        checked_upload(s.get('upload')); checked_upload(s.get('mask')); checked_upload(s.get('finalFrame'))
+        for field in recipes.IMAGE_SOURCES:
+            checked_upload(s.get(field))
         if s.get('finalFrame') and kind!='video':raise ValueError('Final frame is only available for video.')
+        character = s.get('characterReference')
+        if character and kind != 'video':
+            raise ValueError('Character reference is only available for video.')
         await asyncio.to_thread(recipes.keep_images,ROOT,s)
         if s.get('extension'):
             if kind!='video' or s.get('upload') or s.get('mask'):
@@ -930,8 +950,13 @@ async def api(request):
             info=await asyncio.to_thread(recipes.keep_clip,ROOT,source,info)
             s.update(extension=info,width=info['width'],height=info['height'],fps=info['fps'],scale=0)
         cat = await catalogue()
-        if s.get('finalFrame') and not cat.get('finalFrameSupported'):
+        if s.get('finalFrame') and not character and not cat.get('finalFrameSupported'):
             raise ValueError('The PC H3 nodes do not support a final frame. Update ComfyUI before using this input.')
+        if character:
+            profile = cat['characterVideo']
+            if profile['missing']:
+                raise ValueError('Stable Character reference needs '+', '.join(profile['missing'])+' on the PC.')
+            s.update(model=profile['model'], loras=[])
         existing=rows('SELECT id,owner FROM jobs WHERE batch=? ORDER BY ordinal',(batch,))
         if existing:
             if existing[0]['owner']!=device:raise web.HTTPForbidden()
@@ -948,7 +973,7 @@ async def api(request):
                 if cat.get('audioMissing'):
                     raise ValueError('Video sound needs '+', '.join(cat['audioMissing'])+' on the PC. Install it or turn off Include sound.')
                 extension.ffmpeg_path()
-        if kind=='video' and cat.get('videoModels'):
+        if kind=='video' and not character and cat.get('videoModels'):
             profile=next((p for p in cat['videoModels'] if p['model']==s.get('model')),None)
             if not profile:raise ValueError('Choose a supported H3 video model.')
             if profile['missing']:raise ValueError('Missing on PC: '+', '.join(profile['missing']))

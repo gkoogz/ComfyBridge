@@ -11,6 +11,8 @@ const assert=require('node:assert/strict'),path=require('node:path');
   const data=await p.evaluate(()=>{
    const c=document.createElement('canvas');c.width=96;c.height=64;c.getContext('2d').fillRect(0,0,96,64);return c.toDataURL('image/png');
   });
+  const poster=Buffer.from(data.split(',')[1],'base64');
+  for(const route of ['**/thumb/**','**/source/**'])await p.route(route,r=>r.fulfill({contentType:'image/png',body:poster}));
   await p.evaluate(()=>{
    heartbeat=poll=syncSettings=async()=>{};persist=()=>{};connected=true;queueProtocol=19;
    for(const kind of ['image','video'])state.settings[kind]={width:64,height:96,scale:0,steps:8,cfg:1,denoise:1,frames:180,fps:18,seconds:10,exactFrames:true,sound:false,
@@ -44,8 +46,42 @@ const assert=require('node:assert/strict'),path=require('node:path');
   await p.locator('#clearFinalFrame').click();await p.waitForFunction(()=>!state.settings.video.finalFrame);
   await p.evaluate(()=>{calls=[];});await p.locator('#play').click();await p.waitForFunction(()=>calls.some(c=>c.route==='generate'));
   assert.equal(await p.evaluate(()=>calls.find(c=>c.route==='generate').body.settings.finalFrame),undefined);
+  const first=await p.locator('.videoFrame').first().boundingBox(),last=await p.locator('.videoFrame').last().boundingBox();
+  assert.equal(first.y,last.y);assert(last.x>=first.x+first.width);
+  assert.equal(await p.locator('.videoFramesCard .foldToggle').count(),1);
+  await p.evaluate(()=>{
+   calls=[];queueProtocol=20;catalog.characterVideo={model:ref2vaModel,steps:20,missing:[]};
+   activateExtension({id:'generated-1',width:64,height:96,fps:18,frames:180});
+  });
+  const photo={name:'puppet.png',mimeType:'image/png',buffer:Buffer.from(data.split(',')[1],'base64')};
+  await p.locator('#uploadCharacter').setInputFiles(photo);
+  await p.waitForSelector('.characterReferenceCard img');
+  assert.equal(await p.locator('#addLora').isDisabled(),true);
+  await p.locator('#play').click();
+  await p.waitForFunction(()=>calls.some(c=>c.route==='generate'));
+  let guided=await p.evaluate(()=>calls.find(c=>c.route==='generate').body.settings);
+  assert.equal(guided.characterReference,'ComfyBridge/final.png');
+  assert.match(guided.model,/ref2va/);assert.equal(guided.steps,20);assert.deepEqual(guided.loras,[]);
+  await p.evaluate(()=>{
+   calls=[];
+   activateExtension({id:'generated-2',width:64,height:96,fps:18,frames:360,
+    characterReference:{name:'ComfyBridge/recipes/original.png',job:'previous-job',origin:{job:'first-job',role:'characterReference'}}});
+  });
+  assert.equal(await p.locator('.characterReferenceCard img').getAttribute('src'),'/source/previous-job/characterReference-thumb');
+  await p.locator('#play').click();
+  await p.waitForFunction(()=>calls.some(c=>c.route==='generate'));
+  guided=await p.evaluate(()=>calls.find(c=>c.route==='generate').body.settings);
+  assert.equal(guided.characterReference,'ComfyBridge/recipes/original.png');
+  assert.equal(guided.characterReferenceOrigin.job,'first-job');
+  assert.equal(guided.extension.id,'generated-2');assert.equal(guided.extension.characterReference,undefined);
+  assert.equal(await p.evaluate(()=>calls.some(c=>c.route==='upload')),false);
+  await p.locator('#clearCharacterReference').click();
+  await p.waitForFunction(()=>!state.settings.video.characterReference);
+  assert.equal(await p.locator('#addLora').isDisabled(),false);
+  assert.equal(await p.evaluate(()=>state.settings.video.extension.id),'generated-2');
+  assert.equal(await p.evaluate(()=>state.settings.video.steps),8);
   await p.evaluate(()=>navigate('image'));assert.equal(await p.locator('#uploadFinal').count(),0);
   assert.deepEqual(errors,[]);
-  console.log('Final frame: optional image field, unchanged canvas, independent clear, preset/backup persistence, exact submission and video-only visibility passed.');
+  console.log('Video frames: side-by-side layout, exact last-frame submission and separate clear. Character reference: upload, inherited file reuse, Ref2VA selection, and return to ordinary Extend passed.');
  }finally{await browser.close();}
 })().catch(error=>{console.error(error);process.exitCode=1;});

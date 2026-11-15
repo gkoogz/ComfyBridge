@@ -14,6 +14,7 @@ class Progress:
             'VAELoader': ('Load VAE', 2), 'CLIPLoader': ('Load text encoder', 4),
             'CLIPTextEncode': ('Encode prompt', 2),
             'MiniMaxH3ImageToVideo': ('Encode first frame and prompt' if settings.get('upload') else 'Encode video prompt', 8+pixels*frames*.2),
+            'MiniMaxH3ReferenceToVideo': ('Encode character reference and prompt', 12+pixels*frames*.2),
             'VAEEncode': ('Encode source image', 3*pixels), 'VAEEncodeForInpaint': ('Encode masked image', 4*pixels),
             'KSampler': ('Sample image', self.steps*2*pixels),
             'SamplerCustomAdvanced': ('Sample video', self.steps*2*pixels*frames),

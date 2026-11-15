@@ -6,6 +6,8 @@ from extension import GUIDE_FRAMES, guide_names
 
 EROS_BETA7 = '10Eros_Max_h3_8stepTURBO_beta7_int8HQ.safetensors'
 H3_AUDIO_VAE = 'minimax_h3_audio_vae_fp32.safetensors'
+H3_REF2VA = 'minimax_h3_ref2va_pruned_fp8_scaled.safetensors'
+H3_REFERENCE_STEPS = 20
 
 
 class Workflows:
@@ -61,7 +63,8 @@ class Workflows:
                             'MiniMax H3 rounds frame count up to 17k+5. Duration uses the actual frame count / FPS.']}
 
     def build(self, kind, s, prefix, *, recorded_video_strength=None):
-        if kind!='video' and s.get('finalFrame'):raise ValueError('Final frame is only available for video.')
+        if kind != 'video' and (s.get('finalFrame') or s.get('characterReference')):
+            raise ValueError('Frame and character references are only available for video.')
         g = {}
         def node(id, class_type, **inputs):
             g[str(id)] = {'class_type': class_type, 'inputs': inputs}
@@ -114,8 +117,9 @@ class Workflows:
             node(9, 'SaveImage', images=image, filename_prefix=prefix)
         elif kind == 'video':
             base_model=self.widgets('video',5)[0]
-            checkpoint=s.get('model') or base_model
-            if checkpoint not in (base_model,EROS_BETA7):
+            character = s.get('characterReference')
+            checkpoint = H3_REF2VA if character else s.get('model') or base_model
+            if checkpoint not in (base_model, EROS_BETA7) and not character:
                 raise ValueError('Choose an installed H3 video model.')
             eros=checkpoint==EROS_BETA7
             extension = s.get('extension')
@@ -141,23 +145,25 @@ class Workflows:
                     image = node(40+i, 'ImageBatch', image1=image, image2=frame)
             elif not text_only:
                 image = node(1, 'LoadImage', image=s['upload'])
-            if not text_only:
+            if not text_only and not character:
                 image = node(2, 'CUDNNToggleAMD', any_input=image, enable_cudnn=False)
             if final_frame:
                 if not extension and s.get('upload') and s.get('exactFrames') and int(s['frames'])<2:
                     raise ValueError('First and final frames need at least two output frames.')
                 ending = node(60, 'LoadImage', image=final_frame)
+            if character:
+                identity = node(61, 'LoadImage', image=character)
             c = self.widgets('video', 3)
             clip = node(3, 'CLIPLoader', clip_name=c[0], type=c[1], device=c[2])
-            if text_only:
+            if text_only or character:
                 clip = node(2, 'CUDNNToggleAMD', any_input=clip, enable_cudnn=False)
             vae = node(4, 'VAELoader', vae_name=self.widgets('video', 4)[0])
             u = self.widgets('video', 5)
             model = node(5, 'UNETLoader', unet_name=checkpoint, weight_dtype=u[1])
             mandatory = self.widgets('video', 8)
-            if not eros and (not loras or loras[0].get('name') != mandatory[0] or not loras[0].get('enabled', True)):
+            if not character and not eros and (not loras or loras[0].get('name') != mandatory[0] or not loras[0].get('enabled', True)):
                 raise ValueError('The MiniMax turbo LoRA is required in the first slot.')
-            for i, l in enumerate(loras):
+            for i, l in enumerate([] if character else loras):
                 if eros and l['name']==mandatory[0]:
                     continue
                 if l.get('enabled', True):
@@ -171,12 +177,20 @@ class Workflows:
             if final_frame:frame_inputs['last_frame']=ending
             kept_end = GUIDE_FRAMES+int(s['frames'])-1 if extension else int(s['frames'])-1 if s.get('exactFrames') else frames-1
             def h3_condition(text, encode_id, guide_id, end_id):
-                condition = node(encode_id, 'MiniMaxH3ImageToVideo', clip=clip, vae=vae,
-                                 prompt=text, width=width, height=height, length=frames, **frame_inputs)
-                if extension:
+                if character:
+                    role = 'Use <Picture 1> as the character identity reference throughout.'
+                    if extension:
+                        role += ' Continue the action from the opening video frames.'
+                    condition = node(encode_id, 'MiniMaxH3ReferenceToVideo', clip=clip, vae=vae,
+                                     prompt=role+'\n\n'+text, width=width, height=height, length=frames,
+                                     ref_image_size='match', **{'ref_images.ref_image_0': identity})
+                else:
+                    condition = node(encode_id, 'MiniMaxH3ImageToVideo', clip=clip, vae=vae,
+                                     prompt=text, width=width, height=height, length=frames, **frame_inputs)
+                if extension or (character and not text_only):
                     condition = node(guide_id, 'MiniMaxH3AddGuide', positive=condition, latent=['6',1],
                                      vae=vae, image=image, frame_idx=0)
-                if final_frame and kept_end!=frames-1:
+                if final_frame and (character or kept_end!=frames-1):
                     # H3 rounds its internal length to 17k+5. Also anchor the last
                     # frame actually kept after exact-length/extension trimming.
                     condition=node(end_id,'MiniMaxH3AddGuide',positive=condition,latent=['6',1],
@@ -191,7 +205,8 @@ class Workflows:
                 guider = node(9, 'CFGGuider', model=model, positive=cond, negative=avoid, cfg=2.0)
             else:
                 guider = node(9, 'BasicGuider', model=model, conditioning=cond)
-            sampler = node(10, 'KSamplerSelect', sampler_name='euler' if eros else self.widgets('video', 10)[0])
+            sampler_name = 'res_multistep' if character else 'euler' if eros else self.widgets('video', 10)[0]
+            sampler = node(10, 'KSamplerSelect', sampler_name=sampler_name)
             noise = node(11, 'RandomNoise', noise_seed=seed)
             sigmas = node(12, 'BasicScheduler', model=model, scheduler='simple', steps=steps, denoise=1.)
             latent = node(13, 'SamplerCustomAdvanced', noise=noise, guider=guider, sampler=sampler, sigmas=sigmas, latent_image=['6', 1])
