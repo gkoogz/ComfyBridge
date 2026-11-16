@@ -20,3 +20,50 @@
 .browseFeedHeading small{font-size:10px}
 body[data-page=browse] #main{padding:6px 10px 32px}
 body[data-page=browse] header>.dot{margin-left:0}
+body[data-page=browse] #main{max-width:none;padding:4px 0 28px}
+body[data-page=browse] .civitaiBrowse{max-width:none}
+.browseCollectionHeading{margin:0 8px 4px}
+.browseCarousel{gap:3px;padding-bottom:0;min-height:0}
+.browseThumb{height:168px;min-width:0;max-width:85%}
+.browseThumb .browseMedia{border-radius:5px}
+.browseThumb img{max-width:none}
+.browseFeedHeading{margin:6px 8px 5px;gap:4px}
+.browseFeedHeading h2{font-size:16px}
+#browseImport{background:none;border:0;padding:2px 0;min-height:28px;text-align:right;color:var(--muted);font-size:10px}
+.browseFeed{columns:auto;display:block}
+.browseTile{position:relative;margin:0 0 3px;border:0;border-radius:0;background:transparent}
+.browseTile .browseMedia{border-radius:0;width:100%}
+.browseTile img{width:100%;height:auto;max-height:none;min-height:0}
+.browseCaption{position:absolute;bottom:0;left:0;right:0;display:flex;align-items:center;gap:5px;padding:12px 8px 5px;background:linear-gradient(0deg,#0009,transparent);color:white}
+.browseCaption button{padding:2px;min-height:28px;background:transparent;border:0;border-radius:4px;color:white;text-shadow:0 1px 4px #000}
+.feedAuthor{font-size:11px;font-weight:600;max-width:38%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.feedReactions{display:flex;align-items:center;gap:3px}
+.feedReactions button{display:flex;align-items:center;gap:2px;font-size:12px;white-space:nowrap}
+.feedReactions small{font-size:10px;color:white}
+.feedReactions button[aria-pressed=true]{background:#a3f2cc33;box-shadow:inset 0 -1px var(--mint)}
+.browseCaption .feedCollect{margin-left:auto;flex:none;width:30px}
+.feedCollect svg{width:18px;height:20px;fill:none;stroke:currentColor;stroke-width:1.6;display:block;margin:auto}
+.browseTile .browseVideo{top:8px;bottom:auto}
+.subjectHeading{display:flex;align-items:center;gap:8px;padding:0 8px 5px}
+.subjectHeading h2{font-size:17px;margin:0;overflow-wrap:anywhere;flex:1}
+.browseBack{width:36px;min-width:36px;height:38px;min-height:38px;padding:0;border:0;background:none;font-size:32px;line-height:1}
+.subjectFilters{display:flex;gap:3px}
+.subjectFilters button{height:34px;min-height:34px;width:34px;padding:0;font-size:21px;border:0;background:none}
+.subjectFilters button[aria-pressed=true]{color:var(--mint);background:#234338}
+.weightRow{display:flex;align-items:center;gap:7px;padding:5px 8px;border-bottom:1px solid var(--line)}
+.weightRow .weightName{flex:1;min-width:0;text-align:left;overflow-wrap:anywhere;font-size:13px;border:0;background:none;padding:3px 0;min-height:32px}
+.weightRow>small{font-size:10px;color:var(--muted)}
+.weightRow>strong{font-size:12px;min-width:24px;text-align:right}
+.weightRow>button:not(.weightName){flex:none;width:30px;height:32px;min-height:32px;padding:0}
+.weightRow.disabled{color:#68757d}
+.weightRow.disabled>small,.weightRow.disabled>strong{color:#68757d}
+#weightDisabled:not(:empty){margin-top:12px;border-top:1px solid var(--line)}
+.feedCollectionShade{position:fixed;inset:0;z-index:220;background:#0008;display:flex;align-items:flex-end;justify-content:center;padding:10px}
+.feedCollectionShade>section{width:100%;max-width:520px;max-height:80dvh;overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:12px}
+.collectionClose{width:36px;height:36px;min-height:36px;padding:0;font-size:25px}
+.feedCollectionChoices{display:grid;gap:8px;padding:12px 0}
+.feedCollectionChoices label{display:flex;align-items:center;gap:10px;font-size:14px;margin:0;min-height:34px}
+.feedCollectionChoices input{width:20px}
+body[data-page=browse] #browseError:not(:empty),.preferenceError:not(:empty){margin:5px 8px}
+@media(min-width:900px){.feedAuthor{font-size:14px}.feedReactions button{font-size:15px}.feedReactions small{font-size:12px}.browseCaption{gap:10px;padding:22px 15px 10px}}
+.browseCaption{background:radial-gradient(ellipse at left bottom,#000a,transparent 78%)}

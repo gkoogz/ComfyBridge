@@ -2,6 +2,7 @@
 // One account on the paired PC, shared across devices. No Civitai credentials here.
 const CivitaiBrowser=(()=>{
  let account='',status=null,feed=[],strip=[],cursor='',stripCursor='',channel='',busy=false,stripBusy=false,session=0,timer,observer,viewer=null,lastStatus=0;
+ let view={kind:'mix'}, history=[], feedEnded=false, collectionPopup=null;
  const emoji={Like:'👍',Heart:'❤️',Laugh:'😂',Cry:'😢'};
  const path=p=>'/'+String(p||'').replace(/^\//,'');
  const button=(label,attrs='')=>'<button '+attrs+'>'+label+'</button>';
@@ -29,10 +30,10 @@ const CivitaiBrowser=(()=>{
   const el=$('#browseImport');if(!el||!status)return;
   const s=status.importState||{};
   el.textContent=s.error||(!s.complete?(s.label||'Preparing your personal feed')+' · '+(status.learned||0)+' media learned':(status.learned||0)+' media shape your feed · '+status.follows+' followed creators');
-  el.classList.toggle('warning',!!s.error);
+  el.textContent+=' ›';el.classList.toggle('warning',!!s.error);
  }
  async function refreshStatus(force=false){
-  if(!available()||(!force&&Date.now()-lastStatus<14000))return;lastStatus=Date.now();
+  if(view.kind!=='mix'||!available()||(!force&&Date.now()-lastStatus<14000))return;lastStatus=Date.now();
   const s=await api('browse/status');if(!available())return;
   if(account&&account!==s.account){reset();close();$('#browseFeed')?.replaceChildren();$('#browseCarousel')?.replaceChildren();}
   account=s.account;status=s;$('#browseHello').textContent='Hello '+s.username;
@@ -51,8 +52,9 @@ const CivitaiBrowser=(()=>{
   $('#browseEmptyCollections').hidden=s.collections.length>0;paintStatus();
  }
  async function render(){
+  view={kind:'mix'};history=[];feedEnded=false;busy=false;stripBusy=false;
   const ticket=++session;clearTimeout(timer);observer?.disconnect();
-  $('#main').innerHTML='<section class="civitaiBrowse"><p id="browseError" class="warning" role="status"></p><div id="browseConnected" hidden><div class="browseCollectionHeading"><details id="browseCollections"><summary aria-label="Choose a media collection"><span id="browseCollectionLabel">Collections</span><span aria-hidden="true">⌄</span></summary><div id="browseCollectionMenu" role="menu"></div></details>'+button('＋','id="browseCreate" aria-label="Create a collection"')+button('↻','id="browseRefresh" aria-label="Refresh your feed"')+'</div><p id="browseEmptyCollections" hidden>No media collections yet. Create one with ＋.</p><div id="browseCarousel" class="browseCarousel"></div><div class="browseFeedHeading"><h2>For you</h2><small id="browseImport" role="status"></small></div><div id="browseFeed"></div>'+button('Load more','id="browseMore"')+'</div></section>';
+  $('#main').innerHTML='<section class="civitaiBrowse"><p id="browseError" class="warning" role="status"></p><div id="browseConnected" hidden><div class="browseCollectionHeading"><details id="browseCollections"><summary aria-label="Choose a media collection"><span id="browseCollectionLabel">Collections</span><span aria-hidden="true">⌄</span></summary><div id="browseCollectionMenu" role="menu"></div></details>'+button('＋','id="browseCreate" aria-label="Create a collection"')+button('↻','id="browseRefresh" aria-label="Refresh your feed"')+'</div><p id="browseEmptyCollections" hidden>No media collections yet. Create one with ＋.</p><div id="browseCarousel" class="browseCarousel"></div><div class="browseFeedHeading"><h2>For you</h2><button id="browseImport" aria-label="Edit feed preferences"></button></div><div id="browseFeed"></div>'+button('Load more','id="browseMore"')+'</div></section>';
   $('#browseFeed').className='browseFeed';
 
   $('#browseRefresh').onclick=()=>{reset();render();};
@@ -62,6 +64,7 @@ const CivitaiBrowser=(()=>{
    $('#browseConnected').hidden=false;
    $('#browseCreate').onclick=()=>createCollection();
    $('#browseCarousel').onscroll=()=>{const el=$('#browseCarousel');if(el.scrollLeft+el.clientWidth>el.scrollWidth-350)loadStrip();};
+   $('#browseImport').onclick=openPreferences;
    $('#browseMore').onclick=()=>loadFeed();
    paintFeed(feed);paintStrip(strip);
    if(!strip.length)loadStrip();if(!feed.length)loadFeed();
@@ -75,20 +78,165 @@ const CivitaiBrowser=(()=>{
   schedule();
  },15000);}
  function tile(item,small=false){
-  const el=document.createElement('article');el.className=small?'browseThumb':'browseTile';
-  el.innerHTML='<button class="browseMedia" aria-label="Open '+esc(item.type)+' by '+esc(item.credit)+'">'+imageHTML(item)+(item.type==='video'?'<span class="browseVideo">▶ Video</span>':'')+'</button>'+(!small?'<div class="browseCaption"><strong>'+esc(item.credit||'Civitai creator')+'</strong><small>'+esc(item.reason||'')+'</small></div>':'');
-  $('.browseMedia',el).onclick=()=>open(item,small?strip:feed);hydrate(el);return el;
+  const el=document.createElement('article');
+  el.className=small?'browseThumb':'browseTile';
+  el.innerHTML='<button class="browseMedia" aria-label="Open '+esc(item.type)+' by '+esc(item.credit)+'">'+imageHTML(item)+(item.type==='video'?'<span class="browseVideo">▶</span>':'')+'</button>';
+  $('.browseMedia',el).onclick=()=>open(item,small?strip:feed);
+  if(!small){
+   const caption=document.createElement('div');
+   caption.className='browseCaption';
+   caption.innerHTML=button(esc(item.credit||'Creator'),'class="feedAuthor"')+
+    '<div class="feedReactions">'+Object.entries(emoji).map(([key,value])=>button(value+' <small>'+reactionCount(item,key)+'</small>','data-feed-react="'+key+'" aria-label="'+key+'" aria-pressed="'+item.reactions.includes(key)+'"')).join('')+'</div>'+
+    button('<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h12v18l-6-4-6 4z"/></svg>','class="feedCollect" aria-label="Add to collection"');
+   el.append(caption);
+   $('.feedAuthor',caption).onclick=async()=>{
+    try{
+     if(!item.creatorId){const detail=await api('browse/detail/'+item.id);Object.assign(item,detail.item);}
+     openSubject('creator',item.creatorId,item.credit);
+    }catch(error){toast(error.message);}
+   };
+   const boundAccount=account;
+   $$('[data-feed-react]',caption).forEach(b=>b.onclick=async()=>{
+    const reaction=b.dataset.feedReact, selected=item.reactions.includes(reaction);
+    b.disabled=true;
+    try{
+     const result=await action({account:boundAccount,kind:'reaction',imageId:item.id,reaction,selected:!selected});
+     const wasSelected=item.reactions.includes(reaction);
+     item.reactions=result.reactions;
+     if(wasSelected!==item.reactions.includes(reaction)){
+      const count=Math.max(0,reactionCount(item,reaction)+(wasSelected?-1:1));
+      item.stats[reaction.toLowerCase()+'CountAllTime']=count;
+     }
+     b.innerHTML=emoji[reaction]+' <small>'+reactionCount(item,reaction)+'</small>';
+     b.setAttribute('aria-pressed',String(item.reactions.includes(reaction)));
+    }catch(error){toast(error.message);}finally{b.disabled=false;}
+   });
+   $('.feedCollect',caption).onclick=()=>showCollections(item,boundAccount);
+  }
+  hydrate(el);
+  return el;
+ }
+ function reactionCount(item,key){
+  return Number(item.stats?.[key.toLowerCase()+'CountAllTime']??item.stats?.[key.toLowerCase()+'Count']??0);
+ }
+ function saveView(){
+  observer?.disconnect();
+  const main=$('#main');
+  history.push({view,feed,cursor,feedEnded,scroll:$('#workspace').scrollTop,nodes:[...main.childNodes]});
+  main.replaceChildren();
+  session++;busy=false;stripBusy=false;
+ }
+ function back(){
+  if(collectionPopup){collectionPopup.remove();collectionPopup=null;return true;}
+  if(!history.length)return false;
+  observer?.disconnect();session++;busy=false;stripBusy=false;
+  const saved=history.pop();
+  view=saved.view;feed=saved.feed;cursor=saved.cursor;feedEnded=saved.feedEnded;
+  $('#main').replaceChildren(...saved.nodes);
+  $('#workspace').scrollTop=saved.scroll;
+  if(view.kind!=='preferences')observeMore();
+  return true;
+ }
+ function observeMore(){
+  observer?.disconnect();
+  if(!$('#browseMore')||feedEnded)return;
+  observer=new IntersectionObserver(entries=>{if(entries.some(e=>e.isIntersecting))loadFeed();},{rootMargin:'350px'});
+  observer.observe($('#browseMore'));
+ }
+ function openSubject(kind,id,name){
+  if(!id)return;
+  saveView();
+  view={kind,id:String(id),name,filter:'all'};
+  feed=[];cursor='';feedEnded=false;
+  $('#main').innerHTML='<section class="civitaiBrowse"><div class="subjectHeading">'+button('‹','class="browseBack" aria-label="Back"')+'<h2>'+esc(name)+'</h2><div class="subjectFilters">'+
+   [['image','▧','Images'],['video','▷','Videos'],['all','▦','All media']].map(([value,icon,label])=>button(icon,'data-media-filter="'+value+'" aria-label="'+label+'" title="'+label+'" aria-pressed="'+(value==='all')+'"')).join('')+'</div></div><p id="browseError" class="warning" role="status"></p><div id="browseFeed" class="browseFeed"></div>'+button('Load more','id="browseMore"')+'</section>';
+  $('.browseBack').onclick=back;
+  $$('[data-media-filter]').forEach(b=>b.onclick=()=>{
+   view.filter=b.dataset.mediaFilter;
+   $$('[data-media-filter]').forEach(other=>other.setAttribute('aria-pressed',String(other===b)));
+   session++;busy=false;feed=[];cursor='';feedEnded=false;$('#browseFeed').replaceChildren();
+   $('#browseMore').hidden=false;loadFeed();observeMore();
+  });
+  $('#browseMore').onclick=loadFeed;
+  $('#workspace').scrollTop=0;loadFeed();observeMore();
+ }
+ async function openPreferences(){
+  saveView();view={kind:'preferences'};
+  $('#main').innerHTML='<section class="civitaiBrowse"><div class="subjectHeading">'+button('‹','class="browseBack" aria-label="Back"')+'<h2>Your feed</h2></div><p class="preferenceError warning" role="status"></p><div id="weightActive"></div><div id="weightDisabled"></div></section>';
+  $('.browseBack').onclick=back;$('#workspace').scrollTop=0;
+  try{await refreshPreferences();}catch(error){$('.preferenceError').textContent=error.message;}
+ }
+ async function refreshPreferences(){
+  const ticket=session;
+  const result=await api('browse/preferences');
+  if(ticket!==session||view.kind!=='preferences')return;
+  if(result.account!==account){reset();render();return;}
+  const positions=new Map($$('.weightRow').map(row=>[row.dataset.key,row.getBoundingClientRect().top]));
+  $('#weightActive').replaceChildren();$('#weightDisabled').replaceChildren();
+  for(const item of result.items){
+   const row=document.createElement('div');
+   row.className='weightRow'+(item.disabled?' disabled':'');row.dataset.key=item.kind+':'+item.id;
+   row.innerHTML=button(esc(item.name),'class="weightName"')+'<small>'+esc(item.kind==='creator'?'Creator':'Tag')+'</small><strong>'+item.weight+'</strong>'+
+    button('↑','data-adjust="1" aria-label="Increase weight"')+button('↓','data-adjust="-1" aria-label="Decrease weight"')+
+    button(item.disabled?'↶':'×','class="weightRemove" aria-label="'+(item.disabled?'Restore to feed':'Remove from feed')+'"');
+   $('.weightName',row).onclick=()=>openSubject(item.kind,item.id,item.name);
+   async function change(values){
+    $$('button',row).forEach(b=>b.disabled=true);
+    try{
+     await action({account:result.account,kind:'preference',subject:item.kind,id:item.id,...values});
+     await refreshPreferences();
+    }catch(error){$('.preferenceError').textContent=error.message;$$('button',row).forEach(b=>b.disabled=false);}
+   }
+   $$('[data-adjust]',row).forEach(b=>{b.disabled=item.disabled;b.onclick=()=>change({delta:Number(b.dataset.adjust)});});
+   $('.weightRemove',row).onclick=()=>change({disabled:!item.disabled});
+   $(item.disabled?'#weightDisabled':'#weightActive').append(row);
+  }
+  if(!result.items.length)$('#weightActive').textContent='Preferences will appear as your Civitai history is imported.';
+  for(const row of $$('.weightRow')){
+   const old=positions.get(row.dataset.key);
+   if(old!=null&&!matchMedia('(prefers-reduced-motion: reduce)').matches){
+    const dy=old-row.getBoundingClientRect().top;
+    row.animate([{transform:'translateY('+dy+'px)',opacity:.55},{transform:'translateY(0)',opacity:1}],{duration:260,easing:'ease-out'});
+   }
+  }
+ }
+ async function showCollections(item,boundAccount){
+  if(collectionPopup)collectionPopup.remove();
+  const popup=document.createElement('div');
+  popup.className='feedCollectionShade';collectionPopup=popup;
+  popup.innerHTML='<section role="dialog" aria-modal="true" aria-label="Collections"><div class="row spread"><strong>Collections</strong>'+button('×','class="collectionClose" aria-label="Close collections"')+'</div><div class="feedCollectionChoices">Loading…</div><div class="newCollectionAnchor"></div><p class="warning" role="status"></p></section>';
+  document.body.append(popup);
+  function dismiss(){popup.remove();if(collectionPopup===popup)collectionPopup=null;}
+  $('.collectionClose',popup).onclick=dismiss;
+  popup.onclick=e=>{if(e.target===popup)dismiss();};
+  async function refresh(){
+   const result=await api('browse/detail/'+item.id);
+   if(!popup.isConnected)return;
+   if(result.account!==boundAccount)throw Error('Civitai account changed. Reopen this menu.');
+   const members=membershipIds(result.item.collections),host=$('.feedCollectionChoices',popup);
+   host.innerHTML=result.collections.map(c=>'<label><input type="checkbox" value="'+c.id+'" '+(members.includes(String(c.id))?'checked':'')+'>'+esc(c.name)+'</label>').join('');
+   $$('input',host).forEach(box=>box.onchange=async()=>{
+    box.disabled=true;
+    try{await action({account:boundAccount,kind:'collect',imageId:item.id,collectionId:box.value,selected:box.checked});}
+    catch(error){box.checked=!box.checked;$('p.warning',popup).textContent=error.message;}
+    finally{box.disabled=false;}
+   });
+   const anchor=$('.newCollectionAnchor',popup);
+   anchor.innerHTML=button('＋ New collection','class="newCollection"');
+   $('.newCollection',anchor).onclick=()=>createCollection(anchor,refresh,boundAccount);
+  }
+  try{await refresh();}catch(error){if(popup.isConnected)$('p.warning',popup).textContent=error.message;}
  }
  function paintFeed(items){const el=$('#browseFeed');if(el)items.forEach(i=>el.append(tile(i)));}
  function paintStrip(items){const el=$('#browseCarousel');if(el)items.forEach(i=>el.append(tile(i,true)));}
  async function loadFeed(){
-  if(busy||!available()||!$('#browseMore'))return;busy=true;const ticket=session;$('#browseMore').innerHTML='<i class="spinner"></i> Finding inspiration…';
-  try{const r=await api('browse/feed',{channel:'mix',cursor});if(ticket!==session)return;
+  if(busy||feedEnded||!available()||!$('#browseMore'))return;busy=true;const ticket=session;$('#browseMore').innerHTML='<i class="spinner"></i> Finding inspiration…';
+  try{const r=await api('browse/feed',{channel:view.kind==='mix'?'mix':view.kind+':'+view.id+':'+view.filter,cursor});if(ticket!==session)return;
    if(r.account!==account){reset();render();return;}
-   const added=r.items.filter(i=>!feed.some(x=>x.id===i.id));feed.push(...added);cursor=r.nextCursor||'';paintFeed(added);$('#browseError').textContent='';
+   const added=r.items.filter(i=>!feed.some(x=>x.id===i.id));feed.push(...added);cursor=r.nextCursor||'';feedEnded=!r.nextCursor;paintFeed(added);$('#browseError').textContent='';
    if(!added.length)$('#browseError').textContent='No new media in this page. Try Load more or refresh.';
   }catch(e){if(ticket===session)$('#browseError').textContent=e.message;}
-  finally{busy=false;if(ticket===session&&$('#browseMore'))$('#browseMore').textContent='Load more';}
+  finally{if(ticket===session){busy=false;if($('#browseMore')){$('#browseMore').textContent='Load more';$('#browseMore').hidden=feedEnded;}}}
  }
  async function loadStrip(){
   if(stripBusy||!available()||(strip.length&&!stripCursor))return;stripBusy=true;const chosen=channel,ticket=session;
@@ -100,11 +248,11 @@ const CivitaiBrowser=(()=>{
   finally{stripBusy=false;}
  }
  async function action(data){return api('browse/action',{account,...data,requestId:crypto.randomUUID()});}
- async function createCollection(parent){
+ async function createCollection(parent,onCreated,boundAccount=account){
   const form=document.createElement('form');form.className='browseCollectionForm';form.innerHTML='<label>New private media collection<input name="name" maxlength="30" required placeholder="Collection name"></label><div class="row">'+button('Create','type="submit" class="green"')+button('Cancel','type="button"')+'</div><p role="status"></p>';
   (parent||$('.browseCollectionHeading')).after(form);form.querySelector('input').focus();form.querySelector('[type=button]').onclick=()=>form.remove();
   form.onsubmit=async e=>{e.preventDefault();const b=form.querySelector('[type=submit]');b.disabled=true;
-   try{const r=await action({kind:'create',name:form.querySelector('input').value});status.collections=r.collections;form.remove();if(page==='browse')await refreshStatus(true);toast('Collection created');if(viewer)await detail(viewer);}
+   try{const r=await action({account:boundAccount,kind:'create',name:form.querySelector('input').value});status.collections=r.collections;form.remove();if(page==='browse')await refreshStatus(true);toast('Collection created');if(onCreated)await onCreated();if(viewer)await detail(viewer);}
    catch(error){form.querySelector('p').textContent=error.message;}finally{b.disabled=false;}
   };
  }
@@ -187,7 +335,7 @@ const CivitaiBrowser=(()=>{
  document.addEventListener('click',e=>{
   if(!e.target.closest('#browseCollections')){const menu=$('#browseCollections');if(menu)menu.open=false;}
  });
- document.addEventListener('keydown',e=>{if(e.key==='Escape'&&viewer){e.preventDefault();close();}});
+ document.addEventListener('keydown',e=>{if(e.key==='Escape'){if(viewer){e.preventDefault();close();}else if(page==='browse'&&back())e.preventDefault();}});
  document.addEventListener('visibilitychange',()=>{if(available())refreshStatus(true).catch(()=>{});});
- return {render,open,close,isOpen:()=>!!viewer,enrich,peek,resourcesHTML,wireResources};
+ return {render,open,close,back,isOpen:()=>!!viewer,enrich,peek,resourcesHTML,wireResources};
 })();

@@ -102,6 +102,32 @@ class BrowseTests(unittest.TestCase):
         self.assertFalse(self.b.running)
         result=self.b.feed({})
         self.assertLessEqual(sum(i['reason'].startswith('From LoRA') for i in result['items']),2)
+    def test_manual_weight_retry_disable_restore_and_account_scope(self):
+        item=self.b.remember('1', image())
+        self.b.observe('1','reactions',item,3,'1')
+        edit=self.act(kind='preference',subject='tag',id=12,delta=1)
+        self.b.action(edit);self.b.action(edit)
+        self.assertEqual(self.b.weights('1')['tags']['12'],4)
+        self.b.action(self.act(kind='preference',subject='tag',id=12,disabled=True))
+        self.assertNotIn('12',self.b.weights('1')['tags'])
+        rows=self.b.preferences()['items']
+        self.assertTrue(rows[-1]['disabled'])
+        self.assertEqual(rows[-1]['weight'],4)
+        self.b.action(self.act(kind='preference',subject='tag',id=12,disabled=False))
+        self.assertEqual(self.b.weights('1')['tags']['12'],4)
+        self.assertEqual(self.b.setting('2','weight-overrides',{}),{})
+
+    def test_exclusive_feeds_pass_recency_and_media_filter(self):
+        self.b.feed({'channel':'creator:7:video'})
+        query=[v for r,v,_ in self.api.calls if r=='image.getInfinite'][-1]
+        self.assertEqual(query['userId'],7)
+        self.assertEqual(query['types'],['video'])
+        self.assertEqual(query['sort'],'Newest')
+        self.b.feed({'channel':'tag:12:all'})
+        query=[v for r,v,_ in self.api.calls if r=='image.getInfinite'][-1]
+        self.assertEqual(query['tags'],[12])
+        self.assertNotIn('types',query)
+
     def test_cdn_whitelist(self):
         for bad in ['https://evil.test/a','http://image.civitai.com/a','https://image.civitai.com@evil.test/a','https://image.civitai.com:88/a']:self.assertFalse(cdn(bad))
         self.assertTrue(cdn('https://blobs-b2.civitai.com/file/blobs-managed-public/a.jpg'))

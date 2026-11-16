@@ -309,6 +309,7 @@ function closeViewer(immediate=false){
 }
 function bridgeBack(){
  if(typeof CivitaiBrowser!=='undefined'&&CivitaiBrowser.isOpen()){CivitaiBrowser.close();return;}
+ if(page==='browse'&&typeof CivitaiBrowser!=='undefined'&&CivitaiBrowser.back())return;
  if($('#modal').open){$('#modalClose').click();return;}
  if(viewerOpen()){closeViewer();return;}
  if($('#drawer').classList.contains('open')){drawer(false);return;}

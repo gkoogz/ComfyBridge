@@ -88,3 +88,23 @@ and [developer documentation](https://developer.civitai.com/).
   import, real image downloads and real video thumbnails/full downloads.
 - Social writes are exercised against mocks, not by changing the user's real
   Civitai relationships. Physical-phone behavior is not established by these tests.
+
+## Beta 77 feed controls
+
+For You uses full-width media with creator, reactions/counts and a collection
+ribbon over the bottom edge. Creator links open a newest-first exclusive feed.
+Creator and tag feeds default to All and offer Images/Video filters. Back restores
+the retained previous page, loaded items, cursor and scroll position.
+
+The feed summary opens Your feed, sorted by effective weight. Up/down adjusts a
+local per-account offset by one, floored at zero. Disable removes that source's
+influence while preserving its learned weight and adjustment. Restore re-enables
+it. Disabled entries remain below active entries. These preference controls
+affect ComfyBridge's recommendations. The media's emoji and collection controls
+write the requested interactions to Civitai.
+
+Overrides are stored in the account settings alongside imported observations.
+The update and request receipt commit in one SQLite transaction, preventing a
+retried weight adjustment from counting twice. Following slots now select among
+enabled followed creators using their effective weights. A disabled tag does
+not exclude every image carrying that tag; its recommendation weight is removed.

@@ -220,7 +220,7 @@ class Browser:
             db.execute('INSERT OR REPLACE INTO observations VALUES(?,?,?,?,?,?,?)',
                        (account, source, str(item['id']), item.get('creatorId', ''), tags, score, stamp))
 
-    def weights(self, account):
+    def learned_weights(self, account):
         creators, tags, names = {}, {}, {}
         follows = self.setting(account, 'follows', [])
         for uid in follows: creators[str(uid)] = 2.0
@@ -229,7 +229,40 @@ class Browser:
                 if r['creator']: creators[r['creator']] = creators.get(r['creator'], 0) + r['score']
                 for tid, name in json.loads(r['tags']).items():
                     tags[tid] = tags.get(tid, 0) + r['score']; names[tid] = name
-        return dict(creators={k:v for k,v in creators.items() if v>0}, tags={k:v for k,v in tags.items() if v>0}, names=names)
+        return dict(creators=creators, tags=tags, names=names)
+
+    def preference_rows(self, account):
+        learned = self.learned_weights(account)
+        overrides = self.setting(account, 'weight-overrides', {})
+        with self.db() as db:
+            creators = {str(r[0]): r[1] for r in db.execute(
+                "SELECT json_extract(payload,'$.creatorId'), json_extract(payload,'$.credit') FROM media WHERE account=? ORDER BY touched",
+                (account,)) if r[0] and r[1]}
+        rows = []
+        for kind, group in (('creator', 'creators'), ('tag', 'tags')):
+            for item_id, base in learned[group].items():
+                change = overrides.get(kind + ':' + item_id, {})
+                name = creators.get(item_id, 'Creator ' + item_id) if kind == 'creator' else learned['names'].get(item_id, 'Tag ' + item_id)
+                rows.append(dict(kind=kind, id=item_id, name=name, weight=max(0, base + change.get('offset', 0)),
+                                 disabled=bool(change.get('disabled')), base=base))
+        return sorted(rows, key=lambda r: (r['disabled'], -r['weight'], r['name'].casefold()))
+
+    def preferences(self):
+        me, token = self.account()
+        rows = self.preference_rows(me['id'])
+        unresolved = [r for r in rows if r['kind']=='creator' and r['name']=='Creator '+r['id']]
+        for row in unresolved[:10]:
+            try:
+                self.images(me['id'], token, {'userId':int(row['id']), 'sort':'Newest'}, 1, meta=False)
+            except ValueError:
+                break
+        return dict(account=me['id'], items=self.preference_rows(me['id']))
+
+    def weights(self, account):
+        rows = self.preference_rows(account)
+        return dict(creators={r['id']:r['weight'] for r in rows if r['kind']=='creator' and not r['disabled'] and r['weight']>0},
+                    tags={r['id']:r['weight'] for r in rows if r['kind']=='tag' and not r['disabled'] and r['weight']>0},
+                    names={r['id']:r['name'] for r in rows if r['kind']=='tag'})
 
     def status(self, active=True):
         me, token = self.account(); account=me['id']
@@ -308,7 +341,7 @@ class Browser:
                 self.feeds[cursor]=state
         with state['lock']:
             state['touched']=time.time();out=[];weights=self.weights(account)
-            follows=self.setting(account,'follows',[])
+            follows=[uid for uid in self.setting(account,'follows',[]) if str(uid) in weights['creators']]
             rich=bool(follows or weights['creators'] or weights['tags'])
             for attempt in range(36 if channel=='mix' else 2):
                 if len(out)>=12:break
@@ -320,7 +353,8 @@ class Browser:
                         item=state['loras'][state['lora']%len(state['loras'])];state['lora']+=1
                         key='lora:'+str(item['versionId']);filters={'modelVersionId':int(item['versionId']),'sort':'Most Reactions'};reason='From '+item['title']
                     elif slot in (0,2,4,6) and follows:
-                        key='following';filters={'followed':True,'sort':'Newest'};reason='Creators you follow'
+                        uid=random.choices(follows, weights=[weights['creators'][str(u)] for u in follows])[0]
+                        key='creator:'+str(uid);filters={'userId':int(uid),'sort':'Newest'};reason='Creators you follow'
                     elif (slot in (1,3,5) or not weights['tags']) and weights['creators']:
                         uid=random.choices(list(weights['creators']),weights=list(weights['creators'].values()))[0]
                         key='creator:'+uid;filters={'userId':int(uid),'sort':'Newest'};reason='A creator you enjoy'
@@ -328,6 +362,12 @@ class Browser:
                         tag=random.choices(list(weights['tags']),weights=list(weights['tags'].values()))[0]
                         key='tag:'+tag;filters={'tags':[int(tag)],'sort':'Newest'};reason='Because you enjoy '+weights['names'][tag]
                     else:key='discover';filters={'sort':'Newest'};reason='Discover something new'
+                elif channel.startswith(('creator:', 'tag:')):
+                    parts=channel.split(':')
+                    if len(parts)!=3 or parts[2] not in ('all','image','video'):raise ValueError('Invalid feed filter')
+                    subject=ident(parts[1]);key=channel;reason=''
+                    filters={'sort':'Newest', **({'userId':subject} if parts[0]=='creator' else {'tags':[subject]})}
+                    if parts[2]!='all':filters['types']=[parts[2]]
                 elif channel=='reactions':key=channel;filters={'reactions':list(REACTIONS),'sort':'Newest'};reason='Your reactions'
                 elif channel.startswith('collection:'):
                     cid=ident(channel.split(':')[1])
@@ -402,7 +442,29 @@ class Browser:
                     if kind=='create':raise ValueError('Collection creation was already attempted. Refresh your collections before trying again.')
                 else:db.execute('INSERT INTO actions VALUES(?,?,?,?,?)',(account,request_id,body,'started',''))
             self.assert_account(account,token)
-            if kind=='create':
+            if kind=='preference':
+                subject = payload.get('subject')
+                item_id = str(ident(payload.get('id')))
+                row = next((r for r in self.preference_rows(account) if r['kind']==subject and r['id']==item_id), None)
+                if row is None:raise ValueError('This preference is no longer tracked. Refresh the list.')
+                overrides = self.setting(account, 'weight-overrides', {})
+                key = subject + ':' + item_id
+                change = overrides.get(key, {})
+                if 'delta' in payload:
+                    delta = payload['delta']
+                    if type(delta) is not int or delta not in (-1,1):raise ValueError('Invalid weight adjustment')
+                    change['offset'] = max(0, row['weight'] + delta) - row['base']
+                elif type(payload.get('disabled')) is bool:
+                    change['disabled'] = payload['disabled']
+                else:raise ValueError('Choose a weight adjustment or disable state')
+                overrides[key] = change
+                # Commit the adjustment and retry receipt together.
+                result = dict(ok=True)
+                with self.db() as db:
+                    db.execute('INSERT OR REPLACE INTO settings VALUES(?,?,?)', (account, 'weight-overrides', json.dumps(overrides)))
+                    db.execute('UPDATE actions SET state=?,result=? WHERE account=? AND id=?', ('done',json.dumps(result),account,request_id))
+                return result
+            elif kind=='create':
                 name=str(payload.get('name','')).strip()
                 if not name or len(name)>30:raise ValueError('Collection names must be 1–30 characters.')
                 self.call(token,'collection.upsert',{'name':name,'type':'Image','read':'Private','write':'Private'},True)
