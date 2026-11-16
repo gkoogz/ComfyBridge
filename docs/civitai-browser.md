@@ -612,3 +612,32 @@ expiry without viewed marks, and PC warming exactly 25 originals. The neutral
 25 originals, CDN mapping, cached video seeking without another transfer, and
 12-original subfeed warming. Native CDN/fallback code is compiled and inspected;
 browser tests do not substitute for physical-phone network verification.
+
+## Beta 92: instant collection choices and hourly discovery
+
+Opening the bookmark picker renders the known collection directory immediately.
+It does not force a media-detail refresh or collection-directory lookup. Known
+membership is reused; an unknown checkbox state is resolved through a small,
+account-scoped membership-only endpoint while the names remain visible. That
+lookup does not fetch prompts, creators, following state or directory counts.
+
+The persisted per-account directory has a one-hour refresh/attempt interval,
+including explicit refreshes, simultaneous callers and worker restarts. Failed
+refreshes retain the previous list for that interval. Initial discovery when no
+list has ever been obtained may retry under the shared network governor. Creating
+a collection merges the actual returned ID/name directly without discovery.
+Confirmed bookmark writes preserve the directory, store membership and adjust
+counts when the prior membership was known. Feed hydration preserves this local
+membership cache rather than erasing it with a lighter response.
+
+Thirty existing browser-backend tests and six collection-cache regressions pass.
+Phone/desktop browser tests cover immediate choices, delayed membership without
+checking guessed boxes, cached reopen and creation without status/detail reloads.
+No real account mutations are performed by these neutral tests.
+
+Deferred social writes are not enabled in this release. Current upstream Civitai
+source exposes `collection.bulkSaveItems` (up to 100 image IDs in one collection)
+and individual `reaction.toggle` operations. A future five-minute outbox should
+persist desired final state, coalesce repeat changes, bulk collection additions,
+pace remaining operations, and reconcile ambiguous toggle results before retrying.
+A single HTTP batch is not a promise of a single rate-limit operation.

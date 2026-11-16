@@ -14,6 +14,7 @@ const assert=require('node:assert/strict'),path=require('node:path');
    api=async (route,body)=>{calls.push({route,body});if(!/^[a-zA-Z0-9_/-]+$/.test(route))throw Error('Invalid request.');
     if(route==='browse/preferences')return {account:'1',items:[{kind:'creator',id:'7',name:'Potter',weight:3,disabled:!!window.weightDisabled},{kind:'tag',id:'12',name:'ceramics',weight:2,disabled:false}]};
     if(route==='browse/action'&&body.kind==='preference'){window.weightDisabled=body.disabled;return {ok:true};}
+    if(route.startsWith('browse/memberships/')){if(window.delayMembership)await new Promise(resolve=>window.releaseMembership=resolve);return {account:'1',collections:[{collectionId:4}]};}
     if(route==='browse/status')return {account:'1',username:'Potter',collections:[{id:4,name:'Ceramics',count:12,bookmark:true}],learned:14,follows:3,importState:{complete:true}};
     if(route.startsWith('browse/feed'))return {account:'1',items:Array.from({length:6},(_,i)=>({...item,id:String(i+1)})),nextCursor:null};
     if(route.startsWith('browse/detail')){const snapshot=structuredClone({...item,id:route.split('/').pop()});if(window.delayDetail&&snapshot.id==='1'){window.delayDetail=false;await new Promise(resolve=>window.releaseDetail=resolve);}return {account:'1',item:snapshot,collections:[{id:4,name:'Ceramics',count:12,bookmark:true}]};}
@@ -67,15 +68,33 @@ const assert=require('node:assert/strict'),path=require('node:path');
   await p.waitForSelector('.feedCollectionChoices input');
   assert(await p.locator('.feedCollectionChoices input').first().isChecked());
   await p.locator('.collectionClose').click();
+  await p.evaluate(()=>{delete document.querySelector('.browseTile').browseItem.collections;window.delayMembership=true;});
+  await p.locator('.feedCollect').first().click();
+  await p.waitForFunction(()=>typeof releaseMembership==='function');
+  assert.equal(await p.locator('.feedCollectionChoices input').count(),1,'Known collection names appear before membership lookup finishes');
+  assert(await p.locator('.feedCollectionChoices input').first().isDisabled(),'Unknown checked state is not guessed');
+  await p.evaluate(()=>{delayMembership=false;releaseMembership();});
+  await p.waitForFunction(()=>!document.querySelector('.feedCollectionChoices input').disabled);
+  assert(await p.locator('.feedCollectionChoices input').first().isChecked());
+  const beforeCreate=await p.evaluate(()=>calls.length);
+  await p.locator('.newCollection').click();
+  await p.locator('.browseCollectionForm input').fill('New');
+  await p.locator('.browseCollectionForm [type=submit]').click();
+  await p.waitForFunction(()=>document.querySelectorAll('.feedCollectionChoices input').length===2);
+  assert.equal(await p.evaluate(n=>calls.slice(n).filter(c=>c.route==='browse/status'||c.route.startsWith('browse/detail/')).length,beforeCreate),0,'Creating a collection updates the picker without a directory/detail refresh');
+  await p.locator('.collectionClose').click();
   if(process.env.BROWSE_SHOTS)await p.screenshot({path:path.join(process.env.BROWSE_SHOTS,'browse-'+width+'.png')});
   assert.equal(await p.locator('.feedReactions [data-feed-react=Heart] small').count(),0);
-  // Close a slow membership lookup, then react before its old detail arrives.
-  await p.evaluate(()=>window.delayDetail=true);await p.locator('.feedCollect').first().click();
-  await p.waitForFunction(()=>typeof releaseDetail==='function');await p.locator('.collectionClose').click();
+  // Reopening a known bookmark menu never forces media details or collection discovery.
+  const detailsBefore=await p.evaluate(()=>calls.filter(c=>c.route.startsWith('browse/detail')).length);
+  await p.locator('.feedCollect').first().click();
+  assert(await p.locator('.feedCollectionChoices input').first().isChecked());
+  assert.equal(await p.evaluate(()=>calls.filter(c=>c.route.startsWith('browse/detail')).length),detailsBefore);
+  await p.locator('.collectionClose').click();
   await p.locator('.feedReactions [data-feed-react=Heart]').first().click();
   await p.waitForFunction(()=>document.querySelector('.feedReactions [data-feed-react=Heart]')?.getAttribute('aria-pressed')==='true');
   assert.equal(await p.locator('.feedReactions [data-feed-react=Heart] small').first().textContent(),'1');
-  await p.evaluate(()=>releaseDetail());await p.waitForTimeout(80);
+  await p.waitForTimeout(80);
   assert.equal(await p.locator('.feedReactions [data-feed-react=Heart] small').first().textContent(),'1','Late details must not undo a reaction');
   await p.locator('.feedReactions [data-feed-react=Heart]').first().click();
   await p.waitForFunction(()=>document.querySelector('.feedReactions [data-feed-react=Heart]')?.getAttribute('aria-pressed')==='false');

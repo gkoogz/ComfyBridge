@@ -122,6 +122,7 @@ class BrowseTests(unittest.TestCase):
     def test_follow_set_state_and_collection_confirmed(self):
         self.b.remember('1',image());self.b.action(self.act(kind='follow',creatorId=7,selected=True))
         self.assertFalse(any(r=='user.toggleFollow' for r,_,_ in self.api.calls))
+        self.b.collections('1','account-a')
         self.b.action(self.act(kind='collect',imageId=1,collectionId=4,selected=True));self.assertEqual(self.b.weights('1')['tags']['12'],1)
     def test_tag_vote_only_changes_personal_weight_by_five(self):
         self.b.remember('1',image());self.b.action(self.act(kind='vote',imageId=1,tagId=12,vote=1))

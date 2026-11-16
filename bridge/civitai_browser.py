@@ -54,6 +54,7 @@ class Browser:
         self.lock = threading.RLock()
         self.network = threading.Lock()
         self.action_lock = threading.RLock()
+        self.collections_lock = threading.RLock()
         self.mix_lock = threading.Lock()
         self.media_lock = threading.Lock()
         self.cache_locks=[threading.RLock() for _ in range(64)]
@@ -258,6 +259,8 @@ class Browser:
             db.execute('BEGIN IMMEDIATE')
             row=db.execute('SELECT payload FROM media WHERE account=? AND id=?',(account,image_id)).fetchone()
             previous=json.loads(row[0]) if row else {}
+            for key in ('collections','collectionsChecked'):
+                if key in previous:item[key]=previous[key]
             if previous.get('detailVersion')==2:
                 for key in ('prompt','negativePrompt','resources','parameters','detailVersion','generationDataAvailable'):
                     item[key]=previous[key]
@@ -283,20 +286,42 @@ class Browser:
         return [i for i in items if i], raw.get('nextCursor')
 
     def collections(self, account, token, refresh=False):
-        old = self.setting(account, 'collections', {})
-        if not refresh and time.time() - old.get('checked', 0) < 300:
-            return old.get('items', [])
-        raw = self.call(token, 'collection.getAllUser', {'contributingOnly':False})
-        bookmarks = self.call(token, 'user.getBookmarkCollections')
-        bookmark_ids={c['id'] for c in bookmarks if c.get('type')=='Image'}
-        items = []
-        for c in raw:
-            if c.get('type') != 'Image' or not c.get('isOwner') or c.get('archivedAt'): continue
-            counts = self.call(token, 'collection.getEntryCount', {'id':ident(c['id'])})
-            items.append(dict(id=ident(c['id']), name=str(c['name']), count=counts.get('ACCEPTED', 0), bookmark=c['id'] in bookmark_ids))
-        items.sort(key=lambda c:c['count'], reverse=True)
-        self.save(account, 'collections', dict(items=items, checked=time.time()))
-        return items
+        # Even an explicit Browse refresh trusts this directory for one hour.
+        # Keep the attempt timestamp durable so failures/restarts cannot hammer it.
+        with self.collections_lock:
+            old = self.setting(account, 'collections', {})
+            if time.time() - max(old.get('checked', 0),old.get('attempted',0)) < 3600:
+                return old.get('items', [])
+            attempted=time.time()
+            self.save(account,'collections',dict(old,attempted=attempted))
+            try:
+                raw = self.call(token, 'collection.getAllUser', {'contributingOnly':False})
+                bookmarks = self.call(token, 'user.getBookmarkCollections')
+                bookmark_ids={c['id'] for c in bookmarks if c.get('type')=='Image'}
+                items = []
+                for c in raw:
+                    if c.get('type') != 'Image' or not c.get('isOwner') or c.get('archivedAt'): continue
+                    counts = self.call(token, 'collection.getEntryCount', {'id':ident(c['id'])})
+                    items.append(dict(id=ident(c['id']), name=str(c['name']), count=counts.get('ACCEPTED', 0), bookmark=c['id'] in bookmark_ids))
+                items.sort(key=lambda c:c['count'], reverse=True)
+                self.save(account, 'collections', dict(items=items, checked=time.time(),attempted=attempted))
+                return items
+            except (ValueError,OSError):
+                if 'items' in old:return old['items']
+                # Initial discovery is not a refresh of a known directory.
+                self.save(account,'collections',old)
+                raise
+
+    def memberships(self, image_id):
+        me,token=self.account(cached=True);account=me['id'];iid=ident(image_id)
+        with self.action_lock:
+            item=self.stored(account,iid)
+            if not item:raise ValueError('Open this media before bookmarking it.')
+            if not isinstance(item.get('collections'),list) or time.time()-item.get('collectionsChecked',0)>=3600:
+                members=self.call(token,'collection.getUserCollectionItemsByItem',{'imageId':iid})
+                item.update(collections=members,collectionsChecked=time.time())
+                with self.db() as db:db.execute('UPDATE media SET payload=? WHERE account=? AND id=?',(json.dumps(item),account,str(iid)))
+            return dict(account=account,collections=item['collections'])
 
     def observe(self, account, source, item, score, stamp):
         tags = json.dumps({str(t['id']):t['name'] for t in item.get('tags', [])})
@@ -799,13 +824,14 @@ class Browser:
             if not item.get('tagsKnown') or any(not t.get('name') for t in item['tags']):
                 item['tags']=self.call(token,'tag.getVotableTags',{'type':'image','id':int(image_id)});item['tagsKnown']=True
             item['collections']=self.call(token,'collection.getUserCollectionItemsByItem',{'imageId':int(image_id)})
+            item['collectionsChecked']=time.time()
         item['socialComplete']=not prefetch
         with self.db() as db:db.execute('UPDATE media SET payload=? WHERE account=? AND id=?',(json.dumps(item),account,image_id))
         snapshot=self.tag_weight_snapshot(account)
         public=self.public(item)
         public['tags']=[dict(id=t['id'],name=t.get('name',''),weight=snapshot['tagWeights'].get(str(t['id']),0)) for t in item['tags']]
         public['tags'].sort(key=lambda t:(-t['weight'],t['name'].casefold()))
-        return dict(account=account,item=public,collections=self.setting(account,'collections',{}).get('items',[]) if prefetch else self.collections(account,token),**snapshot)
+        return dict(account=account,item=public,collections=self.setting(account,'collections',{}).get('items',[]),**snapshot)
 
     def action(self, payload):
         me,token=self.account();account=me['id']
@@ -862,9 +888,14 @@ class Browser:
             elif kind=='create':
                 name=str(payload.get('name','')).strip()
                 if not name or len(name)>30:raise ValueError('Collection names must be 1–30 characters.')
-                self.call(token,'collection.upsert',{'name':name,'type':'Image','read':'Private','write':'Private'},True)
-                self.invalidate(token,'collection.getAllUser','collection.getEntryCount','user.getBookmarkCollections')
-                result=dict(ok=True,collections=self.collections(account,token,True))
+                created=self.call(token,'collection.upsert',{'name':name,'type':'Image','read':'Private','write':'Private'},True)
+                cid=ident(created.get('id'))
+                with self.collections_lock:
+                    saved=self.setting(account,'collections',{})
+                    items=[c for c in saved.get('items',[]) if c['id']!=cid]
+                    items.append(dict(id=cid,name=str(created.get('name') or name),count=0,bookmark=False))
+                    saved['items']=items;self.save(account,'collections',saved)
+                result=dict(ok=True,collections=items)
             elif kind=='follow':
                 uid=ident(payload.get('creatorId'));desired=payload.get('selected')
                 if type(desired) is not bool:raise ValueError('Choose follow or unfollow.')
@@ -891,15 +922,24 @@ class Browser:
                     result=dict(ok=True,reactions=values)
                 elif kind=='collect':
                     cid=ident(payload.get('collectionId'));desired=payload.get('selected')
-                    if type(desired) is not bool or cid not in [c['id'] for c in self.collections(account,token)]:raise ValueError('Select one of your collections.')
+                    if type(desired) is not bool or cid not in [c['id'] for c in self.setting(account,'collections',{}).get('items',[])]:raise ValueError('Select one of your collections.')
                     self.call(token,'collection.saveItem',dict(imageId=iid,collections=[{'collectionId':cid}] if desired else [],removeFromCollectionIds=[] if desired else [cid]),True)
                     memberships=self.call(token,'collection.getUserCollectionItemsByItem',{'imageId':iid},fresh=True)
                     self.invalidate(token,'collection.getEntryCount','image.getInfinite')
                     present=any(int(c.get('collectionId',0))==cid for c in memberships)
                     if present!=desired:raise ValueError('Collection change is not confirmed yet. Refresh before retrying.')
                     self.observe(account,'collection:'+str(cid),item,1 if desired else 0,str(time.time()))
-                    self.save(account,'collections',{})
-                    result=dict(ok=True,selected=desired)
+                    previous=item.get('collections')
+                    item.update(collections=memberships,collectionsChecked=time.time())
+                    with self.db() as db:db.execute('UPDATE media SET payload=? WHERE account=? AND id=?',(json.dumps(item),account,str(iid)))
+                    if isinstance(previous,list):
+                        was_present=any(int(c.get('collectionId',0))==cid for c in previous)
+                        with self.collections_lock:
+                            saved=self.setting(account,'collections',{})
+                            for c in saved.get('items',[]):
+                                if c['id']==cid:c['count']=max(0,c.get('count',0)+int(desired)-int(was_present))
+                            self.save(account,'collections',saved)
+                    result=dict(ok=True,selected=desired,collections=memberships)
                 elif kind in ('tag-weight','vote'):
                     tid=ident(payload.get('tagId'))
                     delta=payload.get('delta') if kind=='tag-weight' else (payload.get('vote')*5 if type(payload.get('vote')) is int else None)

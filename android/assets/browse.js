@@ -741,7 +741,7 @@ const CivitaiBrowser=(()=>{
    }
   }
  }
- async function showCollections(item,boundAccount){
+ async function showCollections(item,boundAccount,knownCollections=status?.collections||[]){
   if(collectionPopup)collectionPopup.remove();
   const popup=document.createElement('div');
   popup.className='feedCollectionShade';collectionPopup=popup;
@@ -751,20 +751,26 @@ const CivitaiBrowser=(()=>{
   $('.collectionClose',popup).onclick=dismiss;
   popup.onclick=e=>{if(e.target===popup)dismiss();};
   async function refresh(){
-   const result=await fetchDetail(item,true);
-   if(!popup.isConnected)return;
-   if(result.account!==boundAccount)throw Error('Civitai account changed. Reopen this menu.');
-   const members=membershipIds(result.item.collections),host=$('.feedCollectionChoices',popup);
-   host.innerHTML=result.collections.map(c=>'<label><input type="checkbox" value="'+c.id+'" '+(members.includes(String(c.id))?'checked':'')+'>'+esc(c.name)+'</label>').join('');
+   if(account!==boundAccount)throw Error('Civitai account changed. Reopen this menu.');
+   const known=Array.isArray(item.collections),members=membershipIds(item.collections),host=$('.feedCollectionChoices',popup);
+   host.innerHTML=(status?.account===boundAccount?status.collections:knownCollections).map(c=>'<label><input type="checkbox" value="'+c.id+'" '+(!known?'disabled ':'')+(members.includes(String(c.id))?'checked':'')+'>'+esc(c.name)+'</label>').join('');
    $$('input',host).forEach(box=>box.onchange=async()=>{
     box.disabled=true;
-    try{await action({account:boundAccount,kind:'collect',imageId:item.id,collectionId:box.value,selected:box.checked});const ids=new Set(membershipIds(item.collections));box.checked?ids.add(box.value):ids.delete(box.value);updateItemSocial(item,{collections:[...ids].map(collectionId=>({collectionId}))});}
+    try{const result=await action({account:boundAccount,kind:'collect',imageId:item.id,collectionId:box.value,selected:box.checked});const ids=new Set(membershipIds(item.collections));box.checked?ids.add(box.value):ids.delete(box.value);updateItemSocial(item,{collections:result.collections||[...ids].map(collectionId=>({collectionId}))});}
     catch(error){box.checked=!box.checked;$('p.warning',popup).textContent=error.message;}
     finally{box.disabled=false;}
    });
    const anchor=$('.newCollectionAnchor',popup);
    anchor.innerHTML=button('＋ New collection','class="newCollection"');
-   $('.newCollection',anchor).onclick=()=>createCollection(anchor,refresh,boundAccount);
+   $('.newCollection',anchor).onclick=()=>createCollection(anchor,collections=>{knownCollections=collections;return refresh();},boundAccount);
+   if(!known){
+    const result=await api('browse/memberships/'+item.id);
+    if(!popup.isConnected||account!==boundAccount)return;
+    if(result.account!==boundAccount)throw Error('Civitai account changed. Reopen this menu.');
+    // This lookup only changes memberships, never reactions or other social state.
+    updateItemSocial(item,{collections:result.collections});
+    if(Array.isArray(item.collections))return refresh();
+   }
   }
   try{await refresh();}catch(error){if(popup.isConnected)$('p.warning',popup).textContent=error.message;}
  }
@@ -823,7 +829,7 @@ const CivitaiBrowser=(()=>{
   const form=document.createElement('form');form.className='browseCollectionForm';form.innerHTML='<label>New private media collection<input name="name" maxlength="30" required placeholder="Collection name"></label><div class="row">'+button('Create','type="submit" class="green"')+button('Cancel','type="button"')+'</div><p role="status"></p>';
   (parent||$('.browseCollectionHeading')).after(form);form.querySelector('input').focus();form.querySelector('[type=button]').onclick=()=>form.remove();
   form.onsubmit=async e=>{e.preventDefault();const b=form.querySelector('[type=submit]');b.disabled=true;
-   try{const r=await action({account:boundAccount,kind:'create',name:form.querySelector('input').value});if(status)status.collections=r.collections;form.remove();if(page==='browse')await refreshStatus(true);toast('Collection created');if(onCreated)await onCreated();if(viewer)await detail(viewer);}
+   try{const r=await action({account:boundAccount,kind:'create',name:form.querySelector('input').value});if(status?.account===boundAccount)status.collections=r.collections;form.remove();paintCollections();saveSnapshot();toast('Collection created');if(onCreated)await onCreated(r.collections);}
    catch(error){form.querySelector('p').textContent=error.message;}finally{b.disabled=false;}
   };
  }
@@ -900,7 +906,7 @@ const CivitaiBrowser=(()=>{
   async function run(b,payload,done){b.disabled=true;error.textContent='';try{const r=await action({...payload,account:boundAccount});if(host.isConnected)done(r);}catch(e){error.textContent=e.message;if(b.type==='checkbox')b.checked=!b.checked;}finally{b.disabled=false;}}
   $('[data-civi-follow]',host)?.addEventListener('click',e=>run(e.currentTarget,{kind:'follow',creatorId:item.creatorId,selected:!following(item)},r=>{updateFollowing(item.creatorId,r.selected);e.target.textContent=r.selected?'Following ✓':'Follow';e.target.classList.toggle('selected',r.selected);}));
   $$('[data-civi-react]',host).forEach(b=>b.onclick=()=>run(b,{kind:'reaction',imageId:item.id,reaction:b.dataset.civiReact,selected:!(item.reactions||[]).includes(b.dataset.civiReact)},r=>{applyReaction(item,r.reactions);$$('[data-civi-react]',host).forEach(x=>{const selected=r.reactions.includes(x.dataset.civiReact);x.innerHTML=reactionLabel(item,x.dataset.civiReact);x.classList.toggle('selected',selected);x.setAttribute('aria-pressed',String(selected));});}));
-  $('.viewerCollect',host).onclick=()=>showCollections(item,boundAccount);
+  $('.viewerCollect',host).onclick=()=>showCollections(item,boundAccount,collections);
 
  }
  function tagWeight(tag){return personalTagAccount===account&&personalTagsAt?Number(personalTags[String(tag.id)]||0):Number(tag.weight||0);}
