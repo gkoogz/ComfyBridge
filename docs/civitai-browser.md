@@ -306,3 +306,9 @@ all tags removes the button. Image/video/all filters work on tag intersections.
 Your feed also has a live, case-insensitive name search above the list. It combines
 with the type filter and selected sort across weighted, unweighted and banned
 sections. Clearing the search restores the visible list without a network call.
+
+## Beta 84: stable viewer loading
+
+The viewer distinguishes a pending generation-data request from a completed empty response or a failed request. Failures offer Retry details in place and retain any existing prompt. Complete cached details are reused immediately on reopening. Metadata updates leave the hero media element and scroll position intact; opening peek positioning happens once, not on every social-row resize. Scroll anchoring is disabled within the viewer. The full image is decoded before it replaces the visible preview, and the hero is excluded from thumbnail cache URL rewrites.
+
+The viewer-loading browser regression delays metadata and decoding independently, checks unchanged media identity/source/geometry and scroll position, and covers retry, confirmed missing prompts and cached reopen at phone and desktop widths.

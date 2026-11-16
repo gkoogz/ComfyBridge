@@ -142,6 +142,7 @@ body[data-page=browse] #workspace{overscroll-behavior-y:contain}
 .civitaiViewer .modelPreviewHero{height:calc(100dvh - var(--status-inset,0px));display:block}
 .civitaiViewer .modelPreviewHero img,.civitaiViewer .modelPreviewHero video{display:block;width:100%;object-fit:contain}
 .civitaiViewer .modelPreviewHero.isVideo{touch-action:pan-y pinch-zoom}
+.civitaiViewerScroll{overflow-anchor:none}
 .civitaiViewerHead{transition:transform .18s ease,opacity .18s ease}
 .civitaiViewer.mediaOnly .civitaiViewerHead{transform:translateY(-80px);opacity:0;pointer-events:none}
 .civitaiAuthor .creatorName{margin-right:auto;flex:0 1 auto;min-width:0;overflow-wrap:anywhere}
