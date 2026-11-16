@@ -112,7 +112,7 @@ function connection(value){connected=value;ModelPreviews.connected(value);prefet
 function dashboardVisible(){return window.Desktop||$('#drawer').classList.contains('open');}
 function render(){
  document.body.dataset.page=page;
- $('#pageTitle').textContent=page[0].toUpperCase()+page.slice(1);$('#presetButton').hidden=!['image','video'].includes(page);$('#presetButton').innerHTML=esc(presetName||'Current settings')+' <span>⌄</span>';
+ $('#browseHello').hidden=page!=='browse';$('#pageTitle').textContent=page[0].toUpperCase()+page.slice(1);$('#presetButton').hidden=!['image','video'].includes(page);$('#presetButton').innerHTML=esc(presetName||'Current settings')+' <span>⌄</span>';
  $$('[data-nav]').forEach(b=>{
   const active=b.dataset.nav===page;b.classList.toggle('active',active);
   if(active)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current');

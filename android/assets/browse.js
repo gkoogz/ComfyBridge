@@ -36,21 +36,31 @@ const CivitaiBrowser=(()=>{
   const s=await api('browse/status');if(!available())return;
   if(account&&account!==s.account){reset();close();$('#browseFeed')?.replaceChildren();$('#browseCarousel')?.replaceChildren();}
   account=s.account;status=s;$('#browseHello').textContent='Hello '+s.username;
-  const select=$('#browseCollections');const old=select.value||channel;
-  select.innerHTML=s.collections.map(c=>'<option value="collection:'+c.id+'">'+esc(c.name)+' · '+c.count+'</option>').join('')+'<option value="reactions">Reacted media</option>';
-  channel=old&&[...select.options].some(o=>o.value===old)?old:s.collections.length?'collection:'+s.collections[0].id:'reactions';select.value=channel;
+  const choices=s.collections.map(c=>({value:'collection:'+c.id,label:c.name+' · '+c.count}));
+  choices.push({value:'reactions',label:'Reacted media'});
+  if(!choices.some(c=>c.value===channel))channel=choices[0].value;
+  $('#browseCollectionLabel').textContent=choices.find(c=>c.value===channel).label;
+  const menu=$('#browseCollectionMenu');
+  menu.innerHTML=choices.map(c=>button(esc(c.label),'type="button" role="menuitemradio" aria-checked="'+(c.value===channel)+'" data-channel="'+esc(c.value)+'"')).join('');
+  $$('[data-channel]',menu).forEach(b=>b.onclick=()=>{
+   channel=b.dataset.channel;
+   $('#browseCollectionLabel').textContent=b.textContent;
+   $('#browseCollections').open=false;
+   strip=[];stripCursor='';$('#browseCarousel').replaceChildren();loadStrip();
+  });
   $('#browseEmptyCollections').hidden=s.collections.length>0;paintStatus();
  }
  async function render(){
   const ticket=++session;clearTimeout(timer);observer?.disconnect();
-  $('#main').innerHTML='<section class="civitaiBrowse"><div class="browseGreeting"><div><small>CIVITAI · YOUR DISCOVERY SPACE</small><h1 id="browseHello">Your inspiration, connected.</h1></div>'+button('↻','id="browseRefresh" aria-label="Refresh your feed"')+'</div><p id="browseError" class="warning" role="status"></p><div id="browseConnected" hidden><div class="browseCollectionHeading"><select id="browseCollections" aria-label="Choose a media collection"></select>'+button('＋','id="browseCreate" aria-label="Create a collection"')+'</div><p id="browseEmptyCollections" hidden>No media collections yet. Create one with ＋.</p><div id="browseCarousel" class="browseCarousel"></div><div class="browseFeedHeading"><h2>For you</h2><small id="browseImport" role="status"></small></div><div id="browseFeed" class="browseFeed"></div>'+button('Load more','id="browseMore"')+'</div></section>';
+  $('#main').innerHTML='<section class="civitaiBrowse"><p id="browseError" class="warning" role="status"></p><div id="browseConnected" hidden><div class="browseCollectionHeading"><details id="browseCollections"><summary aria-label="Choose a media collection"><span id="browseCollectionLabel">Collections</span><span aria-hidden="true">⌄</span></summary><div id="browseCollectionMenu" role="menu"></div></details>'+button('＋','id="browseCreate" aria-label="Create a collection"')+button('↻','id="browseRefresh" aria-label="Refresh your feed"')+'</div><p id="browseEmptyCollections" hidden>No media collections yet. Create one with ＋.</p><div id="browseCarousel" class="browseCarousel"></div><div class="browseFeedHeading"><h2>For you</h2><small id="browseImport" role="status"></small></div><div id="browseFeed"></div>'+button('Load more','id="browseMore"')+'</div></section>';
+  $('#browseFeed').className='browseFeed';
+
   $('#browseRefresh').onclick=()=>{reset();render();};
   if(!connected){$('#browseError').textContent='Connect to your PC using the sidebar to browse Civitai.';schedule();return;}
   try{
    await refreshStatus(true);if(ticket!==session)return;
    $('#browseConnected').hidden=false;
    $('#browseCreate').onclick=()=>createCollection();
-   $('#browseCollections').onchange=()=>{channel=$('#browseCollections').value;strip=[];stripCursor='';$('#browseCarousel').replaceChildren();loadStrip();};
    $('#browseCarousel').onscroll=()=>{const el=$('#browseCarousel');if(el.scrollLeft+el.clientWidth>el.scrollWidth-350)loadStrip();};
    $('#browseMore').onclick=()=>loadFeed();
    paintFeed(feed);paintStrip(strip);
@@ -73,7 +83,7 @@ const CivitaiBrowser=(()=>{
  function paintStrip(items){const el=$('#browseCarousel');if(el)items.forEach(i=>el.append(tile(i,true)));}
  async function loadFeed(){
   if(busy||!available()||!$('#browseMore'))return;busy=true;const ticket=session;$('#browseMore').innerHTML='<i class="spinner"></i> Finding inspiration…';
-  try{const r=await api('browse/feed?'+new URLSearchParams({channel:'mix',cursor}));if(ticket!==session)return;
+  try{const r=await api('browse/feed',{channel:'mix',cursor});if(ticket!==session)return;
    if(r.account!==account){reset();render();return;}
    const added=r.items.filter(i=>!feed.some(x=>x.id===i.id));feed.push(...added);cursor=r.nextCursor||'';paintFeed(added);$('#browseError').textContent='';
    if(!added.length)$('#browseError').textContent='No new media in this page. Try Load more or refresh.';
@@ -82,7 +92,7 @@ const CivitaiBrowser=(()=>{
  }
  async function loadStrip(){
   if(stripBusy||!available()||(strip.length&&!stripCursor))return;stripBusy=true;const chosen=channel,ticket=session;
-  try{const r=await api('browse/feed?'+new URLSearchParams({channel:chosen,cursor:stripCursor}));if(chosen!==channel||ticket!==session)return;
+  try{const r=await api('browse/feed',{channel:chosen,cursor:stripCursor});if(chosen!==channel||ticket!==session)return;
    if(r.account!==account){reset();render();return;}
    const added=r.items.filter(i=>!strip.some(x=>x.id===i.id));strip.push(...added);stripCursor=r.nextCursor||'';paintStrip(added);
    if(!strip.length)$('#browseCarousel').innerHTML='<p class="muted">No accessible media here yet.</p>';
@@ -174,6 +184,9 @@ const CivitaiBrowser=(()=>{
   if(item.type!=='video'){const img=$('.modelPreviewHero img',el),full=new Image();full.onload=()=>{if(img.isConnected)img.src=full.src;};full.src=path(item.fullPath);}
  }
  async function detail(v){if(viewer===v)await enrich(v.el,v.item);}
+ document.addEventListener('click',e=>{
+  if(!e.target.closest('#browseCollections')){const menu=$('#browseCollections');if(menu)menu.open=false;}
+ });
  document.addEventListener('keydown',e=>{if(e.key==='Escape'&&viewer){e.preventDefault();close();}});
  document.addEventListener('visibilitychange',()=>{if(available())refreshStatus(true).catch(()=>{});});
  return {render,open,close,isOpen:()=>!!viewer,enrich,peek,resourcesHTML,wireResources};

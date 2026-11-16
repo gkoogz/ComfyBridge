@@ -3,3 +3,20 @@
 .pastPeek .modelPreviewPeek{height:0;padding-block:0;border:0;overflow:hidden}.civitaiReactions [data-civi-bookmark]{font-size:12px}
 
 .civitaiViewerScroll{top:calc(64px + var(--status-inset,0px))}.civitaiViewer .modelPreviewHero{height:calc(100dvh - 142px - var(--status-inset,0px))}
+
+#browseHello{margin-left:auto;max-width:48%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:right;font-size:12px;color:var(--muted)}
+.civitaiBrowse{padding:0 0 24px}
+#browseError:empty{display:none}
+.browseCollectionHeading{margin:0 0 7px;gap:6px;position:relative}
+.browseCollectionHeading>button{width:38px;height:38px;min-height:38px;font-size:21px;flex:none}
+#browseCollections{position:relative;flex:1;min-width:0}
+#browseCollections summary{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:38px;padding:5px 10px;border:1px solid var(--line);border-radius:10px;background:var(--panel);cursor:pointer;font-size:15px;font-weight:600;list-style:none}
+#browseCollections summary::-webkit-details-marker{display:none}
+#browseCollectionLabel{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#browseCollectionMenu{position:absolute;top:calc(100% + 5px);left:0;right:0;z-index:25;padding:5px;border:1px solid var(--line);border-radius:12px;background:var(--panel);box-shadow:0 10px 30px #0008;max-height:45vh;overflow-y:auto}
+#browseCollectionMenu button{display:block;width:100%;text-align:left;border:0;padding:10px;border-radius:8px;background:transparent}
+#browseCollectionMenu button[aria-checked=true]{background:#234338;color:var(--mint)}
+.browseFeedHeading{margin:12px 2px 8px;gap:4px}
+.browseFeedHeading small{font-size:10px}
+body[data-page=browse] #main{padding:6px 10px 32px}
+body[data-page=browse] header>.dot{margin-left:0}
