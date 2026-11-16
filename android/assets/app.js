@@ -824,7 +824,7 @@ function latestResultSummary(){
  const thumbs=carouselItems().map(item=>{
   const src=media(item.id,true);
   const time=item.kind==='video'&&item.duration>0?'<small>'+esc(duration(item.duration))+'</small>':'';
-  return '<div class="foldResult" data-media="'+esc(item.id)+'">'+(src?'<img class="foldThumb" src="'+esc(src)+'" loading="lazy" draggable="false" alt="Generated '+item.kind+'">':'<span class="foldThumb" aria-label="Thumbnail unavailable"></span>')+time+'</div>';
+  return '<div class="foldResult" data-media="'+esc(item.id)+'">'+(src?'<img class="foldThumb" src="'+esc(src)+'" decoding="async" draggable="false" alt="Generated '+item.kind+'">':'<span class="foldThumb" aria-label="Thumbnail unavailable"></span>')+time+'</div>';
  });
  if(live){
   const preview=frames.get(live.id)?.url;
@@ -841,7 +841,11 @@ function renderCarousel(){
  const key=JSON.stringify(items.map(x=>[x.id,media(x.id,true),x.duration]));
  if(strip.dataset.key!==key){
   strip.dataset.key=key;
-  strip.innerHTML=items.map(x=>`<button class="thumb" data-media="${x.id}"><img src="${media(x.id,true)}" alt="Generated ${x.kind}">${x.kind==='video'?'<span>▶ '+duration(x.duration)+'</span>':''}</button>`).join('');
+  strip.innerHTML=items.map(item=>{
+   const src=media(item.id,true);
+   const time=item.kind==='video'&&item.duration>0?duration(item.duration):'';
+   return `<button class="thumb" data-media="${esc(item.id)}" aria-label="Generated ${item.kind}${time?', '+time:''}">${src?'<img src="'+esc(src)+'" decoding="async" alt="">':''}${time?'<span>▶ '+time+'</span>':''}</button>`;
+  }).join('');
   wireMedia(carousel);
  }
  const live=nextGeneration(page);

@@ -16,6 +16,7 @@ const assert=require('node:assert/strict'),path=require('node:path');
   navigate('library');openMedia(library[1]);
  });
  await p.waitForSelector('.bigPlay');await p.waitForTimeout(400);
+ assert.equal(await p.locator('.libraryitem img').first().evaluate(img=>getComputedStyle(img).objectFit),'contain');
  assert((await p.locator('#workspace').boundingBox()).x<=-389,'Collection starts off-screen');
  assert.equal(await p.locator('.viewerTop .mediaRating button').count(),1);
  await p.locator('.viewerTop [data-rating="5"]').click();

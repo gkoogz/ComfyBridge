@@ -38,7 +38,7 @@ body:is([data-page=image],[data-page=video]) .modeRow{margin:2px 0 7px}
 .foldHint{margin-left:auto;text-align:right;font-size:12px;line-height:1.2}
 .foldSummary{padding:0 0 8px 19px;color:var(--muted);font-size:12px;line-height:1.35;user-select:none}
 .foldSummary strong{color:var(--text);font-weight:600}
-.foldSummary .foldThumb{width:38px;height:38px;border-radius:6px;object-fit:cover;background:var(--bg);flex:none}
+.foldSummary .foldThumb{width:38px;height:38px;border-radius:6px;object-fit:contain;background:var(--bg);flex:none}
 .foldSummary .foldMedia,.foldSummary .foldLora{display:flex;align-items:center;gap:7px;min-width:0}
 .foldSummary .foldMedia>span{min-width:0}
 .foldSummary .foldMedia strong,.foldSummary .foldMedia small{display:block}
@@ -82,14 +82,17 @@ body:is([data-page=image],[data-page=video]) .modeRow{margin:2px 0 7px}
 .foldBody .togglelabel{margin:6px 0 0}
 #latestPanel>.foldBody{padding-bottom:2px}
 #latestPanel #carousel{width:100vw;margin-inline:calc(50% - 50vw);padding:8px 0;gap:6px}
-#carousel .thumb{width:64px;min-width:64px;height:80px;border-radius:7px}
+#carousel .thumb{width:auto;min-width:36px;height:80px;border-radius:7px}
+#carousel .thumb img{display:block;width:auto;height:100%;max-width:min(176px,60vw);margin-inline:auto;object-fit:contain}
+#carousel .thumb:not(:has(img:not([hidden]))){width:56px}
 #carousel .thumb .spinner{top:50%;left:50%;translate:-50% -50%}
 #latestPanel .foldSummary{padding-left:0;overflow-x:auto;overscroll-behavior-x:contain;scrollbar-width:thin;touch-action:pan-x pan-y}
 .foldRecent{display:flex;gap:5px;align-items:start}
-.foldResult{position:relative;flex:0 0 46px;text-align:center;font-variant-numeric:tabular-nums}
-.foldResult .foldThumb{display:block;width:100%;height:auto;aspect-ratio:1}
+.foldResult{position:relative;flex:none;min-width:26px;text-align:center;font-variant-numeric:tabular-nums}
+.foldResult .foldThumb{display:block;width:auto;height:46px;max-width:min(110px,45vw);margin-inline:auto}
+.foldResult span.foldThumb,.foldLive:has(img[hidden]){width:46px}
 .foldResult small{display:block;margin-top:2px;font-size:10px}
-.foldLive{aspect-ratio:1;border-radius:6px;background:var(--bg);display:grid;place-items:center}
+.foldLive{height:46px;border-radius:6px;background:var(--bg);display:grid;place-items:center}
 .foldLive .spinner{position:absolute;width:14px;height:14px}
 .canvasFields{display:grid;grid-template-columns:minmax(0,1fr) 36px minmax(0,1fr);align-items:end;gap:6px}
 .canvasFields label{min-width:0}

@@ -93,7 +93,11 @@ const assert=require('node:assert/strict'),path=require('node:path');
   await fold('Positive prompt').click();
   assert.equal(await box('Positive prompt').locator('.foldSummary').textContent(),'A bowl <glazed> in sunlight');
   assert.equal(await box('Positive prompt').locator('.foldSummary glazed').count(),0);
-  await p.route('**/local/**',r=>r.fulfill({contentType:'image/svg+xml',body:'<svg xmlns="http://www.w3.org/2000/svg" width="4" height="3"/>'}));
+  await p.route('**/local/**',r=>{
+   const landscape=/(image|video)1\//.test(r.request().url());
+   const [w,h]=landscape?[48,32]:[32,48];
+   return r.fulfill({contentType:'image/svg+xml',body:`<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}"><rect width="${w}" height="${h}" fill="teal"/></svg>`});
+  });
   await p.evaluate(()=>{
    for(const kind of ['image','video'])for(let i=0;i<25;i++)library.push({kind,id:kind+i,local:'hash',duration:67+i,created:100-i,archived:i===2});
    renderResults();
@@ -105,10 +109,20 @@ const assert=require('node:assert/strict'),path=require('node:path');
   assert.deepEqual(await foldedIds(),await expandedIds());
   assert.equal(await p.locator('.foldRecent small').count(),0);
   assert.match(await thumbs.nth(2).getAttribute('src'),/image3/);
+  async function assertThumbnailRatios(list){
+   for(let i=0;i<2;i++){
+    const size=await list.nth(i).evaluate(async img=>{
+     await img.decode();
+     return {ratio:img.naturalWidth/img.naturalHeight,rendered:img.getBoundingClientRect().width/img.getBoundingClientRect().height};
+    });
+    assert(Math.abs(size.ratio-size.rendered)<.02,JSON.stringify(size));
+   }
+  }
+  await assertThumbnailRatios(thumbs);
   const collapsed=p.locator('#latestPanel .foldSummary');
   await collapsed.scrollIntoViewIfNeeded();
   const row=await collapsed.boundingBox();
-  assert((await thumbs.first().boundingBox()).width>38);
+  assert((await thumbs.first().boundingBox()).height>38);
   const cdp=await p.context().newCDPSession(p);
   async function swipe(x,dx){
    const y=row.y+20,dispatch=(type,touchPoints)=>cdp.send('Input.dispatchTouchEvent',{type,touchPoints});
@@ -128,6 +142,7 @@ const assert=require('node:assert/strict'),path=require('node:path');
   await p.evaluate(()=>{library[19].local='cached';renderCarousel();});
   assert(await collapsed.evaluate(el=>el.scrollLeft>100));
   await fold('Latest result').click();
+  await assertThumbnailRatios(p.locator('#carousel .thumb img'));
   const tile=await p.locator('#carousel .thumb').first().evaluate(el=>({
    width:el.offsetWidth,radius:parseFloat(getComputedStyle(el).borderRadius),gap:parseFloat(getComputedStyle(el.closest('#carousel')).gap)
   }));
@@ -139,6 +154,7 @@ const assert=require('node:assert/strict'),path=require('node:path');
   assert.equal(await thumbs.count(),20);
   assert.deepEqual(await foldedIds(),await expandedIds());
   assert.deepEqual((await p.locator('.foldRecent small').allTextContents()).slice(0,3),['1:07','1:08','1:10']);
-  console.log('Prompt sizing, card alignment and bleed, full carousel parity, swipe scrolling and video timing passed.');
+  await assertThumbnailRatios(thumbs);
+  console.log('Prompt sizing, card alignment, portrait/landscape thumbnails, full carousel parity, swipe scrolling and video timing passed.');
  }finally{await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;});
