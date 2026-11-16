@@ -352,3 +352,71 @@ decoded replacement, viewport stability and cancellation when a tile approaches.
 The shared navigation gesture checks Browse history before choosing the drawer. Once horizontal intent is established, an inert overlay holds the actual retained previous screen nodes at their saved scroll position and tracks the finger from the left over the stationary current feed. Commit restores those same nodes through Browse back; a short or cancelled gesture removes the overlay without changing history. Nested creator/tag/preference screens return one level at a time. Vertical scrolling and editable fields retain ownership. Full-screen Civitai media is excluded and keeps its existing gestures. Root For You continues to open the drawer. Search by tag is anchored at bottom right.
 
 The CDP touch regression covers partial progress, commit, cancellation, vertical scrolling, nested history with retained search input, root drawer behavior and full-screen exclusion.
+
+## Beta 87: shared metadata and bounded upstream traffic
+
+The PC owns an account/key-scoped SQLite `api_cache`, shared by both phones and
+desktop. Identical concurrent reads coalesce behind keyed locks. Generation
+metadata lasts seven days; resource lists and creator profiles one day; following
+and collection lists ten minutes; memberships five minutes; named image tags one
+hour; source page responses two minutes. Expired responses are not served as
+fresh. Cached metadata is private and never packaged. The cache is bounded to
+2,000 entries with a 2 MiB per-entry limit. Existing device image caches remain.
+
+Following status is no longer an upstream call for every image. Explicit follow
+and collection mutations bypass the relevant read caches for verification and
+invalidate affected lists. Retry/idempotency reconciliation remains intact.
+Prompt prefetch now requests generation data only, skipping social lookups and
+avatar fallback. Only nearby items and a small initial window are queued, with
+eight pending items maximum. A viewer uses the prefetched prompt immediately,
+then obtains social information separately. The existing 20 carousel/10 feed
+preview-file warm cache is retained independently of metadata prefetch.
+
+Normal source pages request 100 candidates; multi-tag pages request 200. Unused
+candidates remain in persisted feed buffers. `include: tagIds/profilePictures`
+plus named tags avoids per-image tag lookups. Legacy missing tags are repaired
+with one `ids` batch (maximum 200), never hundreds of individual calls. Local
+all-tag verification remains mandatory because endpoint/index paths differ.
+Unknown tags cannot bypass a required tag or ban. Each feed pass permits at most
+three upstream page/bulk-repair attempts, including cached attempts. Exhaustion
+retains source buffers/cursors; partial results remain usable. Sparse searches
+pause with Load more instead of unbounded silent paging. Normal buffered pages
+need no upstream source call. Fresh background preference imports use 200-item
+pages and run under the background allowance.
+
+`civitai_requests.py` is the shared process-wide governor for Browse and the
+model catalogue API helper: 60 actual API starts per rolling minute, at most 20
+background starts, minimum 600 ms spacing. Cache hits consume no allowance.
+This reserves capacity for foreground use; it is our conservative policy, not
+a claimed Civitai service entitlement. CDN previews/files are separate from API
+calls and retain their existing download controls. 429 and transient 5xx responses
+start exponential cooldowns (5 seconds up to 5 minutes); numeric or HTTP-date
+Retry-After can extend them. Cooldown survives worker restart. A capped request
+does not create a waiting queue or retry storm. Ordinary 4xx responses are not
+automatically retried. The rolling request counts are process-local; cooldown
+alone is persisted. Calls from external browsers or other applications are not
+covered by this governor.
+
+Research checked 2026-11-16:
+
+- [Image schema](https://github.com/civitai/civitai/blob/main/src/server/schema/image.schema.ts)
+  permits 200 results and batch IDs; two read-only live calls confirmed a
+  200-image page with tag metadata and a three-ID batch lookup.
+- [Public image reference](https://github.com/civitai/civitai-developer-docs/blob/main/site/reference/images.md)
+  describes all-of filtering on the new index path and legacy differences.
+- [Public rate-limit helper](https://github.com/civitai/civitai/blob/main/src/server/utils/public-api-rate-limit.ts)
+  applies 60/120 per minute to particular newer REST families, not a universal
+  image quota. Do not interpret other paths as unlimited.
+- [Errors guidance](https://github.com/civitai/civitai-developer-docs/blob/main/site/guide/errors.md)
+  documents 429/backoff and pagination limits.
+- [Terms](https://github.com/civitai/civitai/blob/main/src/static-content/tos.md)
+  distinguish expressly provided public APIs from other automated access.
+  Browse's existing website tRPC social integration has no public compatibility
+  or quota guarantee. Reduced traffic cannot guarantee against enforcement.
+
+Regression evidence: 12 cold prompt prefetches for known feed items perform
+12 generation-data calls and zero following/membership calls. Opening those 12
+uses one shared following lookup; reopening after a Browser restart uses cached
+details without additional metadata calls. Tests also cover concurrent cache
+misses, account isolation, fresh mutation verification, sparse multi-tag paging,
+bulk tag recovery, budget reservations and persistent Retry-After cooldown.

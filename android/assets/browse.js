@@ -24,6 +24,7 @@ const CivitaiBrowser=(()=>{
   layer.animation.onfinish=finish;
  }
  let muted={},refreshing=false,warmTimer,bottomTimer,detailQueue=[],detailRunning=false,cacheScope='',stripResume=false,emptyPages=0,suppressTap=0;
+ let feedWaitUntil=0;
  const details=new Map(),detailRequests=new Map(),imageRequests=new Map();
  const socialRevisions=new Map();let followRevision=0,banRevision=0;
  let seenScope='',seenPosts=new Set(),pendingSeen=new Set(),seenTimer,seenSending=false,replacingCache=false,cacheCheckAt=0;
@@ -255,11 +256,11 @@ const CivitaiBrowser=(()=>{
   }catch{}
  }
  function detailKey(id){return account+':'+id;}
- function fetchDetail(item,fresh=false){
+ function fetchDetail(item,fresh=false,prefetch=false){
   const key=detailKey(item.id),boundAccount=account,old=details.get(key),revision=socialRevisions.get(key)||0;
-  if(!fresh&&old&&(old.result.item.detailVersion===2||Date.now()-old.at<60000))return Promise.resolve(old.result);
-  if(detailRequests.has(key))return detailRequests.get(key);
-  const request=api('browse/detail/'+item.id).then(result=>{
+  if(!fresh&&old&&(prefetch||old.result.item.socialComplete!==false)&&(old.result.item.detailVersion===2||Date.now()-old.at<60000))return Promise.resolve(old.result);
+  if(detailRequests.has(key))return detailRequests.get(key).then(result=>!prefetch&&result.item.socialComplete===false?fetchDetail(item,false,false):result);
+  const request=api('browse/detail/'+item.id,prefetch?{prefetch:true}:undefined).then(result=>{
    if(boundAccount&&result.account!==boundAccount)throw Error('Civitai account changed. Refresh Browse.');
    if(boundAccount!==account)throw Error('Civitai account changed. Refresh Browse.');
    if(revision!==(socialRevisions.get(key)||0)){
@@ -276,14 +277,14 @@ const CivitaiBrowser=(()=>{
  function queueDetail(item,priority=false){
   const old=details.get(detailKey(item?.id));
   if(!item?.id||(old&&(old.result.item.detailVersion===2||Date.now()-old.at<60000))||detailQueue.some(i=>i.id===item.id))return;
-  priority?detailQueue.unshift(item):detailQueue.push(item);detailQueue=detailQueue.slice(0,60);runDetails();
+  priority?detailQueue.unshift(item):detailQueue.push(item);detailQueue=detailQueue.slice(0,8);runDetails();
  }
  function backgroundAllowed(){return available()&&!syncing&&!filling&&!originalTransfers.size;}
  async function runDetails(){
   if(detailRunning||!backgroundAllowed()||busy||stripBusy)return;
   detailRunning=true;
   try{while(detailQueue.length&&backgroundAllowed()&&!busy&&!stripBusy){
-   const item=detailQueue.shift();try{await fetchDetail(item);}catch{break;}
+   const item=detailQueue.shift();try{await fetchDetail(item,false,true);}catch{break;}
   }}finally{detailRunning=false;}
  }
  function warm(){
@@ -294,7 +295,7 @@ const CivitaiBrowser=(()=>{
    for(const item of items){
     if(!backgroundAllowed()||ticket!==session){warm();return;}
     try{await imageBlob(path(item.path));}catch{}
-    queueDetail(item);
+    if(feed.slice(0,4).includes(item)||strip.slice(0,2).includes(item))queueDetail(item);
    }
    await trimImages();saveSnapshot();runDetails();
   },150);
@@ -609,13 +610,16 @@ const CivitaiBrowser=(()=>{
  function paintStrip(items){const el=$('#browseCarousel');if(el)items.forEach(i=>el.append(tile(i,true)));}
  async function loadFeed(replace=false){
   replace=replace===true;
+  if(!replace&&Date.now()<feedWaitUntil)return;
   if(busy||feedEnded||!available()||!$('#browseMore'))return;busy=true;const ticket=session;$('#browseMore').innerHTML='<i class="spinner"></i> Finding inspiration…';
   try{const r=await feedPage(view.kind==='mix'?'mix':view.kind+':'+view.id+':'+view.filter,cursor,replace?[]:feed.map(i=>i.id),replace);if(ticket!==session)return;
    if(r.account!==account){reset();render();return;}
    if(replace){feed=[];$('#browseFeed').replaceChildren();}
    const added=r.items.filter(i=>!isBanned(i)&&!(view.kind==='mix'&&(isMuted(i)||seenPosts.has(i.id)))&&!feed.some(x=>x.id===i.id));feed.push(...added);cursor=r.nextCursor||'';feedEnded=!r.nextCursor;paintFeed(added);saveSnapshot();warm();$('#browseError').textContent='';
-   emptyPages=added.length?0:emptyPages+1;
-   if(!added.length)$('#browseError').textContent='No new media in this page. Try Load more or refresh.';
+   feedWaitUntil=r.limited?Date.now()+1000*Math.max(2,r.retryAfter||0):0;
+   emptyPages=added.length?0:(r.limited?2:emptyPages+1);
+   if(r.limited&&!added.length)$('#browseError').textContent=r.retryAfter?'Search paused briefly to limit API traffic. Your search position is saved.':'Still searching for matching media. Load more continues from here.';
+   else if(!added.length)$('#browseError').textContent='No new media in this page. Try Load more or refresh.';
   }catch(e){if(ticket===session){emptyPages=2;$('#browseError').textContent=e.message;}}
   finally{if(ticket===session){busy=false;if($('#browseMore')){$('#browseMore').textContent='Load more';$('#browseMore').hidden=feedEnded;}checkBottom();}}
  }
@@ -625,7 +629,7 @@ const CivitaiBrowser=(()=>{
   if(more&&!more.hidden&&more.getBoundingClientRect().top<workspace.getBoundingClientRect().bottom+550){
    clearTimeout(bottomTimer);bottomTimer=setTimeout(()=>{
     const current=$('#browseMore');if(current&&current.getBoundingClientRect().top<workspace.getBoundingClientRect().bottom+550&&emptyPages<2)loadFeed();
-   },120);
+   },Math.max(120,feedWaitUntil-Date.now()));
   }
  }
  document.querySelector('#workspace').addEventListener('scroll',checkBottom,{passive:true});

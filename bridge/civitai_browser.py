@@ -18,6 +18,7 @@ import uuid
 from pathlib import Path
 from PIL import Image
 from model_library import CivitaiRedirect, request_for
+from civitai_requests import before, governor, Deferred, background_work
 
 REACTIONS = ('Like', 'Heart', 'Laugh', 'Cry')
 CDN = 'https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/'
@@ -44,11 +45,13 @@ class Browser:
         self.data = Path(data) / 'civitai-browser'
         self.data.mkdir(exist_ok=True)
         self.models, self.gallery, self.transport = models, gallery, transport
+        if not transport:governor.configure(self.data.parent/'civitai-api-backoff.json')
         self.lock = threading.RLock()
         self.network = threading.Lock()
         self.action_lock = threading.RLock()
         self.mix_lock = threading.Lock()
         self.media_lock = threading.Lock()
+        self.cache_locks=[threading.RLock() for _ in range(64)]
         self.identity = None
         self.leases = {}
         self.running = set()
@@ -62,7 +65,9 @@ class Browser:
               CREATE TABLE IF NOT EXISTS actions(account TEXT,id TEXT,payload TEXT,state TEXT,result TEXT,PRIMARY KEY(account,id));
               CREATE TABLE IF NOT EXISTS feed_sessions(account TEXT,id TEXT,channel TEXT,payload TEXT,touched REAL,PRIMARY KEY(account,id));
               CREATE TABLE IF NOT EXISTS feed_exposure(account TEXT,image TEXT,viewed REAL NOT NULL DEFAULT 0,served REAL NOT NULL DEFAULT 0,PRIMARY KEY(account,image));
+              CREATE TABLE IF NOT EXISTS api_cache(identity TEXT,route TEXT,key TEXT,payload TEXT,expires REAL,PRIMARY KEY(identity,route,key));
             ''')
+            db.execute('DELETE FROM api_cache WHERE expires<?',(time.time(),))
             # Upgrade existing sessions as recently offered, not proven viewed.
             for row in db.execute("SELECT account,payload,touched FROM feed_sessions WHERE channel='mix'").fetchall():
                 payload=json.loads(row['payload'])
@@ -88,14 +93,34 @@ class Browser:
         with self.db() as db:
             db.execute('INSERT OR REPLACE INTO settings VALUES(?,?,?)', (account, key, json.dumps(value)))
 
-    def call(self, token, route, value=None, write=False, rest=False):
+    def invalidate(self, token, *routes):
+        identity=hashlib.sha256(token.encode()).hexdigest()
+        with self.db() as db:db.executemany('DELETE FROM api_cache WHERE identity=? AND route=?',[(identity,r) for r in routes])
+
+    def call(self, token, route, value=None, write=False, rest=False, fresh=False):
+        ttl={'image.getInfinite':120,'image.getGenerationData':7*86400,'image.getResources':86400,
+             'user.getFollowingUsers':600,'user.getCreator':86400,'tag.getVotableTags':3600,
+             'collection.getUserCollectionItemsByItem':300,'collection.getAllUser':600,
+             'user.getBookmarkCollections':600,'collection.getEntryCount':600}.get(route,0)
+        if write or not ttl:return self.raw_call(token,route,value,write,rest)
+        identity=hashlib.sha256(token.encode()).hexdigest();key=json.dumps(value,sort_keys=True,separators=(',',':'))
+        lock=self.cache_locks[int(hashlib.sha256((identity+route+key).encode()).hexdigest(),16)%64]
+        with lock:
+            with self.db() as db:
+                row=db.execute('SELECT payload FROM api_cache WHERE identity=? AND route=? AND key=? AND expires>?',(identity,route,key,time.time())).fetchone()
+            if row and not fresh:return json.loads(row[0])
+            result=self.raw_call(token,route,value,write,rest)
+            payload=json.dumps(result)
+            if len(payload)<2*1024*1024:
+                with self.db() as db:
+                    db.execute('INSERT OR REPLACE INTO api_cache VALUES(?,?,?,?,?)',(identity,route,key,payload,time.time()+ttl))
+                    db.execute('DELETE FROM api_cache WHERE rowid IN (SELECT rowid FROM api_cache ORDER BY expires DESC LIMIT -1 OFFSET 2000)')
+            return result
+
+    def raw_call(self, token, route, value=None, write=False, rest=False):
         if self.transport:
             return self.transport(token, route, value, write, rest)
         with self.network:
-            if self.next_request - time.monotonic() > 2:
-                raise ValueError('Civitai is rate limiting requests. Please wait before retrying.')
-            time.sleep(max(0, self.next_request - time.monotonic()))
-            self.next_request = time.monotonic() + .2
             url = 'https://civitai.red/api/' + ('v1/' if rest else 'trpc/') + route
             body = None
             if rest:
@@ -110,6 +135,7 @@ class Browser:
             if body is not None:
                 req.data = body
                 req.add_header('Content-Type', 'application/json')
+            before(url)
             try:
                 with urllib.request.build_opener(CivitaiRedirect()).open(req, timeout=25) as response:
                     raw = response.read(16 * 1024 * 1024 + 1)
@@ -117,16 +143,15 @@ class Browser:
                         raise ValueError('Civitai response is too large. Try a smaller page.')
                     result = json.loads(raw)
             except urllib.error.HTTPError as error:
+                governor.failed(error.code,error.headers.get('Retry-After'))
                 if error.code == 429:
-                    try: delay = min(300, max(5, int(error.headers.get('Retry-After', 30))))
-                    except ValueError: delay = 30
-                    self.next_request = time.monotonic() + delay
-                    raise ValueError('Civitai is rate limiting requests. Please wait before retrying.') from None
+                    raise Deferred(max(5,governor.until-time.time())) from None
                 if error.code in (401, 403):
                     raise ValueError('Civitai denied access. Check the desktop API key, its permissions and your account setup.') from None
                 raise ValueError('Civitai request failed (HTTP %s). Please retry.' % error.code) from None
             except (OSError, TimeoutError):
                 raise ValueError('Civitai could not be reached. Your saved preferences are kept.') from None
+            governor.succeeded()
             if rest:
                 return result
             if 'error' in result:
@@ -181,11 +206,12 @@ class Browser:
             seen.add(vid)
             resources.append(dict(versionId=vid, modelId=str(r.get('modelId') or ''), name=str(r.get('name') or r.get('modelName') or ''), type=str(r.get('type') or 'Resource'), weight=r.get('weight', '')))
         tags = [dict(id=ident(t['id']), name=str(t.get('name', '')), score=t.get('score', 0), upVotes=t.get('upVotes', 0), downVotes=t.get('downVotes', 0), vote=t.get('vote', 0)) for t in raw.get('tags', []) if isinstance(t, dict) and t.get('id')]
+        tags.extend(dict(id=ident(t),name='') for t in (raw.get('tagIds') or []) if str(t).isdigit() and not any(str(x['id'])==str(t) for x in tags))
         item = dict(id=image_id, type=kind, width=raw.get('width') or 512, height=raw.get('height') or 768, duration=(raw.get('metadata') or {}).get('duration'),
                     prompt=str(meta.get('prompt') or ''), negativePrompt=str(meta.get('negativePrompt') or ''),
                     created=str(raw.get('createdAt') or ''), credit=str(user.get('username') or raw.get('username') or ''),
                     creatorId=str(user.get('id') or ''), path=prefix+'thumb', fullPath=prefix+'full', avatarPath=prefix+'avatar' if cdn(avatar) else '',
-                    imageUrl='https://civitai.red/images/'+image_id, resources=resources, tags=tags, tagsKnown=isinstance(raw.get('tags'),list), reactions=reactions,
+                    imageUrl='https://civitai.red/images/'+image_id, resources=resources, tags=tags, tagsKnown=isinstance(raw.get('tags'),list) or isinstance(raw.get('tagIds'),list), reactions=reactions,
                     stats=raw.get('stats') or {}, parameters={k:meta[k] for k in ('seed','steps','cfgScale','sampler','Size','Model','Clip skip') if k in meta},
                     _urls=dict(thumb=thumb, full=original, avatar=cdn(avatar, 'width=96')))
         with self.db() as db:
@@ -212,7 +238,7 @@ class Browser:
         return json.loads(row[0]) if row else None
 
     def images(self, account, token, filters, limit=20, meta=True):
-        raw = self.call(token, 'image.getInfinite', {'limit':limit, 'browsingLevel':31, 'withMeta':meta, 'withTags':True, **filters})
+        raw = self.call(token, 'image.getInfinite', {'limit':limit, 'browsingLevel':31, 'withMeta':meta, 'withTags':True, 'include':['tagIds','profilePictures'], **filters})
         items = [self.remember(account, x) for x in raw.get('items', [])]
         return [i for i in items if i], raw.get('nextCursor')
 
@@ -284,9 +310,12 @@ class Browser:
         me, token = self.account()
         rows = self.preference_rows(me['id'])
         unresolved = [r for r in rows if r['kind']=='creator' and r['name']=='Creator '+r['id']]
-        for row in unresolved[:10]:
+        for row in unresolved[:2]:
+            key='creator-name-checked:'+row['id']
+            if time.time()-self.setting(me['id'],key,0)<86400:continue
             try:
                 self.images(me['id'], token, {'userId':int(row['id']), 'sort':'Newest'}, 1, meta=False)
+                self.save(me['id'],key,time.time())
             except ValueError:
                 break
         return dict(account=me['id'], items=self.preference_rows(me['id']), bans=self.bans(me['id']),**self.tag_weight_snapshot(me['id']))
@@ -351,6 +380,9 @@ class Browser:
                     timeouts=self.timeouts(account), bans=self.bans(account), importState=state, learned=count, follows=len(self.setting(account, 'follows', [])),**self.tag_weight_snapshot(account))
 
     def import_loop(self, account, token):
+        with background_work():self._import_loop(account,token)
+
+    def _import_loop(self, account, token):
         try:
             state = self.setting(account, 'import', {})
             if state.get('complete') and time.time()-state.get('finished', 0)<86400: return
@@ -370,7 +402,7 @@ class Browser:
                 filters['sort']='Newest'
                 if state.get('cursor') is not None: filters['cursor']=state['cursor']
                 state['label']='Learning from your reactions' if source=='reactions' else 'Learning from your collections'
-                items, cursor=self.images(account, token, filters, 40, meta=False)
+                with background_work():items, cursor=self.images(account, token, filters, 200, meta=False)
                 for item in items:
                     score=max(1,len([r for r in item['reactions'] if r in REACTIONS])) if source=='reactions' else 1
                     self.observe(account, source, item, score, state['stamp'])
@@ -383,7 +415,7 @@ class Browser:
                         db.execute('DELETE FROM observations WHERE account=? AND source=? AND CAST(stamp AS REAL)<?', (account, source, float(state['stamp'])))
                     state['index']+=1
                 self.save(account, 'import', state)
-                time.sleep(.8)
+                time.sleep(3)
         except Exception as error:
             state=self.setting(account, 'import', locals().get('state', {}))
             state['error']=str(error) if isinstance(error, ValueError) else 'Preference import paused. Reopen Browse to retry.'
@@ -442,6 +474,7 @@ class Browser:
                 self.feeds[cursor]=state
         with state['lock']:
             state['touched']=time.time();out=[];weights=self.weights(account);bans=self.bans(account)
+            reads=0;limited=False;retry_after=0
             excluded=set()
             if channel=='mix':
                 with self.db() as db:
@@ -514,17 +547,34 @@ class Browser:
                     state['sources'][key]=dict(items=cached,cursor=None,started=False,done=False)
                 source=state['sources'][key]
                 if not source['items'] and not source['done']:
+                    if reads>=3:
+                        limited=True
+                        continue
                     if source['cursor'] is not None:filters['cursor']=source['cursor']
-                    items,nxt=self.images(account,token,filters,48 if len(required_tags)>=2 else 12)
-                    # Civitai can treat a multi-tag filter as OR. Require the full
-                    # intersection here, including resumed buffers below.
-                    if required_tags:
-                        for candidate in items:
-                            if not candidate.get('tagsKnown'):
-                                candidate['tags']=self.call(token,'tag.getVotableTags',{'type':'image','id':int(candidate['id'])})
-                                candidate['tagsKnown']=True
-                        items=[candidate for candidate in items if self.matches_tags(candidate,required_tags)]
+                    try:
+                        reads+=1
+                        items,nxt=self.images(account,token,filters,200 if len(required_tags)>=2 else 100)
+                    except Deferred as error:
+                        limited=True;retry_after=error.retry_after;break
                     source.update(items=items,cursor=nxt,started=True,done=nxt is None)
+                # Resolve missing tag metadata in one batch, never one call per image.
+                # Keep candidates and cursor intact if the API budget is exhausted.
+                if required_tags or any(b['kind']=='tag' for b in bans):
+                    unknown=[i for i in source['items'] if not i.get('tagsKnown')]
+                    if unknown:
+                        if reads>=3:
+                            limited=True;continue
+                        try:
+                            reads+=1
+                            resolved,_=self.images(account,token,{'ids':[int(i['id']) for i in unknown[:200]]},200,meta=False)
+                            by_id={i['id']:i for i in resolved}
+                            for i in unknown:
+                                if by_id.get(i['id'],{}).get('tagsKnown'):
+                                    i.update(tags=by_id[i['id']]['tags'],tagsKnown=True)
+                            if any(not i.get('tagsKnown') for i in unknown):
+                                limited=True;retry_after=60;break
+                        except Deferred as error:
+                            limited=True;retry_after=error.retry_after;break
                 take=1 if channel=='mix' else 12
                 before=len(out)
                 while source['items'] and len(out)-before<take and len(out)<12:
@@ -534,12 +584,6 @@ class Browser:
                     if item['id'] in excluded:continue
                     if required_tags and not self.matches_tags(item,required_tags):continue
                     if self.is_banned(item,bans):continue
-                    if any(b['kind']=='tag' for b in bans) and not item.get('tagsKnown'):
-                        # Cached LoRA examples and old persisted cursors can lack tags.
-                        # Resolve before allowing them through a tag ban.
-                        item['tags']=self.call(token,'tag.getVotableTags',{'type':'image','id':int(item['id'])})
-                        item['tagsKnown']=True
-                        if self.is_banned(item,bans):continue
                     public=dict(self.public(item),reason=reason,chosenBy=chosen,following=str(item.get('creatorId')) in following)
                     if channel.startswith('collection:'):public['collections']=[{'collectionId':int(channel.split(':')[1])}]
                     state['seen'].append(item['id']);out.append(public)
@@ -554,7 +598,8 @@ class Browser:
                 db.execute('DELETE FROM feed_sessions WHERE touched<?',(time.time()-7200,))
                 db.execute('INSERT OR REPLACE INTO feed_sessions VALUES(?,?,?,?,?)',
                     (account,cursor,channel,json.dumps({k:v for k,v in state.items() if k!='lock'}),time.time()))
-            return dict(account=account,items=out,nextCursor=None if ended else cursor,recovered=recovered)
+            return dict(account=account,items=out,nextCursor=None if ended else cursor,recovered=recovered,
+                        limited=limited,retryAfter=retry_after,sourceReads=reads)
 
     def timeouts(self, account):
         return {k:v for k,v in self.setting(account,'creator-timeouts',{}).items() if v.get('until',0)>time.time()}
@@ -564,11 +609,18 @@ class Browser:
         return str(item.get('creatorId','')) in muted or any(
             v.get('name') and v['name'].casefold()==item.get('credit','').casefold() for v in muted.values())
 
-    def detail(self, image_id):
+    def detail(self, image_id, prefetch=False):
+        if prefetch:
+            with background_work():return self._detail(image_id,True)
+        return self._detail(image_id,False)
+
+    def _detail(self, image_id, prefetch):
         me, token=self.account();account=me['id'];image_id=str(ident(image_id))
-        items,_=self.images(account,token,{'imageId':int(image_id)},1)
-        if not items:raise ValueError('This media is no longer available to your account.')
-        item=items[0]
+        item=self.stored(account,image_id)
+        if not item:
+            items,_=self.images(account,token,{'imageId':int(image_id)},1)
+            if not items:raise ValueError('This media is no longer available to your account.')
+            item=items[0]
         # This is the same endpoint used by the website's Generation data panel.
         # withMeta on getInfinite is not a promise of full metadata.
         try:
@@ -582,11 +634,14 @@ class Browser:
                 name=str(r.get('modelName') or r.get('name') or 'Resource'),version=str(r.get('versionName') or r.get('modelVersionName') or ''),
                 type=str(r.get('modelType') or r.get('type') or 'Resource'),weight=r.get('strength',r.get('weight',''))) for r in raw]
             item['generationDataAvailable']=True;item['detailVersion']=2
+        except Deferred:
+            if prefetch:raise
+            item['generationDataAvailable']=False;item['detailVersion']=0
         except ValueError:
             # Keep useful cached content; do not mislabel a temporary lookup failure
             # as an uploader withholding the prompt. Clients may retry this detail.
             item['generationDataAvailable']=False;item['detailVersion']=0
-        if not item.get('avatarPath') and item.get('creatorId'):
+        if not prefetch and not item.get('avatarPath') and item.get('creatorId'):
             key='creator-avatar:'+item['creatorId'];cached=self.setting(account,key,{})
             if cached.get('expires',0)<time.time():
                 try:
@@ -599,24 +654,26 @@ class Browser:
             if cached.get('url'):
                 item['_urls']['avatar']=cached['url']
                 item['avatarPath']='model-preview/browse/'+account+'/'+image_id+'/avatar'
-        item['avatarResolved']=True
-        if not item['generationDataAvailable'] and not item['resources']:
+        item['avatarResolved']=bool(item.get('avatarPath')) or not prefetch
+        if not prefetch and not item['generationDataAvailable'] and not item['resources']:
             raw=self.call(token,'image.getResources',{'id':int(image_id)})
             item['resources']=[dict(versionId=str(r.get('modelVersionId') or ''),modelId=str(r.get('modelId') or ''),
                 name=str(r.get('modelName') or 'Resource'),version=str(r.get('modelVersionName') or ''),type=str(r.get('modelType') or 'Resource'),weight='') for r in raw]
-        follows=self.call(token,'user.getFollowingUsers')
-        follows=[str(x.get('id') if isinstance(x,dict) else x) for x in follows]
-        self.save(account,'follows',follows)
-        item['following']=item['creatorId'] in follows
-        item['tags']=self.call(token,'tag.getVotableTags',{'type':'image','id':int(image_id)});item['tagsKnown']=True
-        memberships=self.call(token,'collection.getUserCollectionItemsByItem',{'imageId':int(image_id)})
-        item['collections']=memberships
+        if not prefetch:
+            follows=self.call(token,'user.getFollowingUsers')
+            follows=[str(x.get('id') if isinstance(x,dict) else x) for x in follows]
+            self.save(account,'follows',follows)
+            item['following']=item['creatorId'] in follows
+            if not item.get('tagsKnown') or any(not t.get('name') for t in item['tags']):
+                item['tags']=self.call(token,'tag.getVotableTags',{'type':'image','id':int(image_id)});item['tagsKnown']=True
+            item['collections']=self.call(token,'collection.getUserCollectionItemsByItem',{'imageId':int(image_id)})
+        item['socialComplete']=not prefetch
         with self.db() as db:db.execute('UPDATE media SET payload=? WHERE account=? AND id=?',(json.dumps(item),account,image_id))
         snapshot=self.tag_weight_snapshot(account)
         public=self.public(item)
         public['tags']=[dict(id=t['id'],name=t.get('name',''),weight=snapshot['tagWeights'].get(str(t['id']),0)) for t in item['tags']]
         public['tags'].sort(key=lambda t:(-t['weight'],t['name'].casefold()))
-        return dict(account=account,item=public,collections=self.collections(account,token),**snapshot)
+        return dict(account=account,item=public,collections=self.setting(account,'collections',{}).get('items',[]) if prefetch else self.collections(account,token),**snapshot)
 
     def action(self, payload):
         me,token=self.account();account=me['id']
@@ -674,11 +731,12 @@ class Browser:
                 name=str(payload.get('name','')).strip()
                 if not name or len(name)>30:raise ValueError('Collection names must be 1–30 characters.')
                 self.call(token,'collection.upsert',{'name':name,'type':'Image','read':'Private','write':'Private'},True)
+                self.invalidate(token,'collection.getAllUser','collection.getEntryCount','user.getBookmarkCollections')
                 result=dict(ok=True,collections=self.collections(account,token,True))
             elif kind=='follow':
                 uid=ident(payload.get('creatorId'));desired=payload.get('selected')
                 if type(desired) is not bool:raise ValueError('Choose follow or unfollow.')
-                def current():return [str(x.get('id') if isinstance(x,dict) else x) for x in self.call(token,'user.getFollowingUsers')]
+                def current():return [str(x.get('id') if isinstance(x,dict) else x) for x in self.call(token,'user.getFollowingUsers',fresh=True)]
                 follows=current()
                 if (str(uid) in follows)!=desired:self.call(token,'user.toggleFollow',{'targetUserId':uid},True)
                 follows=current()
@@ -703,7 +761,8 @@ class Browser:
                     cid=ident(payload.get('collectionId'));desired=payload.get('selected')
                     if type(desired) is not bool or cid not in [c['id'] for c in self.collections(account,token)]:raise ValueError('Select one of your collections.')
                     self.call(token,'collection.saveItem',dict(imageId=iid,collections=[{'collectionId':cid}] if desired else [],removeFromCollectionIds=[] if desired else [cid]),True)
-                    memberships=self.call(token,'collection.getUserCollectionItemsByItem',{'imageId':iid})
+                    memberships=self.call(token,'collection.getUserCollectionItemsByItem',{'imageId':iid},fresh=True)
+                    self.invalidate(token,'collection.getEntryCount','image.getInfinite')
                     present=any(int(c.get('collectionId',0))==cid for c in memberships)
                     if present!=desired:raise ValueError('Collection change is not confirmed yet. Refresh before retrying.')
                     self.observe(account,'collection:'+str(cid),item,1 if desired else 0,str(time.time()))

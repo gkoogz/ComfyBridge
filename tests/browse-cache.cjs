@@ -15,7 +15,7 @@ async function setup(p,options={}){
     const start=Number(body.cursor||0),collection=body.channel!=='mix',total=collection?30:36;
     return {account,items:Array.from({length:Math.min(12,total-start)},(_,i)=>item(start+i+(collection?101:1))),nextCursor:start+12<total?String(start+12):null};
    }
-   if(route.startsWith('browse/detail/')){await new Promise(r=>setTimeout(r,15));return {account,item:item(Number(route.split('/').pop())),collections:[]};}
+   if(route.startsWith('browse/detail/')){await new Promise(r=>setTimeout(r,15));return {account,item:{...item(Number(route.split('/').pop())),socialComplete:!body?.prefetch},collections:[]};}
    if(route==='browse/action'&&body.kind==='timeout')return {ok:true,creatorId:'7',until:Date.now()/1000+7200};
    return {};
   };navigate('browse');
@@ -30,7 +30,13 @@ async function setup(p,options={}){
  await p.addInitScript(()=>window.Native={configuration:()=>JSON.stringify({paired:false,fingerprint:'test-PC',device:'one'}),notificationRoute:()=>''});
  await p.goto('https://bridge.test');await p.waitForSelector('#connect');await setup(p);
  await p.waitForFunction(()=>document.querySelectorAll('.browseThumb').length>=20);
- await p.waitForFunction(()=>JSON.parse(localStorage.getItem('comfybridge-browse-v2:test-PC')||'{}').details?.length>=30);
+ for(let attempt=0;attempt<100;attempt++){
+ const ready=await p.evaluate(async()=>{
+  const s=JSON.parse(localStorage.getItem('comfybridge-browse-v2:test-PC')||'{}');if(!s.details?.length||s.strip?.length!==20||s.feed?.length!==10)return false;
+  const c=await caches.open('comfybridge-browse-v1');return (await Promise.all([...s.strip,...s.feed].map(i=>c.match('/'+i.path)))).every(Boolean);
+ });
+ if(ready)break;await p.waitForTimeout(100);
+ }
  const saved=await p.evaluate(()=>JSON.parse(localStorage.getItem('comfybridge-browse-v2:test-PC')));
  if(process.env.BROWSE_SHOTS)await p.screenshot({path:path.join(process.env.BROWSE_SHOTS,'browse-top-79.png')});
  assert.equal(saved.strip.length,20);assert.equal(saved.feed.length,10);
@@ -41,7 +47,9 @@ async function setup(p,options={}){
  assert(cacheHits.every(Boolean),'All 20 carousel and 10 feed previews are saved on device');
  const detailsBefore=await p.evaluate(()=>calls.filter(c=>c.route==='browse/detail/1').length);
  await p.locator('.browseTile .browseMedia').first().click();await p.waitForSelector('.civitaiAuthor');
- assert.equal(await p.evaluate(()=>calls.filter(c=>c.route==='browse/detail/1').length),detailsBefore,'Viewer reuses prefetched detail');
+ assert(detailsBefore>0,'Prompt details were fetched before opening');
+ await p.waitForFunction(n=>calls.filter(c=>c.route==='browse/detail/1'&&!c.body?.prefetch).length===1,detailsBefore);
+ assert.equal(await p.evaluate(()=>calls.filter(c=>c.route==='browse/detail/1').length),detailsBefore+1,'Opening adds social lookup to cached prompt');
  await p.locator('.civitaiClose').click();
  // A pre-fix detail snapshot must be fetched again while image files stay cached.
  await p.evaluate(()=>{const key='comfybridge-browse-v2:test-PC',s=JSON.parse(localStorage.getItem(key));for(const [,entry] of s.details){delete entry.result.item.detailVersion;entry.result.item.prompt='';}localStorage.setItem(key,JSON.stringify(s));});

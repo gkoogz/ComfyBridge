@@ -83,11 +83,18 @@ def request_for(url, token=''):
 
 
 def fetch(url, limit=8*1024*1024, token=''):
+    from civitai_requests import before, governor
     req=request_for(url, token)
-    with urllib.request.build_opener(CivitaiRedirect()).open(req,timeout=25) as response:
-        raw=response.read(limit+1)
-        if len(raw)>limit:raise ValueError('Listing response exceeds limit')
-        return raw
+    before(url)
+    try:
+        with urllib.request.build_opener(CivitaiRedirect()).open(req,timeout=25) as response:
+            raw=response.read(limit+1)
+            if len(raw)>limit:raise ValueError('Listing response exceeds limit')
+            if civitai_api_url(url):governor.succeeded()
+            return raw
+    except urllib.error.HTTPError as error:
+        if civitai_api_url(url):governor.failed(error.code,error.headers.get('Retry-After'))
+        raise
 
 
 def metadata(path):

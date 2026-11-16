@@ -1,6 +1,6 @@
 # ComfyBridge
 
-**[Open the beta 86 release page](https://github.com/gkoogz/ComfyBridge/releases/tag/v0.1.0-beta.86)** · [Download the Android APK](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.86/ComfyBridge-0.1.0-beta.86.apk) · [Download Windows](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.86/ComfyBridge-Windows-0.1.0-beta.86.zip) · [All releases](https://github.com/gkoogz/ComfyBridge/releases)
+**[Open the beta 87 release page](https://github.com/gkoogz/ComfyBridge/releases/tag/v0.1.0-beta.87)** · [Download the Android APK](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.87/ComfyBridge-0.1.0-beta.87.apk) · [Download Windows](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.87/ComfyBridge-Windows-0.1.0-beta.87.zip) · [All releases](https://github.com/gkoogz/ComfyBridge/releases)
 
 <img src="artwork/comfybridge.png" width="128" alt="ComfyBridge white cube and play icon on black">
 
@@ -10,7 +10,7 @@ An Android remote for an existing Windows ComfyUI installation. The phone edits 
 
 **Working on the project:** agents and contributors should start with [AGENTS.md](AGENTS.md) for the code map, build/test commands, live queue preservation and delivery instructions.
 
-**Beta 86** gives Browse subfeeds a right-swipe back gesture: the previous loaded screen slides in from the left over the stationary current feed, retaining its scroll position. Root For You still opens the sidebar; full-screen media gestures are unchanged. Search by tag now sits at the bottom right.
+**Beta 87** reduces Civitai API traffic with shared persistent metadata caches, larger buffered pages, bulk tag lookups, bounded searches and conservative request pacing. Both phones reuse the PC cache. Prompt prefetching skips social lookups, while explicit interactions still verify their result.
 
 **Beta 85** remembers viewed For You posts across phones and restarts, excludes recently offered posts on refresh, and replaces stale cached tiles only when safely below the viewport and the new image is ready. Collections and direct creator/tag searches remain revisitable.
 

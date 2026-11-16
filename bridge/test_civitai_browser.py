@@ -45,9 +45,10 @@ class API:
         if route in ('tag.addTagVotes','collection.upsert'):return {}
         if route=='image.getInfinite':
             if value.get('imageId'):return {'items':[image(value['imageId'])]}
-            if value.get('limit')==12:
-                self.serial+=12
-                return {'items':[image(self.serial+i) for i in range(12)],'nextCursor':None}
+            if value.get('ids'):return {'items':[image(i) for i in value['ids']]}
+            if value.get('limit') in (12,100,200):
+                count=value['limit'];self.serial+=count
+                return {'items':[image(self.serial+i) for i in range(count)],'nextCursor':None}
             self.serial+=1
             return {'items':[image(self.serial)],'nextCursor':None}
         raise AssertionError(route)
@@ -88,6 +89,7 @@ class BrowseTests(unittest.TestCase):
         self.assertEqual(sum(r=='user.getCreator' for r,_,_ in self.api.calls),1)
     def test_generation_failure_is_retryable_and_keeps_cached_prompt(self):
         self.b.detail(1)
+        self.b.invalidate('account-a','image.getGenerationData')
         original=self.b.transport
         def request(token,route,value,write,rest):
             if route=='image.getGenerationData':raise ValueError('Temporary failure')
@@ -258,11 +260,13 @@ class BrowseTests(unittest.TestCase):
         original=self.b.transport
         def request(token,route,value,write,rest):
             if route=='image.getInfinite':
+                if value.get('ids'):return original(token,route,value,write,rest)
                 raw=image(999);raw.pop('tags');return {'items':[raw]}
             return original(token,route,value,write,rest)
         self.b.transport=request
         self.assertEqual(self.b.feed({'channel':'collection:4'})['items'],[])
-        self.assertTrue(any(route=='tag.getVotableTags' for route,_,_ in self.api.calls))
+        self.assertTrue(any(route=='image.getInfinite' and value.get('ids') for route,value,_ in self.api.calls))
+        self.assertFalse(any(route=='tag.getVotableTags' for route,_,_ in self.api.calls))
         self.b.action(self.act(kind='preference',subject='tag',id=12,banned=False))
         self.assertTrue(self.b.feed({'channel':'collection:4'})['items'])
 
