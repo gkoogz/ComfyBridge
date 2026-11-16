@@ -312,7 +312,7 @@ function bridgeBack(){
  if(viewerOpen()){closeViewer();return;}
  if($('#drawer').classList.contains('open')){drawer(false);return;}
  if(!$('#presetMenu').hidden){$('#presetMenu').hidden=true;return;}
- if($('#batchMenu')&&!$('#batchMenu').hidden){$('#batchMenu').hidden=true;return;}
+ if($('#batchMenu')?.hidden===false){setBatchMenu(false);return;}
  if(page==='library'&&archived){archived=false;renderLibrary();return;}
  drawer(true);
 }

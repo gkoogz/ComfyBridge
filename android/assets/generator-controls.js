@@ -1,6 +1,27 @@
 'use strict';
 const pixelBudget=768*1152;
 const stepLimit=kind=>kind==='image'?50:20;
+const playTriangle='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3.5a.75.75 0 0 0-1 .7v15.6a.75.75 0 0 0 1 .7l13-7.9a.7.7 0 0 0 0-1.2Z"/></svg>';
+function generationControls(batch){
+ return `<div class="generateActions">
+  <div class="generateControls">
+   <div class="playwrap">
+    <button type="button" id="play" class="green"><span class="playFace">${playTriangle}<span id="playLabel">Generate</span></span></button>
+    <button type="button" id="batchButton" class="green" aria-label="Choose batch" aria-controls="batchMenu" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>
+    <div class="pop" id="batchMenu" hidden>${[2,4,8,16].map(n=>`<button type="button" data-batch="${n}">${playTriangle}Batch of ${n}</button>`).join('')}</div>
+   </div>
+   <div class="generationActivity" aria-hidden="true"><span id="runSpinner" class="spinner" hidden></span></div>
+   <button type="button" id="stopBatch" class="stop" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="2"/></svg>Stop mine</button>
+  </div>
+  <span class="batchlabel" id="batchLabel">${batch>1?batch+' in batch':'Single generation'}</span>
+ </div>`;
+}
+function setBatchMenu(open){
+ const trigger=$('#batchButton');
+ if(!trigger)return;
+ $('#batchMenu').hidden=!open;
+ trigger.setAttribute('aria-expanded',String(open));
+}
 let promptExpanded={},promptResizeObserver;
 function sizePrompt(field,expanded){
  const key=field.dataset.setting,button=$('[data-prompt-height="'+key+'"]');

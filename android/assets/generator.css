@@ -1,6 +1,34 @@
 body:is([data-page=image],[data-page=video]) main{padding:10px 9px 24px}
 body:is([data-page=image],[data-page=video]) .gentoolbar{margin:-10px -9px 8px;padding:6px 10px}
 body:is([data-page=image],[data-page=video]) .modeRow{margin:2px 0 7px}
+.generateActions{display:flex;align-items:center;flex-wrap:wrap;gap:3px 12px}
+.generateControls{display:flex;align-items:center;gap:7px}
+.generateActions .batchlabel{margin-left:auto;white-space:nowrap}
+.playwrap{position:relative;display:flex;flex:none}
+.playwrap>button,#stopBatch{display:flex;align-items:center;justify-content:center;height:48px;line-height:1;white-space:nowrap;transform:none}
+.playwrap>button{padding:0;border-color:#b3f6d5;background:linear-gradient(#bdf8db,#98e9c3);color:#102c21}
+#play{width:clamp(130px,38vw,156px);border-radius:13px 0 0 13px;font-weight:750;box-shadow:inset 0 1px #fff7}
+.playFace{display:flex;align-items:center;gap:7px;transition:transform .2s cubic-bezier(.2,.75,.3,1.35)}
+#playLabel{min-width:88px;text-align:left}
+.playFace svg,#batchMenu svg,#stopBatch svg{display:block;width:18px;height:18px;flex:none;fill:currentColor}
+#play:active:not(:disabled){background:#8cdbb5;box-shadow:inset 0 2px 5px #174a3540}
+#play:active:not(:disabled) .playFace{transform:translateY(1px) scale(.96);transition-duration:.07s}
+#play:disabled,#batchButton:disabled{opacity:.68}
+#batchButton{width:clamp(48px,14vw,55px);border-radius:0 13px 13px 0;border-left-color:#366b5359}
+#batchButton svg{width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round}
+#batchButton[aria-expanded=true],#batchButton:active:not(:disabled){background:#86d7b1}
+#batchButton[aria-expanded=true] svg{transform:rotate(180deg)}
+.generateControls button:focus-visible{outline:2px solid var(--mint);outline-offset:2px}
+#batchMenu{top:calc(100% + 6px);left:0;right:auto;min-width:100%;padding:5px}
+#batchMenu button{display:flex;width:100%;align-items:center;gap:8px;padding:7px 10px;font-weight:600}
+#batchMenu svg{width:15px;height:15px;color:var(--mint)}
+#batchMenu button:is(:hover,:focus-visible){background:#263b33}
+.generationActivity{display:grid;place-items:center;width:16px;height:48px;flex:none}
+.generationActivity .spinner{width:16px;height:16px}
+#stopBatch{gap:5px;padding:0 8px;border-radius:12px;border-color:#73444b;color:#ffb1b5;background:#332026;font-size:13px;font-weight:650}
+#stopBatch svg{width:13px;height:13px}
+#stopBatch:active{background:#573037}
+@media(prefers-reduced-motion:reduce){.playFace{transition:none}#play:active:not(:disabled) .playFace{transform:none}}
 .foldPanel.card{padding:0 11px;margin:0 0 8px;border-radius:12px}
 .foldHead{display:flex;align-items:center;gap:6px;min-height:39px}
 .foldToggle{display:flex;align-items:center;gap:7px;flex:1;align-self:stretch;text-align:left;background:none;border:0;border-radius:0;padding:5px 0;min-width:0;font-size:16px;font-weight:650;color:var(--text)}
