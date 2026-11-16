@@ -109,7 +109,7 @@ function paintConnectionStatus(){
  status.textContent=connected?(window.Desktop?'Local studio':'PC connected'):connecting?'Connecting…':wanted?'Reconnecting…':'Disconnected';
  status.parentElement.dataset.state=connected?'online':working?'connecting':'offline';
 }
-function connection(value){connected=value;ModelPreviews.connected(value);prefetchVisibility();paintChatStatus();$$('.dot').forEach(d=>d.classList.toggle('connected',value));$('#statusDot').setAttribute('aria-label',value?'Connected':'Disconnected');paintConnectionStatus();}
+function connection(value){const changed=connected!==value;connected=value;if(changed)CivitaiBrowser.connectionChanged(value);ModelPreviews.connected(value);prefetchVisibility();paintChatStatus();$$('.dot').forEach(d=>d.classList.toggle('connected',value));$('#statusDot').setAttribute('aria-label',value?'Connected':'Disconnected');paintConnectionStatus();}
 function dashboardVisible(){return window.Desktop||$('#drawer').classList.contains('open');}
 function render(){
  document.body.dataset.page=page;

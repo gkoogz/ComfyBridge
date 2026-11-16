@@ -123,14 +123,18 @@ class DebugTests(unittest.TestCase):
         activate(self.data);recorder=Recorder(self.data)
         browser=Browser(self.data,Models(),None,transport=lambda *a:None);browser.transport=None
         class Opener:
-            def open(self,*a,**kw):raise urllib.error.HTTPError('https://example.test',429,'secret body',{},None)
+            code=429
+            def open(self,*a,**kw):raise urllib.error.HTTPError('https://example.test',self.code,'secret body',{},None)
         with patch('api_debug.recorder',recorder),patch('civitai_browser.before'),patch('civitai_browser.governor.failed'),patch('civitai_browser.urllib.request.build_opener',return_value=Opener()):
+            with self.assertRaises(Deferred):browser.call('SECRET','me')
+            Opener.code=503
             with self.assertRaises(Deferred):browser.call('SECRET','me')
             expected=dict(items=[{}]*12,sourceReads=2,scanned=100,filtered=88,limited=True)
             with patch.object(browser,'_feed',return_value=expected):
                 self.assertIs(browser.feed({'channel':'tags:12,13:all'}),expected)
         rows=self.rows(recorder)
         self.assertTrue(any(r['kind']=='network' and r['outcome']=='http_429' for r in rows))
+        self.assertTrue(any(r['kind']=='network' and r['outcome']=='http_503' for r in rows))
         self.assertTrue(any(r['operation']=='feed.tags' and r['filtered']==88 and r['reads']==2 for r in rows))
 
 

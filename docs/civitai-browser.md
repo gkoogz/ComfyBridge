@@ -479,3 +479,54 @@ a few samples; do not present those as representative user usage. Reports descri
 the configured window and observed samples, not proof that a worker is currently
 running or that no samples were dropped. Collect real usage before recommending
 further tuning.
+
+## Beta 89: image-backed startup stash and transient failure recovery
+
+The main metadata snapshot was insufficient as a startup guarantee: seen-item
+filtering could remove its entire feed, empty refreshes could save an empty list,
+and an oversized detail snapshot could fail to persist. Connection changes also
+did not wake Browse immediately, leaving it dependent on a 15-second timer.
+Observed diagnostics additionally captured upstream HTTP 503 and partial feed
+work; those failures were previously wrapped as generic HTTP 400 errors.
+
+Browse now maintains a separate compact `:stash` beside its existing scoped
+localStorage snapshot. Only preview paths successfully found/written in device
+CacheStorage enter this stash. It retains up to 20 feed entries and 20 collection
+entries for each of three recent collection/reaction channels. Detail text and
+generation parameters are omitted from this manifest to keep it small. Cached
+files referenced by the stash are protected from normal preview eviction.
+Incomplete or empty refreshes cannot replace this stash with empty lists. Account
+changes isolate it; bans and creator timeouts still remove disallowed entries.
+
+Startup prefers unseen saved feed items, with seen items as a temporary fallback
+when otherwise empty. This supersedes Beta 85's rule that startup must always omit
+every seen post: availability comes first while obtaining replacements. Existing
+safe offscreen replacement remains; explicit refresh retains visible media until
+replacement preview data is available. Old complete detail records can recover
+metadata when an older build saved empty lists. A prior successfully downloaded
+cache is required; a first install or OS-cleared storage cannot display files that
+do not exist. No network operation is required to read the stash or cached files.
+
+Cache-only reads bypass pending network requests for the same URL. Reconnection
+notifies Browse directly, separately from ComfyUI catalogue readiness. Each loaded
+preview can contribute to the stash immediately instead of waiting for the whole
+warm-up batch. Warming prioritizes initial collection previews and the saved feed,
+then unseen reserve items. If fewer than ten unseen feed items remain, at most one
+additional feed pass per minute can replenish the reserve while Browse is open;
+existing background/library priority and shared API/request limits still apply.
+
+Civitai 429 and temporary 5xx/network failures use the shared cooldown and a typed
+Deferred response. The worker returns 503 plus Retry-After, not a generic 400.
+Feed failures retain already found results and cursor state. The client keeps
+visible/stashed content, uses a subdued saved-content notice, and schedules
+bounded automatic retries while foreground/connected. Authentication and other
+nontransient errors remain visible. Refresh failures cannot blank either carousel
+or feed. Diagnostics remain enabled only until their existing fixed deadline.
+
+`tests/browse-startup.cjs` exercises real CacheStorage at phone and desktop widths:
+all feed posts already seen, no PC network, decoded blob previews, 20 collection
+items, reconnect while catalogue loading, quiet legacy/new 503 errors with backoff,
+failed refresh, and recovery from the independent stash after deleting the main
+snapshot. Existing seen-feed, preferences/ban, cache, navigation and viewer tests
+cover the preserved behavior. Backend tests cover 503 classification and partial
+feed/cursor preservation. No physical-phone observation is implied by these tests.

@@ -22,6 +22,7 @@ import provenance
 import gpu_handoff as gpu
 from model_gallery import Gallery
 from civitai_browser import Browser as CivitaiBrowser
+from civitai_requests import Deferred as CivitaiDeferred
 from model_downloads import Downloads as ModelDownloads
 from model_library import Library as ModelLibrary
 from handoff import adopt
@@ -666,6 +667,8 @@ async def guard(request, handler):
         IN_FLIGHT += 1
     try:
         return await handler(request)
+    except CivitaiDeferred as e:
+        return web.json_response({'error':str(e),'retryAfter':e.retry_after},status=503,headers={'Retry-After':str(e.retry_after)})
     except (ValueError, KeyError, TypeError, json.JSONDecodeError) as e:
         return web.json_response({'error': str(e)}, status=400)
     except (aiohttp.ClientError, asyncio.TimeoutError, OSError) as e:
@@ -875,7 +878,7 @@ async def api(request):
                     j['etaSeconds']=None
                 else:
                     j['progress'],j['current_node']=TRACKER.sample()
-        return web.json_response(dict(protocol=20,build='0.1.0-beta.88',jobs=jobs, active=ACTIVE, preview=bool(PREVIEW), previewRevision=PREVIEW_REV,ownedComfy=bool(OWNED),queueEtaSeconds=total_eta))
+        return web.json_response(dict(protocol=20,build='0.1.0-beta.89',jobs=jobs, active=ACTIVE, preview=bool(PREVIEW), previewRevision=PREVIEW_REV,ownedComfy=bool(OWNED),queueEtaSeconds=total_eta))
     if path.startswith('preview/'):
         job=str(uuid.UUID(path[8:]))
         after=int(request.query.get('after','-1'))

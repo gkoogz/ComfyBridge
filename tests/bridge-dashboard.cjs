@@ -8,9 +8,9 @@ const path=require('node:path');
  try{
   const context=await browser.newContext({viewport:{width:460,height:956}});
   await context.route('https://bridge.test/**',r=>r.fulfill({path:path.join(__dirname,'../android/assets',new URL(r.request().url()).pathname.slice(1)||'index.html')}));
-  await context.addInitScript(()=>{window.Native={configuration:()=>JSON.stringify({device:'one',paired:false}),notificationRoute:()=>'',appVersion:()=> '0.1.0-beta.88'};});
+  await context.addInitScript(()=>{window.Native={configuration:()=>JSON.stringify({device:'one',paired:false}),notificationRoute:()=>'',appVersion:()=> '0.1.0-beta.89'};});
   const page=await context.newPage();await page.goto('https://bridge.test');await page.waitForSelector('#connect');
-  assert.equal(await page.locator('#appVersion').textContent(),'Beta 88');
+  assert.equal(await page.locator('#appVersion').textContent(),'Beta 89');
   assert.deepEqual(await page.locator('#drawer nav button').allTextContents(),['◉Browse','▧Image','▷Video','▦Library','✎Notepad']);
   assert.equal(await page.locator('#destinations').count(),0);
   await page.locator('[data-nav=browse]').click();
@@ -23,7 +23,12 @@ const path=require('node:path');
   assert.equal(await page.locator('#host').getAttribute('aria-invalid'),'true');
   await page.evaluate(()=>{
    window.poll=async()=>{};window.commands=[];
-   window.api=async(route,data)=>{commands.push({route,data});return {};};
+   window.api=async(route,data)=>{
+    if(route==='browse/status')return {account:'fixture',username:'Example',collections:[],bans:[],followingIds:[],importState:{complete:true}};
+    if(route==='browse/feed')return {account:'fixture',items:[],nextCursor:null};
+    if(route.startsWith('browse/'))return {account:'fixture',seen:[]};
+    commands.push({route,data});return {};
+   };
    bridgeError='';connection(true);queueProtocol=8;active='video1';
    jobs=[{id:active,batch:'batch1',kind:'video',owner:'one',status:'running',progress:.37,created:Date.now()/1000,queuePosition:2,queueTotal:6,current_node:'Sampling frames'}];
    queueHistory=[...jobs,...Array.from({length:15},(_,i)=>({id:'done'+i,kind:'image',created:1000+i,status:'complete',owner:'one',ended:1200+i}))];

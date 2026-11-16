@@ -180,26 +180,57 @@ const CivitaiBrowser=(()=>{
   });
  }
  const assetCache=new Map();
+ const readyImages=new Set();let stashSaveQueued=false,reserveChecked=0,retryTimer,retryAt=0,retryAttempt=0,onlineTask=null;
+ const retries=new Set();
+ function savedJSON(key){try{return JSON.parse(localStorage.getItem(key)||'null');}catch{return null;}}
+ function uniqueItems(items){const ids=new Set();return items.filter(i=>i?.id&&!ids.has(i.id)&&ids.add(i.id));}
+ function compactItem(item){
+  const copy={...item};for(const key of ['prompt','negativePrompt','resources','parameters','detailVersion','generationDataAvailable','restoredFeed','cachedFallback'])delete copy[key];return copy;
+ }
+ function saveStash(){
+  if(!account||!status||view.kind!=='mix')return;
+  const key=scope()+':stash',previous=savedJSON(key),old=previous?.account===account?previous:null;
+  const eligible=i=>!isBanned(i)&&!isMuted(i),cached=i=>readyImages.has(path(i.path));
+  const candidates=uniqueItems([...feed.filter(cached),...(old?.feed||[])]).filter(eligible);
+  const fresh=candidates.filter(i=>!seenPosts.has(i.id));
+  const collections={...(old?.collections||{})};
+  if(channel)collections[channel]=uniqueItems([...strip.filter(cached),...(collections[channel]||[])]).filter(i=>!isBanned(i)).slice(0,20).map(compactItem);
+  const order=[channel,...Object.keys(collections).filter(c=>c!==channel)].slice(0,3);
+  const stash={account,status,channel,muted,feed:uniqueItems([...fresh,...candidates]).slice(0,20).map(compactItem),
+   collections:Object.fromEntries(order.map(c=>[c,collections[c]])),saved:Date.now()};
+  try{localStorage.setItem(key,JSON.stringify(stash));}catch{/* Keep the previous complete stash if storage is full. */}
+ }
+ function queueStash(){if(stashSaveQueued)return;stashSaveQueued=true;queueMicrotask(()=>{stashSaveQueued=false;saveStash();});}
  function scope(){
   let config={};try{config=window.Native?JSON.parse(Native.configuration()):{};}catch{}
   return 'comfybridge-browse-v2:'+encodeURIComponent(config.fingerprint||config.host||(window.Desktop?'desktop':'local'));
  }
  function saveSnapshot(){
   if(!account||!status||view.kind!=='mix')return;
+  saveStash();
   try{
-   const snapshot={account,status,channel,exposureVersion:1,strip:strip.slice(0,20),feed:feed.filter(i=>!isMuted(i)).slice(-10),muted,
+   const old=savedJSON(scope()),same=old?.account===account;
+   const fallback=same?(old.feed||[]).filter(i=>!isMuted(i)&&!isBanned(i)):[];
+   const snapshot={account,status,channel,exposureVersion:1,strip:(strip.length?strip:same&&old.channel===channel?old.strip||[]:[]).filter(i=>!isBanned(i)).slice(0,20),feed:(feed.length?feed:fallback).filter(i=>!isMuted(i)&&!isBanned(i)).slice(-10),muted,
     details:[...details.entries()].filter(([key])=>key.startsWith(account+':')).slice(-100),saved:Date.now()};
    localStorage.setItem(scope(),JSON.stringify(snapshot));
-  }catch{/* Storage pressure must never prevent browsing. */}
+  }catch{/* The separate compact, image-backed stash survives an oversized detail snapshot. */}
  }
  function restoreSnapshot(){
   const key=scope();if(cacheScope===key&&status)return;
   reset();details.clear();muted={};account='';status=null;cacheScope=key;
   try{
-   const data=JSON.parse(localStorage.getItem(key)||'null');if(!data?.account)return;
-   account=data.account;status=data.status;acceptTagWeights({...status,account});channel=data.channel;strip=(data.strip||[]).filter(i=>!isBanned(i));stripResume=true;muted=data.muted||{};
+   const snapshot=savedJSON(key),saved=savedJSON(key+':stash');const data=snapshot?.account?snapshot:saved;if(!data?.account)return;
+   const stash=saved?.account===data.account?saved:null;
+   account=data.account;status=data.status;acceptTagWeights({...status,account});channel=data.channel;
+   const recovered=(data.details||[]).map(([,entry])=>entry?.result?.item).filter(i=>i?.path?.startsWith('model-preview/browse/'+account+'/'));
+   const recoveredStrip=channel?.startsWith('collection:')?recovered.filter(i=>membershipIds(i.collections).includes(channel.split(':')[1])):[];
+   strip=uniqueItems([...(stash?.collections?.[channel]||[]),...(data.strip||[]),...recoveredStrip]).filter(i=>!isBanned(i)).slice(0,20);stripResume=true;muted=data.muted||{};
    loadSeen();if(!data.exposureVersion)for(const item of data.feed||[])markSeen(item.id);
-   feed=(data.feed||[]).filter(i=>!seenPosts.has(i.id)&&!isMuted(i)&&!isBanned(i)).map(i=>({...i,restoredFeed:true}));for(const entry of data.details||[])if(entry[1]?.result?.item?.detailVersion===2)details.set(...entry);
+   const savedFeed=[...(stash?.feed||[]),...(data.feed||[])];
+   const candidates=uniqueItems(savedFeed.length?savedFeed:recovered).filter(i=>!isMuted(i)&&!isBanned(i));
+   const unseen=candidates.filter(i=>!seenPosts.has(i.id));
+   feed=(unseen.length?unseen:candidates).slice(0,savedFeed.length?10:100).map(i=>({...i,restoredFeed:true,cachedFallback:!unseen.length}));for(const entry of data.details||[])if(entry[1]?.result?.item?.detailVersion===2)details.set(...entry);
   }catch{/* A damaged snapshot is replaced after the next successful fetch. */}
  }
  function isBanned(item){
@@ -225,6 +256,10 @@ const CivitaiBrowser=(()=>{
   (id===String(item.creatorId)||v.name&&v.name.toLowerCase()===String(item.credit||'').toLowerCase()));}
  async function imageBlob(url,onlyCached=false){
   if(assetCache.has(url))return assetCache.get(url);
+  if(onlyCached){
+   const cache=await caches.open('comfybridge-browse-v1'),response=await cache.match(url);if(!response)return '';
+   const object=URL.createObjectURL(await response.blob());assetCache.set(url,object);readyImages.add(url);return object;
+  }
   if(imageRequests.has(url))return imageRequests.get(url);
   const work=(async()=>{
    const cache=await caches.open('comfybridge-browse-v1');let r=await cache.match(url);
@@ -234,7 +269,7 @@ const CivitaiBrowser=(()=>{
     const blob=await r.blob();if(blob.size>8*1024*1024)return '';
     r=new Response(blob,{headers:{'Content-Type':blob.type,'X-Browse-Bytes':String(blob.size)}});await cache.put(url,r.clone());
    }
-   const object=URL.createObjectURL(await r.blob());assetCache.set(url,object);
+   const object=URL.createObjectURL(await r.blob());assetCache.set(url,object);readyImages.add(url);queueStash();
    return object;
   })();imageRequests.set(url,work);
   try{return await work;}finally{imageRequests.delete(url);}
@@ -245,11 +280,12 @@ const CivitaiBrowser=(()=>{
  }
  async function trimImages(){
   try{
-   const protectedURLs=new Set([...strip.slice(0,20),...feed.slice(-10)].map(i=>path(i.path)));
+   const stash=savedJSON(scope()+':stash');
+   const protectedURLs=new Set([...strip.slice(0,20),...feed.slice(-10),...(stash?.account===account?[...(stash.feed||[]),...Object.values(stash.collections||{}).flat()]:[])].map(i=>path(i.path)));
    const cache=await caches.open('comfybridge-browse-v1'),keys=await cache.keys();let bytes=0,count=0;
    for(const key of [...keys.filter(k=>protectedURLs.has(new URL(k.url).pathname)),...keys.filter(k=>!protectedURLs.has(new URL(k.url).pathname)).reverse()]){
     const r=await cache.match(key);bytes+=Number(r?.headers.get('X-Browse-Bytes')||0);count++;
-    if((count>180||bytes>96*1024*1024)&&!protectedURLs.has(new URL(key.url).pathname))await cache.delete(key);
+    if((count>180||bytes>96*1024*1024)&&!protectedURLs.has(new URL(key.url).pathname)){await cache.delete(key);readyImages.delete(new URL(key.url).pathname);}
    }
    while(assetCache.size>200){const [key,value]=assetCache.entries().next().value;
     assetCache.delete(key);URL.revokeObjectURL(value);}
@@ -291,13 +327,14 @@ const CivitaiBrowser=(()=>{
   clearTimeout(warmTimer);warmTimer=setTimeout(async()=>{
    if(!available())return;
    if(!backgroundAllowed()){warm();return;}
-   const ticket=session,items=[...feed.slice(-10),...strip.slice(0,20)];
+   const ticket=session,items=uniqueItems([...strip.slice(0,3),...feed.slice(-10),...strip.slice(0,20),...feed.filter(i=>!seenPosts.has(i.id)).slice(0,20)]);
    for(const item of items){
     if(!backgroundAllowed()||ticket!==session){warm();return;}
     try{await imageBlob(path(item.path));}catch{}
     if(feed.slice(0,4).includes(item)||strip.slice(0,2).includes(item))queueDetail(item);
    }
    await trimImages();saveSnapshot();runDetails();
+   if(view.kind==='mix'&&!feedEnded&&!busy&&!refreshing&&Date.now()-reserveChecked>60000&&feed.filter(i=>!seenPosts.has(i.id)).length<10){reserveChecked=Date.now();loadFeed();}
   },150);
  }
  const nearDetails=new IntersectionObserver(entries=>entries.forEach(e=>{if(e.isIntersecting&&e.target.browseItem)queueDetail(e.target.browseItem,true);}),{rootMargin:'900px'});
@@ -316,17 +353,18 @@ const CivitaiBrowser=(()=>{
  function closeMenus(){$$('#browseCollections,#browseSources').forEach(el=>el.open=false);}
  function selectChannel(value){
   closeMenus();if(value==='collection:'){createCollection();return;}
-  if(channel===value)return;channel=value;strip=[];stripCursor='';stripBusy=false;stripResume=false;
-  $('#browseCarousel').replaceChildren();paintCollections();saveSnapshot();loadStrip();
+  if(channel===value)return;saveStash();channel=value;
+  const stash=savedJSON(scope()+':stash');strip=(stash?.account===account?stash.collections?.[value]||[]:[]).filter(i=>!isBanned(i));stripCursor='';stripBusy=false;stripResume=!!strip.length;
+  $('#browseCarousel').replaceChildren();paintStrip(strip);paintCollections();saveSnapshot();loadStrip();
  }
  async function refresh(){
   if(refreshing||view.kind==='preferences')return;refreshing=true;
   $('#browseRefresh')?.classList.add('refreshing');$('#browsePull')?.classList.add('refreshing');
   const ticket=++session;busy=false;stripBusy=false;cursor='';stripCursor='';stripResume=false;feedEnded=false;emptyPages=0;details.clear();detailQueue=[];
-  if(view.kind==='mix'){feed=[];$('#browseFeed')?.replaceChildren();saveSnapshot();flushSeen();}
+  if(view.kind==='mix'){saveSnapshot();flushSeen();}
   // Retain visible/cache content until each replacement request succeeds.
   try{await refreshStatus(true);if(ticket!==session)return;await Promise.all([loadFeed(true),view.kind==='mix'?loadStrip(true):Promise.resolve()]);}
-  catch(e){if($('#browseError'))$('#browseError').textContent=e.message;}
+  catch(e){handleReadError(e,'status');}
   finally{refreshing=false;$('#browseRefresh')?.classList.remove('refreshing');$('#browsePull')?.classList.remove('refreshing');$('#browsePull')?.style.removeProperty('height');}
  }
  function pullToRefresh(){
@@ -351,6 +389,43 @@ const CivitaiBrowser=(()=>{
  function hydrate(root){root.querySelectorAll('img').forEach(img=>{img.addEventListener('error',()=>{img.classList.add('failed');img.alt='Preview unavailable · tap to retry';},{once:true});imagesNear.observe(img);});}
  function reset(){feed=[];strip=[];cursor='';stripCursor='';channel='';stripResume=false;emptyPages=0;}
  function available(){return page==='browse'&&!document.hidden&&connected;}
+ function savedNotice(text=''){
+  const el=$('#browseError');if(el){el.classList.remove('warning');el.classList.add('muted');el.textContent=text;}
+ }
+ function queueRetry(kind,seconds=5){
+  retries.add(kind);retryAt=Math.max(retryAt,Date.now()+seconds*1000);clearTimeout(retryTimer);
+  retryTimer=setTimeout(()=>{
+   if(!available())return;
+   const pending=[...retries];retries.clear();retryAt=0;
+   if(pending.includes('status'))resumeOnline();
+   else {if(pending.includes('feed'))loadFeed();if(pending.includes('strip'))loadStrip();}
+  },Math.max(1000,retryAt-Date.now()));
+ }
+ function handleReadError(error,kind){
+  if(/HTTP (429|50[0234])|HTTP 503|paused briefly|could not be reached|timed? ?out|network|connection|failed to fetch/i.test(error.message)){
+   const match=error.message.match(/Retry in (\d+) seconds/i),seconds=match?Number(match[1]):Math.min(60,5*2**Math.min(retryAttempt++,4));
+   queueRetry(kind,seconds);savedNotice(feed.length||strip.length?'Showing saved items while Browse reconnects.':'Browse is temporarily unavailable. Retrying automatically.');
+  }else{const el=$('#browseError');if(el){el.classList.add('warning');el.classList.remove('muted');el.textContent=error.message;}}
+ }
+ async function resumeOnline(){
+  if(!available()||!$('#browseConnected'))return;
+  if(onlineTask)return onlineTask;
+  const ticket=session;
+  onlineTask=(async()=>{
+   try{
+    await refreshStatus(true);if(ticket!==session||!available())return;
+    $('#browseConnected').hidden=false;savedNotice();
+    if(!strip.length||stripResume)loadStrip();
+    if(!feed.length)loadFeed();
+    observeMore();warm();
+   }catch(e){if(ticket===session)handleReadError(e,'status');}
+  })().finally(()=>{onlineTask=null;});
+  return onlineTask;
+ }
+ function connectionChanged(value){
+  if(!value)return;
+  setTimeout(()=>{if(available())resumeOnline();},0);
+ }
  function paintStatus(){
   const el=$('#browseImport');if(!el||!status)return;
   const s=status.importState||{};
@@ -392,23 +467,20 @@ const CivitaiBrowser=(()=>{
   if(status){
    await Promise.all([...strip,...feed].map(i=>imageBlob(path(i.path),true).catch(()=>{})));
    if(ticket!==session)return;
+   const readyFeed=feed.filter(i=>readyImages.has(path(i.path)));feed=(readyFeed.length?readyFeed:feed).slice(0,10);
+   saveStash();
    $('#browseConnected').hidden=false;$('#browseHello').textContent='Hello '+status.username;
    paintCollections();paintFeed(feed);paintStrip(strip);
   }
-  if(!connected){$('#browseError').textContent='Showing saved Browse. Connect to your PC to refresh.';schedule();return;}
-  try{
-   await refreshStatus(true);if(ticket!==session)return;
-   $('#browseConnected').hidden=false;
-   // Server cursors are intentionally not persisted: a worker can restart.
-   if(!strip.length)loadStrip();if(!feed.length)loadFeed();
-   if(stale){await refresh();$('#workspace').scrollTop=0;}else {observeMore();warm();if(stripResume)loadStrip();}
-  }catch(e){if(ticket===session)$('#browseError').textContent=e.message;}
+  if(!connected){savedNotice(feed.length||strip.length?'Showing saved items while connecting…':'Connecting to Browse…');schedule();return;}
+  await resumeOnline();if(ticket!==session)return;
+  if(stale){await refresh();$('#workspace').scrollTop=0;}
   schedule();openPendingCreator();
  }
  function schedule(){clearTimeout(timer);timer=setTimeout(async()=>{
   if(page!=='browse')return;
   if(!document.hidden&&activityAge()>=7200000){render();return;}
-  if(available())try{if($('#browseConnected')?.hidden){render();return;}await refreshStatus();}catch(e){if($('#browseError'))$('#browseError').textContent=e.message;}
+  if(available())try{if($('#browseConnected')?.hidden){resumeOnline();}else{await refreshStatus();if(!feed.length)loadFeed();if(!strip.length)loadStrip();}}catch(e){handleReadError(e,'status');}
   schedule();
  },15000);}
  function suspend(){
@@ -416,7 +488,7 @@ const CivitaiBrowser=(()=>{
   close();collectionPopup?.remove();collectionPopup=null;
   if(!$('.civitaiBrowse'))return;
   suspended={scope:scope(),scroll:$('#workspace').scrollTop,nodes:[...$('#main').childNodes]};
-  observer?.disconnect();clearTimeout(timer);clearTimeout(warmTimer);session++;busy=false;stripBusy=false;
+  observer?.disconnect();clearTimeout(timer);clearTimeout(warmTimer);clearTimeout(retryTimer);session++;busy=false;stripBusy=false;
  }
  function tile(item,small=false){
   const el=document.createElement('article');
@@ -614,13 +686,15 @@ const CivitaiBrowser=(()=>{
   if(busy||feedEnded||!available()||!$('#browseMore'))return;busy=true;const ticket=session;$('#browseMore').innerHTML='<i class="spinner"></i> Finding inspiration…';
   try{const r=await feedPage(view.kind==='mix'?'mix':view.kind+':'+view.id+':'+view.filter,cursor,replace?[]:feed.map(i=>i.id),replace);if(ticket!==session)return;
    if(r.account!==account){reset();render();return;}
-   if(replace){feed=[];$('#browseFeed').replaceChildren();}
-   const added=r.items.filter(i=>!isBanned(i)&&!(view.kind==='mix'&&(isMuted(i)||seenPosts.has(i.id)))&&!feed.some(x=>x.id===i.id));feed.push(...added);cursor=r.nextCursor||'';feedEnded=!r.nextCursor;paintFeed(added);saveSnapshot();warm();$('#browseError').textContent='';
+   const added=r.items.filter(i=>!isBanned(i)&&!(view.kind==='mix'&&(isMuted(i)||seenPosts.has(i.id)))&&(replace||!feed.some(x=>x.id===i.id)));
+   if(replace&&added.length){await imageBlob(path(added[0].path));if(ticket!==session)return;feed=[];$('#browseFeed').replaceChildren();}
+   feed.push(...added);cursor=r.nextCursor||'';feedEnded=!r.nextCursor;paintFeed(added);saveSnapshot();warm();savedNotice();
    feedWaitUntil=r.limited?Date.now()+1000*Math.max(2,r.retryAfter||0):0;
    emptyPages=added.length?0:(r.limited?2:emptyPages+1);
-   if(r.limited&&!added.length)$('#browseError').textContent=r.retryAfter?'Search paused briefly to limit API traffic. Your search position is saved.':'Still searching for matching media. Load more continues from here.';
+   if(r.retryAfter){queueRetry('feed',r.retryAfter);if(!added.length)savedNotice('Showing saved items. Refreshing shortly…');}
+   else if(r.limited&&!added.length)savedNotice('Still searching for matching media. Load more continues from here.');
    else if(!added.length)$('#browseError').textContent='No new media in this page. Try Load more or refresh.';
-  }catch(e){if(ticket===session){emptyPages=2;$('#browseError').textContent=e.message;}}
+  }catch(e){if(ticket===session){emptyPages=2;handleReadError(e,'feed');}}
   finally{if(ticket===session){busy=false;if($('#browseMore')){$('#browseMore').textContent='Load more';$('#browseMore').hidden=feedEnded;}checkBottom();}}
  }
  function checkBottom(){
@@ -639,11 +713,13 @@ const CivitaiBrowser=(()=>{
   if(stripBusy||!available()||(!replace&&!stripResume&&strip.length&&!stripCursor))return;stripBusy=true;const chosen=channel,ticket=session;
   try{const r=await feedPage(chosen,stripCursor,replace?[]:strip.map(i=>i.id));if(chosen!==channel||ticket!==session)return;
    if(r.account!==account){reset();render();return;}
-   if(replace){strip=[];$('#browseCarousel').replaceChildren();}
-   const added=r.items.filter(i=>!isBanned(i)&&!strip.some(x=>x.id===i.id));strip.push(...added);stripCursor=r.nextCursor||'';stripResume=stripResume&&!added.length&&!!stripCursor;paintStrip(added);paintCollections();saveSnapshot();warm();
+   const added=r.items.filter(i=>!isBanned(i)&&(replace||!strip.some(x=>x.id===i.id)));
+   if(replace&&added.length){await imageBlob(path(added[0].path));if(chosen!==channel||ticket!==session)return;strip=[];$('#browseCarousel').replaceChildren();}
+   strip.push(...added);stripCursor=r.nextCursor||'';stripResume=stripResume&&!added.length&&!!stripCursor;paintStrip(added);paintCollections();saveSnapshot();warm();
+   if(r.retryAfter)queueRetry('strip',r.retryAfter);
    if(!strip.length)$('#browseCarousel').innerHTML='<p class="muted">No accessible media here yet.</p>';
-  }catch(e){if(ticket===session)$('#browseError').textContent=e.message;}
-  finally{if(chosen===channel&&ticket===session){stripBusy=false;if((strip.length<20||stripResume)&&stripCursor)setTimeout(()=>loadStrip(),0);}}
+  }catch(e){if(ticket===session)handleReadError(e,'strip');}
+  finally{if(chosen===channel&&ticket===session){stripBusy=false;if((strip.length<20||stripResume)&&stripCursor&&!retries.has('strip'))setTimeout(()=>loadStrip(),0);}}
  }
  async function action(data){
   const key=detailKey(data.imageId);if(data.imageId)socialRevisions.set(key,(socialRevisions.get(key)||0)+1);if(data.kind==='follow')followRevision++;if(data.kind==='preference')banRevision++;
@@ -915,5 +991,5 @@ const CivitaiBrowser=(()=>{
  document.addEventListener('keydown',e=>{if(e.key==='Escape'){if(viewer){e.preventDefault();close();}else if(page==='browse'&&back())e.preventDefault();}});
  document.addEventListener('visibilitychange',()=>{if(page==='browse'&&!document.hidden){if(activityAge()>=7200000){render();return;}if(available()){refreshStatus(true).catch(()=>{});warm();}}});
  document.addEventListener('pointerdown',activity,{passive:true});document.addEventListener('keydown',activity,{passive:true});document.addEventListener('wheel',activity,{passive:true});document.addEventListener('touchmove',activity,{passive:true});
- return {render,suspend,open,close,back,canSwipeBack,beginSwipeBack,moveSwipeBack,endSwipeBack,isOpen:()=>!!viewer,enrich,peek,resourcesHTML,wireResources,promptHTML,wirePromptCopies};
+ return {render,suspend,connectionChanged,open,close,back,canSwipeBack,beginSwipeBack,moveSwipeBack,endSwipeBack,isOpen:()=>!!viewer,enrich,peek,resourcesHTML,wireResources,promptHTML,wirePromptCopies};
 })();

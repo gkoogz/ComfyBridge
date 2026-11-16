@@ -55,10 +55,10 @@ const assert=require('node:assert/strict'),path=require('node:path');
  await p.waitForFunction(id=>JSON.parse(localStorage.getItem('comfybridge-browse-v2:seen-fixture:seen:1')||'{}').pending?.includes(id),id);
  const pending=await p.evaluate(()=>JSON.parse(localStorage.getItem('comfybridge-browse-v2:seen-fixture:seen:1')));
  assert(!pending.seen.includes('112'),'Unseen prefetched posts must remain unviewed');
- // Refresh removes old For You tiles immediately and includes local exclusions even offline.
+ // Refresh keeps usable cached tiles until a replacement is ready; exclusions still apply.
  await p.evaluate(()=>{holdRefresh=true;document.querySelector('#browseRefresh').click();});
  await p.waitForFunction(()=>!!window.releaseFresh);
- assert.equal(await p.locator('#browseFeed .browseTile').count(),0,'Explicit refresh does not retain stale For You tiles');
+ assert((await p.locator('#browseFeed .browseTile').count())>0,'Pending refresh must not blank the saved feed');
  const refreshCall=await p.evaluate(()=>seenCalls.filter(c=>c.route==='browse/feed'&&c.body.channel==='mix').at(-1));
  assert(refreshCall.body.refresh);assert(refreshCall.body.seen.includes(id));
  await p.evaluate(()=>{holdRefresh=false;releaseFresh();});

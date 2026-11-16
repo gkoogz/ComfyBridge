@@ -105,4 +105,19 @@ CacheTests.test_shared_details_and_follow_cache=test_shared_details_and_follow_c
 CacheTests.test_concurrent_cache_miss_is_coalesced_and_writes_are_fresh=test_concurrent_cache_miss_is_coalesced_and_writes_are_fresh
 CacheTests.test_multi_tag_budget_bulk_metadata_and_resume=test_multi_tag_budget_bulk_metadata_and_resume
 
+def test_temporary_failure_preserves_partial_feed_and_cursor(self):
+    original=self.b.transport;failing=[True]
+    def request(token,route,value,write,rest):
+        if route!='image.getInfinite':return original(token,route,value,write,rest)
+        if not value.get('cursor'):return {'items':[image(i) for i in range(1,6)],'nextCursor':'page2'}
+        if failing[0]:raise Deferred(5)
+        return {'items':[image(i) for i in range(6,18)],'nextCursor':None}
+    self.b.transport=request
+    first=self.b.feed({'channel':'tag:12:all'})
+    self.assertEqual(len(first['items']),5);self.assertGreater(first['retryAfter'],0);self.assertTrue(first['nextCursor'])
+    failing[0]=False
+    second=self.b.feed({'channel':'tag:12:all','cursor':first['nextCursor']})
+    self.assertEqual([i['id'] for i in second['items']],[str(i) for i in range(6,18)])
+CacheTests.test_temporary_failure_preserves_partial_feed_and_cursor=test_temporary_failure_preserves_partial_feed_and_cursor
+
 if __name__=='__main__':unittest.main()

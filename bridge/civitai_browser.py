@@ -168,14 +168,15 @@ class Browser:
             except urllib.error.HTTPError as error:
                 if measurement:measurement['status']='http_'+str(error.code)
                 governor.failed(error.code,error.headers.get('Retry-After'))
-                if error.code == 429:
+                if error.code in (429,500,502,503,504):
                     raise Deferred(max(5,governor.until-time.time())) from None
                 if error.code in (401, 403):
                     raise ValueError('Civitai denied access. Check the desktop API key, its permissions and your account setup.') from None
                 raise ValueError('Civitai request failed (HTTP %s). Please retry.' % error.code) from None
             except (OSError, TimeoutError):
                 if measurement:measurement['status']='timeout'
-                raise ValueError('Civitai could not be reached. Your saved preferences are kept.') from None
+                governor.failed(503)
+                raise Deferred(max(5,governor.until-time.time())) from None
             governor.succeeded()
             if rest:
                 return result
