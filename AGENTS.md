@@ -123,6 +123,11 @@ node tests/queue-preview.cjs
 - Distinguish source checks, unit/browser tests, signed builds, installed runtime
   checks and physical-phone observations. Never claim an actual render,
   power-loss recovery or device gesture was verified from tests alone.
+- For Civitai performance investigations, check the read-only local API diagnostic
+  report first if `local/data/api-debug-session.json` exists. Use
+  `bridge/api_debug.py report --data E:\ComfyBridge\local\data`; it makes no API
+  calls. See `docs/civitai-browser.md` for interpretation. Do not automatically
+  enable or renew the fixed seven-day session, or publish private diagnostic data.
 - Check Windows and Android compatibility when changing API schemas or shared
   assets. Prefer explicit errors for missing inputs and unavailable services.
 

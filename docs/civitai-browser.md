@@ -420,3 +420,62 @@ uses one shared following lookup; reopening after a Browser restart uses cached
 details without additional metadata calls. Tests also cover concurrent cache
 misses, account isolation, fresh mutation verification, sparse multi-tag paging,
 bulk tag recovery, budget reservations and persistent Retry-After cooldown.
+
+## Beta 88: optional seven-day field diagnostics
+
+`bridge/api_debug.py` instruments the PC's Civitai metadata API calls, shared
+cache lookups, feed passes and detail/prefetch operations. It does not observe
+other applications, ComfyUI, local LLM calls or media CDN transfers. Statistics
+from all connected clients share one local report. Public builds are **off by
+default**; only explicit local activation creates a session:
+
+```powershell
+& 'E:\ComfyUI-Zluda\venv\Scripts\python.exe' E:\ComfyBridge\bridge\api_debug.py enable --data E:\ComfyBridge\local\data
+# Restart/update the bridge at a safe boundary to load this opt-in session.
+& 'E:\ComfyUI-Zluda\venv\Scripts\python.exe' E:\ComfyBridge\bridge\api_debug.py report --data E:\ComfyBridge\local\data
+```
+
+`local/data/api-debug-session.json` holds the fixed start/expiry timestamps and a
+random session ID. Logs are aggregate SQLite counters under `local/data/api-debug`.
+The report command only reads local files and never contacts Civitai. Both paths
+are private/ignored and must never be packaged or committed. Running enable again
+inside the active week returns the same deadline. After an expired session, only
+another explicit enable command creates a new week; installation does not enable
+or renew diagnostics. Existing reports remain available on disk.
+
+There is no helper process/thread, scheduled task, timer, polling, or extra API
+request. Active instrumentation runs only when the application already performs
+work. Each event aggregates into a minute/endpoint/category/outcome/latency-band
+row. Storage is capped at 16 MiB per explicitly enabled session. Logging takes a
+nonblocking lock and uses a zero-busy-timeout SQLite connection which closes after
+each write. Contended samples are dropped and counted. Storage failures disable
+the recorder for that worker instead of affecting the request.
+
+Expiry checks use both the persisted wall-clock deadline and a monotonic deadline
+for the live worker. Expired startup creates no log/database. An in-flight request
+finishing after expiry is not recorded. Once the worker observes expiry, the
+disabled fast path performs no diagnostic clock reads or filesystem I/O. No code
+wakes up to expire it: while idle it already does no work. Tiny disabled call-site
+branches remain in the app; there is no separately running diagnostic resource.
+
+Captured fields: counts, HTTP outcome codes, cache hit/miss/forced refresh,
+foreground/background flag, total operation time, time spent waiting before
+dispatch, response byte count, returned item count, feed candidate count and
+discard count, source reads, and budget pauses. A latency histogram supplements
+average/max timings; minute windows show actual upstream attempt volume. The
+recorder accepts only allowlisted operation/outcome labels, not URLs, headers,
+tokens, account/device/media/tag IDs, prompts, request bodies, response contents,
+error strings or images. Data is never uploaded automatically.
+
+Analysis: separate `network` rows (actual upstream attempts) from `cache`,
+`budget`, `detail` and `feed` rows. These are overlapping layers, so summing their
+latency double-counts work. Network total minus wait approximates upstream time
+including response reading/decoding; wait includes the shared network lock and
+request pacing. `budget` rows distinguish total cap, background cap and server
+cooldown without counting them as upstream calls. Compare cache hit ratios and
+feed scanned/filtered/items with the API counts; a low-yield tag intersection is
+different from a slow endpoint. The first installation verification may produce
+a few samples; do not present those as representative user usage. Reports describe
+the configured window and observed samples, not proof that a worker is currently
+running or that no samples were dropped. Collect real usage before recommending
+further tuning.

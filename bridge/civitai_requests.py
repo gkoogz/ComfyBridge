@@ -10,8 +10,9 @@ from pathlib import Path
 
 
 class Deferred(ValueError):
-    def __init__(self, seconds):
+    def __init__(self, seconds, reason='deferred'):
         self.retry_after=max(1,int(seconds)+1)
+        self.reason=reason
         super().__init__('Civitai requests are paused briefly; cached content is still available. Retry in %s seconds.'%self.retry_after)
 
 
@@ -36,10 +37,11 @@ class Governor:
             now=self.clock()
             for queue in (self.recent,self.background):
                 while queue and queue[0]<=now-60:queue.popleft()
-            delay=max(0,self.until-now)
-            if len(self.recent)>=60:delay=max(delay,self.recent[0]+60-now)
-            if background and len(self.background)>=20:delay=max(delay,self.background[0]+60-now)
-            if delay:raise Deferred(delay)
+            delays=[(max(0,self.until-now),'cooldown')]
+            if len(self.recent)>=60:delays.append((self.recent[0]+60-now,'total_limit'))
+            if background and len(self.background)>=20:delays.append((self.background[0]+60-now,'background_limit'))
+            delay,reason=max(delays,key=lambda x:x[0])
+            if delay:raise Deferred(delay,reason)
             self.sleep(max(0,self.next-now))
             now=self.clock();self.next=now+.6;self.recent.append(now)
             if background:self.background.append(now)

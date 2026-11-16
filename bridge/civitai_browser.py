@@ -19,6 +19,8 @@ from pathlib import Path
 from PIL import Image
 from model_library import CivitaiRedirect, request_for
 from civitai_requests import before, governor, Deferred, background_work
+from civitai_requests import context as request_context
+import api_debug
 
 REACTIONS = ('Like', 'Heart', 'Laugh', 'Cry')
 CDN = 'https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/'
@@ -45,7 +47,9 @@ class Browser:
         self.data = Path(data) / 'civitai-browser'
         self.data.mkdir(exist_ok=True)
         self.models, self.gallery, self.transport = models, gallery, transport
-        if not transport:governor.configure(self.data.parent/'civitai-api-backoff.json')
+        if not transport:
+            governor.configure(self.data.parent/'civitai-api-backoff.json')
+            api_debug.configure(self.data.parent)
         self.lock = threading.RLock()
         self.network = threading.Lock()
         self.action_lock = threading.RLock()
@@ -103,11 +107,13 @@ class Browser:
              'collection.getUserCollectionItemsByItem':300,'collection.getAllUser':600,
              'user.getBookmarkCollections':600,'collection.getEntryCount':600}.get(route,0)
         if write or not ttl:return self.raw_call(token,route,value,write,rest)
+        diagnostic=api_debug.recorder.begin()
         identity=hashlib.sha256(token.encode()).hexdigest();key=json.dumps(value,sort_keys=True,separators=(',',':'))
         lock=self.cache_locks[int(hashlib.sha256((identity+route+key).encode()).hexdigest(),16)%64]
         with lock:
             with self.db() as db:
                 row=db.execute('SELECT payload FROM api_cache WHERE identity=? AND route=? AND key=? AND expires>?',(identity,route,key,time.time())).fetchone()
+            api_debug.recorder.finish(diagnostic,'cache',route,'refresh' if fresh else 'hit' if row else 'miss',background=getattr(request_context,'background',False))
             if row and not fresh:return json.loads(row[0])
             result=self.raw_call(token,route,value,write,rest)
             payload=json.dumps(result)
@@ -120,6 +126,19 @@ class Browser:
     def raw_call(self, token, route, value=None, write=False, rest=False):
         if self.transport:
             return self.transport(token, route, value, write, rest)
+        diagnostic=api_debug.recorder.begin()
+        measurement={'sent':False,'wait':0,'bytes':0,'status':'error'} if diagnostic else None
+        try:
+            return self._raw_call(token,route,value,write,rest,diagnostic,measurement)
+        except Deferred as error:
+            if measurement and not measurement['sent']:measurement['status']=error.reason
+            raise
+        finally:
+            if measurement:
+                api_debug.recorder.finish(diagnostic,'network' if measurement['sent'] else 'budget',route,measurement['status'],
+                    background=getattr(request_context,'background',False),wait_ms=measurement['wait'],byte_count=measurement['bytes'],items=measurement.get('items',0))
+
+    def _raw_call(self, token, route, value, write, rest, diagnostic, measurement):
         with self.network:
             url = 'https://civitai.red/api/' + ('v1/' if rest else 'trpc/') + route
             body = None
@@ -136,13 +155,18 @@ class Browser:
                 req.data = body
                 req.add_header('Content-Type', 'application/json')
             before(url)
+            if measurement:
+                measurement['wait']=(api_debug.recorder.monotonic()-diagnostic[0])*1000
+                measurement['sent']=True
             try:
                 with urllib.request.build_opener(CivitaiRedirect()).open(req, timeout=25) as response:
                     raw = response.read(16 * 1024 * 1024 + 1)
+                    if measurement:measurement.update(bytes=len(raw),status='http_'+str(getattr(response,'status',200)))
                     if len(raw) > 16 * 1024 * 1024:
                         raise ValueError('Civitai response is too large. Try a smaller page.')
                     result = json.loads(raw)
             except urllib.error.HTTPError as error:
+                if measurement:measurement['status']='http_'+str(error.code)
                 governor.failed(error.code,error.headers.get('Retry-After'))
                 if error.code == 429:
                     raise Deferred(max(5,governor.until-time.time())) from None
@@ -150,14 +174,18 @@ class Browser:
                     raise ValueError('Civitai denied access. Check the desktop API key, its permissions and your account setup.') from None
                 raise ValueError('Civitai request failed (HTTP %s). Please retry.' % error.code) from None
             except (OSError, TimeoutError):
+                if measurement:measurement['status']='timeout'
                 raise ValueError('Civitai could not be reached. Your saved preferences are kept.') from None
             governor.succeeded()
             if rest:
                 return result
             if 'error' in result:
+                if measurement:measurement['status']='protocol_error'
                 raise ValueError('Civitai could not complete this request.')
             data = result.get('result', {}).get('data', {})
-            return data.get('json', data) if isinstance(data, dict) else data
+            data=data.get('json', data) if isinstance(data, dict) else data
+            if measurement and isinstance(data,dict) and isinstance(data.get('items'),list):measurement['items']=len(data['items'])
+            return data
 
     def account(self):
         token = self.models.token()
@@ -441,10 +469,19 @@ class Browser:
         return dict(account=account,seen=list(set(known)))
 
     def feed(self, query):
-        if query.get('channel','mix')=='mix':
-            # Concurrent phones must not receive the same newly reserved posts.
-            with self.mix_lock:return self._feed(query)
-        return self._feed(query)
+        diagnostic=api_debug.recorder.begin();result=None
+        try:
+            if query.get('channel','mix')=='mix':
+                # Concurrent phones must not receive the same newly reserved posts.
+                with self.mix_lock:result=self._feed(query)
+            else:result=self._feed(query)
+            return result
+        finally:
+            if diagnostic:
+                r=result or {}
+                api_debug.recorder.finish(diagnostic,'feed','feed.'+query.get('channel','mix').split(':')[0],
+                    'error' if result is None else 'limited' if r.get('limited') else 'ok',
+                    items=len(r.get('items',[])),reads=r.get('sourceReads',0),scanned=r.get('scanned',0),filtered=r.get('filtered',0))
 
     def _feed(self, query):
         me, token=self.account(); account=me['id']; cursor=query.get('cursor',''); channel=query.get('channel','mix')
@@ -474,7 +511,7 @@ class Browser:
                 self.feeds[cursor]=state
         with state['lock']:
             state['touched']=time.time();out=[];weights=self.weights(account);bans=self.bans(account)
-            reads=0;limited=False;retry_after=0
+            reads=0;limited=False;retry_after=0;scanned=0
             excluded=set()
             if channel=='mix':
                 with self.db() as db:
@@ -579,6 +616,7 @@ class Browser:
                 before=len(out)
                 while source['items'] and len(out)-before<take and len(out)<12:
                     item=source['items'].pop(0)
+                    scanned+=1
                     if self.is_muted(item,muted):continue
                     if item['id'] in state['seen']:continue
                     if item['id'] in excluded:continue
@@ -599,7 +637,7 @@ class Browser:
                 db.execute('INSERT OR REPLACE INTO feed_sessions VALUES(?,?,?,?,?)',
                     (account,cursor,channel,json.dumps({k:v for k,v in state.items() if k!='lock'}),time.time()))
             return dict(account=account,items=out,nextCursor=None if ended else cursor,recovered=recovered,
-                        limited=limited,retryAfter=retry_after,sourceReads=reads)
+                        limited=limited,retryAfter=retry_after,sourceReads=reads,scanned=scanned,filtered=scanned-len(out))
 
     def timeouts(self, account):
         return {k:v for k,v in self.setting(account,'creator-timeouts',{}).items() if v.get('until',0)>time.time()}
@@ -610,9 +648,15 @@ class Browser:
             v.get('name') and v['name'].casefold()==item.get('credit','').casefold() for v in muted.values())
 
     def detail(self, image_id, prefetch=False):
-        if prefetch:
-            with background_work():return self._detail(image_id,True)
-        return self._detail(image_id,False)
+        diagnostic=api_debug.recorder.begin();outcome='error'
+        try:
+            if prefetch:
+                with background_work():result=self._detail(image_id,True)
+            else:result=self._detail(image_id,False)
+            outcome='ok';return result
+        except Deferred:
+            outcome='deferred';raise
+        finally:api_debug.recorder.finish(diagnostic,'detail','detail.prefetch' if prefetch else 'detail.open',outcome,background=prefetch)
 
     def _detail(self, image_id, prefetch):
         me, token=self.account();account=me['id'];image_id=str(ident(image_id))

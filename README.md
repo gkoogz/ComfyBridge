@@ -1,6 +1,6 @@
 # ComfyBridge
 
-**[Open the beta 87 release page](https://github.com/gkoogz/ComfyBridge/releases/tag/v0.1.0-beta.87)** · [Download the Android APK](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.87/ComfyBridge-0.1.0-beta.87.apk) · [Download Windows](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.87/ComfyBridge-Windows-0.1.0-beta.87.zip) · [All releases](https://github.com/gkoogz/ComfyBridge/releases)
+**[Open the beta 88 release page](https://github.com/gkoogz/ComfyBridge/releases/tag/v0.1.0-beta.88)** · [Download the Android APK](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.88/ComfyBridge-0.1.0-beta.88.apk) · [Download Windows](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.88/ComfyBridge-Windows-0.1.0-beta.88.zip) · [All releases](https://github.com/gkoogz/ComfyBridge/releases)
 
 <img src="artwork/comfybridge.png" width="128" alt="ComfyBridge white cube and play icon on black">
 
@@ -10,7 +10,7 @@ An Android remote for an existing Windows ComfyUI installation. The phone edits 
 
 **Working on the project:** agents and contributors should start with [AGENTS.md](AGENTS.md) for the code map, build/test commands, live queue preservation and delivery instructions.
 
-**Beta 87** reduces Civitai API traffic with shared persistent metadata caches, larger buffered pages, bulk tag lookups, bounded searches and conservative request pacing. Both phones reuse the PC cache. Prompt prefetching skips social lookups, while explicit interactions still verify their result.
+**Beta 88** adds opt-in local Civitai API diagnostics with a fixed seven-day expiry. It measures cache reuse, API latency and waiting, throttling, and search yield without collecting request contents. No background service or polling; diagnostics are disabled by default in public packages.
 
 **Beta 85** remembers viewed For You posts across phones and restarts, excludes recently offered posts on refresh, and replaces stale cached tiles only when safely below the viewport and the new image is ready. Collections and direct creator/tag searches remain revisitable.
 

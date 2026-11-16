@@ -83,18 +83,37 @@ def request_for(url, token=''):
 
 
 def fetch(url, limit=8*1024*1024, token=''):
-    from civitai_requests import before, governor
+    from civitai_requests import before, governor, Deferred, context
+    import api_debug
+    is_api=civitai_api_url(url)
+    diagnostic=api_debug.recorder.begin() if is_api else None
+    operation='rest.other'
+    if diagnostic:
+        resource=urllib.parse.urlparse(url).path.split('/')[3:4]
+        if resource and resource[0] in ('images','models','model-versions'):operation='rest.'+resource[0]
+    sent=False;outcome='error';wait_ms=0;byte_count=0
     req=request_for(url, token)
-    before(url)
     try:
+        before(url)
+        if diagnostic:wait_ms=(api_debug.recorder.monotonic()-diagnostic[0])*1000
+        sent=True
         with urllib.request.build_opener(CivitaiRedirect()).open(req,timeout=25) as response:
             raw=response.read(limit+1)
+            byte_count=len(raw);outcome='http_'+str(getattr(response,'status',200))
             if len(raw)>limit:raise ValueError('Listing response exceeds limit')
-            if civitai_api_url(url):governor.succeeded()
+            if is_api:governor.succeeded()
             return raw
     except urllib.error.HTTPError as error:
-        if civitai_api_url(url):governor.failed(error.code,error.headers.get('Retry-After'))
+        outcome='http_'+str(error.code)
+        if is_api:governor.failed(error.code,error.headers.get('Retry-After'))
         raise
+    except Deferred as error:
+        outcome=error.reason;raise
+    except (OSError,TimeoutError):
+        outcome='timeout';raise
+    finally:
+        api_debug.recorder.finish(diagnostic,'network' if sent else 'budget',operation,outcome,
+            background=getattr(context,'background',False),wait_ms=wait_ms,byte_count=byte_count)
 
 
 def metadata(path):
