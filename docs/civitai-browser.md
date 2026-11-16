@@ -231,3 +231,35 @@ including cached .com links. Windows uses its default browser through ShellExecu
 Android resolves the default HTTPS browser. The former isolated profile WebViews
 and their separate login state are removed. OS Back/app switching returns to
 ComfyBridge; the external browser does not have a ComfyBridge-owned top bar.
+
+
+## Beta 82 preference controls and hard bans
+
+Your feed sorts by weight (descending) or name and filters Creators, Tags or
+Both through custom dropdowns. These display choices persist per PC/account on
+the device. Shared preference state remains on the PC. Five aligned columns are
+Tag/Creator, Weight, Vote, Unweight and Ban; voting uses solid SVG carets.
+
+Unweight uses the existing disabled flag but now reports an effective weight of
+zero, even when imported history grows. Restoring recovers the current learned
+score plus any manual adjustment. A separate banned flag removes all matching
+creator/tag media from Browse feeds, including collections, reactions, direct
+creator/tag feeds and LoRA filler. This does not unfollow, remove saved media,
+or vote on Civitai. Unban clears both banned and disabled and returns the row to
+the main list. Overrides retain names and remain listed even after unfollowing
+or removal of historical observations. All changes retain account isolation and
+idempotent action receipts.
+
+Cached cursor buffers are checked at emission, not only when choosing sources.
+Old LoRA/cursor items with unknown tags resolve tags before passing a tag ban;
+a failed lookup cannot expose unverified media. The client also filters incoming
+pages, retained navigation DOM, open viewers and persistent startup snapshots.
+Bans from another device arrive through foreground status. Cached images need
+not be deleted to keep them out of the interface. Upstream tag accuracy still
+limits semantic filtering: an untagged image cannot be recognized by its pixels.
+
+Regression coverage includes stable zero under new observations, restoring
+weights, restart/unfollow persistence, all feed channels, buffered items without
+tag metadata, sort/filter/column layout, failed writes, ban/unban, and cached
+page pruning on mobile and desktop. These are neutral fixtures, not live social
+writes. Physical Android gestures remain a separate unobserved check.

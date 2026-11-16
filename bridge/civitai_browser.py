@@ -178,7 +178,7 @@ class Browser:
                     prompt=str(meta.get('prompt') or ''), negativePrompt=str(meta.get('negativePrompt') or ''),
                     created=str(raw.get('createdAt') or ''), credit=str(user.get('username') or raw.get('username') or ''),
                     creatorId=str(user.get('id') or ''), path=prefix+'thumb', fullPath=prefix+'full', avatarPath=prefix+'avatar' if cdn(avatar) else '',
-                    imageUrl='https://civitai.red/images/'+image_id, resources=resources, tags=tags, reactions=reactions,
+                    imageUrl='https://civitai.red/images/'+image_id, resources=resources, tags=tags, tagsKnown=isinstance(raw.get('tags'),list), reactions=reactions,
                     stats=raw.get('stats') or {}, parameters={k:meta[k] for k in ('seed','steps','cfgScale','sampler','Size','Model','Clip skip') if k in meta},
                     _urls=dict(thumb=thumb, full=original, avatar=cdn(avatar, 'width=96')))
         with self.db() as db:
@@ -251,12 +251,27 @@ class Browser:
                 (account,)) if r[0] and r[1]}
         rows = []
         for kind, group in (('creator', 'creators'), ('tag', 'tags')):
-            for item_id, base in learned[group].items():
+            ids=set(learned[group]) | {key.split(':',1)[1] for key in overrides if key.startswith(kind+':')}
+            for item_id in ids:
+                base=learned[group].get(item_id,0)
                 change = overrides.get(kind + ':' + item_id, {})
-                name = creators.get(item_id, 'Creator ' + item_id) if kind == 'creator' else learned['names'].get(item_id, 'Tag ' + item_id)
-                rows.append(dict(kind=kind, id=item_id, name=name, weight=max(0, base + change.get('offset', 0)),
-                                 disabled=bool(change.get('disabled')), base=base))
-        return sorted(rows, key=lambda r: (r['disabled'], -r['weight'], r['name'].casefold()))
+                name = creators.get(item_id, change.get('name','Creator ' + item_id)) if kind == 'creator' else learned['names'].get(item_id, change.get('name','Tag ' + item_id))
+                disabled=bool(change.get('disabled'));banned=bool(change.get('banned'))
+                rows.append(dict(kind=kind, id=item_id, name=name, weight=0 if disabled or banned else max(0, base + change.get('offset', 0)),
+                                 disabled=disabled, banned=banned, base=base))
+        return sorted(rows, key=lambda r: (2 if r['banned'] else 1 if r['disabled'] else 0, -r['weight'], r['name'].casefold()))
+
+    def bans(self, account):
+        return [dict(kind=key.split(':',1)[0],id=key.split(':',1)[1],name=value.get('name',''))
+                for key,value in self.setting(account,'weight-overrides',{}).items() if value.get('banned')]
+
+    @staticmethod
+    def is_banned(item, bans):
+        for rule in bans:
+            if rule['kind']=='creator':
+                if str(item.get('creatorId',''))==rule['id'] or (rule.get('name') and rule['name'].casefold()==item.get('credit','').casefold()):return True
+            elif any(str(t.get('id',''))==rule['id'] or (rule.get('name') and rule['name'].casefold()==t.get('name','').casefold()) for t in item.get('tags',[])):return True
+        return False
 
     def preferences(self):
         me, token = self.account()
@@ -267,7 +282,7 @@ class Browser:
                 self.images(me['id'], token, {'userId':int(row['id']), 'sort':'Newest'}, 1, meta=False)
             except ValueError:
                 break
-        return dict(account=me['id'], items=self.preference_rows(me['id']))
+        return dict(account=me['id'], items=self.preference_rows(me['id']), bans=self.bans(me['id']))
 
     def weights(self, account):
         rows = self.preference_rows(account)
@@ -308,7 +323,7 @@ class Browser:
             count = db.execute('SELECT COUNT(DISTINCT image) FROM observations WHERE account=?', (account,)).fetchone()[0]
         return dict(account=account, username=me['username'], profile=self.user_url(me['username']), collections=collections,
                     followingIds=[str(x) for x in self.setting(account,'follows',[])],
-                    timeouts=self.timeouts(account), importState=state, learned=count, follows=len(self.setting(account, 'follows', [])))
+                    timeouts=self.timeouts(account), bans=self.bans(account), importState=state, learned=count, follows=len(self.setting(account, 'follows', [])))
 
     def import_loop(self, account, token):
         try:
@@ -374,7 +389,7 @@ class Browser:
                 state=dict(account=account,channel=channel,touched=time.time(),seen=seen,sources={},loras=loras,turn=0,lora=0, lock=threading.Lock())
                 self.feeds[cursor]=state
         with state['lock']:
-            state['touched']=time.time();out=[];weights=self.weights(account)
+            state['touched']=time.time();out=[];weights=self.weights(account);bans=self.bans(account)
             muted=self.timeouts(account) if channel=='mix' else {}
             weights['creators']={k:v for k,v in weights['creators'].items() if k not in muted}
             follows=[uid for uid in self.setting(account,'follows',[]) if str(uid) in weights['creators']]
@@ -440,6 +455,13 @@ class Browser:
                     item=source['items'].pop(0)
                     if self.is_muted(item,muted):continue
                     if item['id'] in state['seen']:continue
+                    if self.is_banned(item,bans):continue
+                    if any(b['kind']=='tag' for b in bans) and not item.get('tagsKnown'):
+                        # Cached LoRA examples and old persisted cursors can lack tags.
+                        # Resolve before allowing them through a tag ban.
+                        item['tags']=self.call(token,'tag.getVotableTags',{'type':'image','id':int(item['id'])})
+                        item['tagsKnown']=True
+                        if self.is_banned(item,bans):continue
                     public=dict(self.public(item),reason=reason,following=str(item.get('creatorId')) in following)
                     if channel.startswith('collection:'):public['collections']=[{'collectionId':int(channel.split(':')[1])}]
                     state['seen'].append(item['id']);out.append(public)
@@ -504,7 +526,7 @@ class Browser:
         follows=[str(x.get('id') if isinstance(x,dict) else x) for x in follows]
         self.save(account,'follows',follows)
         item['following']=item['creatorId'] in follows
-        item['tags']=self.call(token,'tag.getVotableTags',{'type':'image','id':int(image_id)})
+        item['tags']=self.call(token,'tag.getVotableTags',{'type':'image','id':int(image_id)});item['tagsKnown']=True
         memberships=self.call(token,'collection.getUserCollectionItemsByItem',{'imageId':int(image_id)})
         item['collections']=memberships
         with self.db() as db:db.execute('UPDATE media SET payload=? WHERE account=? AND id=?',(json.dumps(item),account,image_id))
@@ -542,11 +564,17 @@ class Browser:
                 overrides = self.setting(account, 'weight-overrides', {})
                 key = subject + ':' + item_id
                 change = overrides.get(key, {})
+                change['name']=row['name']
                 if 'delta' in payload:
                     delta = payload['delta']
                     if type(delta) is not int or delta not in (-1,1):raise ValueError('Invalid weight adjustment')
+                    if row['disabled'] or row['banned']:raise ValueError('Restore this item before adjusting its weight.')
                     change['offset'] = max(0, row['weight'] + delta) - row['base']
+                elif type(payload.get('banned')) is bool:
+                    change['banned']=payload['banned']
+                    if not payload['banned']:change['disabled']=False
                 elif type(payload.get('disabled')) is bool:
+                    if row['banned']:raise ValueError('Unban this item before changing its weight.')
                     change['disabled'] = payload['disabled']
                 else:raise ValueError('Choose a weight adjustment or disable state')
                 overrides[key] = change

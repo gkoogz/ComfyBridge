@@ -143,10 +143,57 @@ class BrowseTests(unittest.TestCase):
         self.assertNotIn('12',self.b.weights('1')['tags'])
         rows=self.b.preferences()['items']
         self.assertTrue(rows[-1]['disabled'])
-        self.assertEqual(rows[-1]['weight'],4)
+        self.assertEqual(rows[-1]['weight'],0)
         self.b.action(self.act(kind='preference',subject='tag',id=12,disabled=False))
         self.assertEqual(self.b.weights('1')['tags']['12'],4)
         self.assertEqual(self.b.setting('2','weight-overrides',{}),{})
+
+    def test_unweight_stays_zero_as_history_grows_then_restores(self):
+        item=self.b.remember('1',image());self.b.observe('1','reactions',item,2,'1')
+        self.b.action(self.act(kind='preference',subject='tag',id=12,disabled=True))
+        self.b.observe('1','collection:4',item,7,'2')
+        row=next(r for r in self.b.preference_rows('1') if r['kind']=='tag')
+        self.assertEqual(row['weight'],0);self.assertEqual(row['base'],9)
+        self.assertEqual(self.b.bans('1'),[])
+        self.assertTrue(self.b.feed({'channel':'collection:4'})['items'])
+        with self.assertRaisesRegex(ValueError,'Restore'):
+            self.b.action(self.act(kind='preference',subject='tag',id=12,delta=1))
+        self.b.action(self.act(kind='preference',subject='tag',id=12,disabled=False))
+        self.assertEqual(self.b.weights('1')['tags']['12'],9)
+
+    def test_bans_filter_every_channel_and_survive_restart_and_unfollow(self):
+        self.b.status(active=False)
+        self.b.remember('1',image())
+        ban=self.act(kind='preference',subject='creator',id=7,banned=True)
+        self.b.action(ban);self.b.action(ban)
+        for channel in ('mix','collection:4','reactions','creator:7:all','tag:12:all'):
+            self.assertEqual(self.b.feed({'channel':channel})['items'],[],channel)
+        self.b.save('1','follows',[])
+        restarted=Browser(self.tmp.name,self.models,None,self.api)
+        self.assertEqual(restarted.bans('1')[0]['id'],'7')
+        self.assertTrue(restarted.preference_rows('1')[0]['banned'])
+        self.assertEqual(restarted.bans('2'),[])
+        self.assertTrue(restarted.is_banned({'credit':'POTTER'},restarted.bans('1')))
+        restarted.action(self.act(kind='preference',subject='creator',id=7,banned=False))
+        self.assertFalse(restarted.preference_rows('1')[0]['disabled'])
+        self.assertTrue(restarted.feed({'channel':'collection:4'})['items'])
+        self.assertFalse(any(write for _,_,write in self.api.calls))
+
+    def test_tag_ban_filters_buffered_and_metadata_missing_items(self):
+        item=self.b.remember('1',image());self.b.observe('1','reactions',item,2,'1')
+        first=self.b.feed({'channel':'mix'});cursor=first['nextCursor']
+        self.b.action(self.act(kind='preference',subject='tag',id=12,banned=True))
+        self.assertEqual(self.b.feed({'channel':'mix','cursor':cursor})['items'],[])
+        original=self.b.transport
+        def request(token,route,value,write,rest):
+            if route=='image.getInfinite':
+                raw=image(999);raw.pop('tags');return {'items':[raw]}
+            return original(token,route,value,write,rest)
+        self.b.transport=request
+        self.assertEqual(self.b.feed({'channel':'collection:4'})['items'],[])
+        self.assertTrue(any(route=='tag.getVotableTags' for route,_,_ in self.api.calls))
+        self.b.action(self.act(kind='preference',subject='tag',id=12,banned=False))
+        self.assertTrue(self.b.feed({'channel':'collection:4'})['items'])
 
     def test_exclusive_feeds_pass_recency_and_media_filter(self):
         self.b.feed({'channel':'creator:7:video'})
