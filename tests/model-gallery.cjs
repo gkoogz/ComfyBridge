@@ -40,7 +40,7 @@ const assert=require('node:assert/strict'),path=require('node:path');
   await p.locator('.modelPreviewImage').evaluate(image=>image.decode());
   const hint=await p.locator('.modelPreviewPeek').boundingBox();assert(hint.y>=66&&hint.y+hint.height<=845,JSON.stringify(hint));
   assert(await p.locator('.modelPreviewPrompt').first().textContent().then(t=>t.includes('<script>')));assert.equal(await p.evaluate(()=>window.bad),undefined);
-  await p.locator('[data-copy-sample]').click();assert.match(await p.evaluate(()=>copied),/ceramic bowl/);
+  await p.locator('[data-copy-prompt="prompt"]').click();assert.match(await p.evaluate(()=>copied),/ceramic bowl/);
   assert.match(await p.locator('.modelPreviewResources').textContent(),/Pottery glaze.*0.6/s);
   await p.locator('[data-image-source]').click();assert.equal(await p.evaluate(()=>opened),'https://civitai.com/images/1');
   await p.locator('[data-listing-source]').click();assert.equal(await p.evaluate(()=>opened),'https://civitai.com/models/8');

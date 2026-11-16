@@ -108,3 +108,20 @@ The update and request receipt commit in one SQLite transaction, preventing a
 retried weight adjustment from counting twice. Following slots now select among
 enabled followed creators using their effective weights. A disabled tag does
 not exclude every image carrying that tag; its recommendation weight is removed.
+
+## Beta 78 viewer interaction
+
+Feed reaction buttons have white borders and larger labels/icons. Media detail
+reactions share an aligned baseline, and the ribbon opens the collection popup.
+Resources sort checkpoints first, with LoRA download/status after the title.
+Copy icons sit below positive and negative prompts; tag votes use carets and a
+red selected downvote.
+
+The Browse viewer has an overlaid close control and no title strip. Initial
+upward scrolling lifts information through the gap below the contained media
+before moving the media and details together. Normal vertical drags scroll.
+Horizontal drags and downward pulls at the top grab the media. A hold of about
+220 ms before moving also grabs it, allowing vertical tosses. Short releases
+spring back; a deliberate flick or drag beyond roughly half the shorter viewport
+dimension dismisses. The background fades to reveal the retained feed. Videos
+keep their native player gestures. Pinch zoom remains browser-owned.

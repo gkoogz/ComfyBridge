@@ -67,3 +67,34 @@ body[data-page=browse] .civitaiBrowse{max-width:none}
 body[data-page=browse] #browseError:not(:empty),.preferenceError:not(:empty){margin:5px 8px}
 @media(min-width:900px){.feedAuthor{font-size:14px}.feedReactions button{font-size:15px}.feedReactions small{font-size:12px}.browseCaption{gap:10px;padding:22px 15px 10px}}
 .browseCaption{background:radial-gradient(ellipse at left bottom,#000a,transparent 78%)}
+.feedAuthor{font-size:13px}
+.feedReactions{gap:4px}
+.feedReactions button{font-size:15px;border:1px solid #fff;min-height:30px;padding:2px 4px;border-radius:5px}
+.feedReactions small{font-size:11px}
+.feedCollect svg{width:22px;height:24px}
+.civitaiReactions{align-items:center;gap:7px;flex-wrap:nowrap}
+.civitaiReactions button{display:inline-flex;align-items:center;justify-content:center;gap:5px;height:40px;min-height:40px;min-width:42px;padding:5px 9px;line-height:1}
+.civitaiReactions small{display:inline-block;line-height:1;font-size:12px;color:var(--muted)}
+.civitaiReactions .viewerCollect{margin-left:auto;width:42px;padding:8px}
+.viewerCollect svg,.promptCopy svg,.civitaiTag svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.civitaiResources .resourceName{flex:0 1 auto}
+.civitaiResources .resourceDownload{flex:none;width:32px;height:32px;min-height:32px;padding:4px}
+.civitaiResources .resourceType{margin-left:auto}
+.civitaiTag button{display:grid;place-items:center}
+.civitaiTag svg{stroke-width:2.6;width:19px;height:19px}
+.civitaiTag button[data-vote="-1"].selected{color:#ff777d;border-color:#ff777d;background:#44262c}
+.civitaiPromptBlocks .modelPreviewPrompt{margin-bottom:5px}
+.promptCopy{display:grid;place-items:center;width:36px;height:36px;min-height:36px;padding:7px;margin:0 0 18px}
+[data-origin],.modelPreviewLinks{margin-top:25px;margin-bottom:25px}
+.civitaiViewer{background:rgba(11,16,20,var(--viewer-shade,1));padding-top:0}
+.civitaiViewerHead{position:absolute;right:8px;top:calc(var(--status-inset,0px) + 8px);height:auto;padding:0;z-index:8;background:none}
+.civitaiClose{width:40px;height:40px;min-height:40px;font-size:26px;background:#101b24b8}
+.civitaiViewerScroll{inset:var(--status-inset,0px) 0 0;background:transparent;scrollbar-gutter:auto}
+.civitaiViewer .modelPreviewHero{height:calc(100dvh - 76px - var(--status-inset,0px));background:transparent;touch-action:pinch-zoom;will-change:transform}
+.civitaiViewer .modelPreviewHero img{user-select:none;-webkit-user-drag:none}
+.civitaiViewer .modelPreviewPeek,.civitaiViewer .pastPeek .modelPreviewPeek{height:56px;padding:6px 16px;border:0;overflow:hidden;position:relative;background:transparent;z-index:2}
+.civitaiViewer .modelPreviewDetails{position:relative;z-index:3;background:var(--bg)}
+.civitaiViewer.tossing .modelPreviewPeek,.civitaiViewer.tossing .modelPreviewDetails{visibility:hidden}
+.civitaiViewer.tossing .civitaiViewerHead{opacity:0}
+@media(max-width:370px){.feedAuthor{max-width:31%;font-size:12px}.feedReactions button{font-size:14px;padding:2px 3px}.civitaiReactions{gap:5px}.civitaiReactions button{padding:5px 7px}}
+.civitaiResources .resourceDownload{width:36px;height:36px;min-height:36px}

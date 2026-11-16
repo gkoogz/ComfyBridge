@@ -300,8 +300,7 @@ function paintModelPreview(view){
   '<div class="modelPreviewNavigation"><button data-sample-prev aria-label="Previous preview" '+(index===0?'disabled':'')+'>‹</button><button data-sample-next aria-label="Next preview" '+(index===gallery.items.length-1&&!moreModelSamples(gallery)?'disabled':'')+'>›</button></div></div>'+
   '<div class="modelPreviewPeek"><strong>Generation details <span>⌄</span></strong><p>'+esc(description)+'</p></div>'+
   '<div class="modelPreviewDetails"><p class="muted">'+esc([image.credit&&'By '+image.credit,image.width&&image.height&&image.width+' × '+image.height,image.created].filter(Boolean).join(' · '))+'</p>'+
-  '<div class="row spread"><h2>Prompt</h2>'+(image.prompt?'<button data-copy-sample>Copy prompt</button>':'')+'</div><p class="modelPreviewPrompt">'+esc(image.prompt||'The uploader did not share a prompt for this image.')+'</p>'+
-  (image.negativePrompt?'<h2>Negative prompt</h2><p class="modelPreviewPrompt">'+esc(image.negativePrompt)+'</p>':'')+
+  CivitaiBrowser.promptHTML(image)+
   '<h2>Resources</h2><div class="civitaiResourceHost">'+CivitaiBrowser.resourcesHTML(resources)+'</div>'+
   '<dl class="modelPreviewParameters">'+Object.entries(image.parameters||{}).map(([key,value])=>'<dt>'+esc(key)+'</dt><dd>'+esc(value)+'</dd>').join('')+'</dl>'+
   '<div class="modelPreviewLinks">'+(image.imageUrl?'<button data-image-source>Open image on Civitai ↗</button>':'')+(gallery.item.sourceUrl?'<button data-listing-source>Open '+esc(gallery.item.source||'original')+' listing ↗</button>':'')+'</div></div>';
@@ -316,7 +315,7 @@ function paintModelPreview(view){
  $('[data-sample-prev]',host).onclick=()=>advanceModelPreview(view,-1);$('[data-sample-next]',host).onclick=()=>advanceModelPreview(view,1);
  $('[data-image-source]',host)?.addEventListener('click',()=>openModelSource(image.imageUrl));$('[data-listing-source]',host)?.addEventListener('click',()=>openModelSource(image.listingUrl||gallery.item.sourceUrl));
  $$('[data-resource-listing]',host).forEach(button=>button.onclick=()=>openModelSource(button.dataset.resourceListing));
- $('[data-copy-sample]',host)?.addEventListener('click',async()=>{try{if(window.Native?.copyText)await Native.copyText(image.prompt);else await navigator.clipboard.writeText(image.prompt);toast('Prompt copied');}catch{toast('Could not copy prompt');}});
+ CivitaiBrowser.wirePromptCopies(host,image);
  const hero=$('.modelPreviewHero',host);let start;
  hero.addEventListener('pointerdown',e=>{if(!e.target.closest('button'))start={x:e.clientX,y:e.clientY};});
  hero.addEventListener('pointerup',e=>{if(!start)return;const dx=e.clientX-start.x,dy=e.clientY-start.y;start=null;if(Math.abs(dx)>45&&Math.abs(dx)>Math.abs(dy)*1.4)advanceModelPreview(view,dx<0?1:-1);});

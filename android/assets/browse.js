@@ -8,6 +8,25 @@ const CivitaiBrowser=(()=>{
  const button=(label,attrs='')=>'<button '+attrs+'>'+label+'</button>';
  const thumbURL=item=>item.cacheAsset&&item.cacheSample&&ModelPreviews.url(item.cacheAsset,item.cacheSample)||path(item.path);
  const imageHTML=(item,full=false)=>item.type==='video'&&full?'<video controls playsinline preload="none" poster="'+esc(thumbURL(item))+'" src="'+esc(path(item.fullPath))+'"></video>':'<img loading="lazy" decoding="async" src="'+esc(thumbURL(item))+'" alt="Civitai '+(item.type==='video'?'video preview':'image')+'">';
+ const ribbonIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h12v18l-6-4-6 4z"/></svg>';
+ const copyIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 8h12v13H8zM16 8V3H3v13h5"/></svg>';
+ const caretIcon=down=>'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="'+(down?'M5 8l7 7 7-7':'M5 16l7-7 7 7')+'"/></svg>';
+ function promptHTML(item){
+  return '<div class="civitaiPromptBlocks">'+[['prompt','Prompt'],['negativePrompt','Negative prompt']].map(([key,label])=>{
+   if(key==='negativePrompt'&&!item[key])return '';
+   return '<h2>'+label+'</h2><p class="modelPreviewPrompt">'+esc(item[key]||'The uploader did not share a prompt.')+'</p>'+
+    (item[key]?button(copyIcon,'class="promptCopy" data-copy-prompt="'+key+'" aria-label="Copy '+label.toLowerCase()+'"'):'');
+  }).join('')+'</div>';
+ }
+ function wirePromptCopies(host,item){
+  $$('[data-copy-prompt]',host).forEach(b=>b.onclick=async()=>{
+   try{
+    const text=item[b.dataset.copyPrompt]||'';
+    if(window.Native?.copyText)await Native.copyText(text);else await navigator.clipboard.writeText(text);
+    toast('Prompt copied');
+   }catch{toast('Could not copy prompt');}
+  });
+ }
  const assetCache=new Map();
  async function cachedImage(img){
   // Reuse bounded persistent previews on this device; account is part of each URL.
@@ -252,13 +271,16 @@ const CivitaiBrowser=(()=>{
   const form=document.createElement('form');form.className='browseCollectionForm';form.innerHTML='<label>New private media collection<input name="name" maxlength="30" required placeholder="Collection name"></label><div class="row">'+button('Create','type="submit" class="green"')+button('Cancel','type="button"')+'</div><p role="status"></p>';
   (parent||$('.browseCollectionHeading')).after(form);form.querySelector('input').focus();form.querySelector('[type=button]').onclick=()=>form.remove();
   form.onsubmit=async e=>{e.preventDefault();const b=form.querySelector('[type=submit]');b.disabled=true;
-   try{const r=await action({account:boundAccount,kind:'create',name:form.querySelector('input').value});status.collections=r.collections;form.remove();if(page==='browse')await refreshStatus(true);toast('Collection created');if(onCreated)await onCreated();if(viewer)await detail(viewer);}
+   try{const r=await action({account:boundAccount,kind:'create',name:form.querySelector('input').value});if(status)status.collections=r.collections;form.remove();if(page==='browse')await refreshStatus(true);toast('Collection created');if(onCreated)await onCreated();if(viewer)await detail(viewer);}
    catch(error){form.querySelector('p').textContent=error.message;}finally{b.disabled=false;}
   };
  }
- function resourcesHTML(resources){return '<ul class="modelPreviewResources civitaiResources">'+resources.map(r=>{
+ function resourcesHTML(resources){return '<ul class="modelPreviewResources civitaiResources">'+[...resources].sort((a,b)=>Number(/checkpoint/i.test(b.type))-Number(/checkpoint/i.test(a.type))).map(r=>{
   const isLora=/lora|locon|lycoris/i.test(r.type),url=r.modelId?'https://civitai.com/models/'+r.modelId+(r.versionId?'?modelVersionId='+r.versionId:''):'';
-  return '<li><div class="civitaiResourceRow">'+(isLora&&r.versionId?button('＋','class="resourceDownload" data-resource-download="'+esc(r.versionId)+'" data-civi-download="'+esc(r.versionId)+'" aria-label="Download LoRA"'):'')+(url?button(esc(r.name||r.type),'class="resourceName" data-civi-link="'+esc(url)+'"'):'<strong class="resourceName">'+esc(r.name||r.type)+'</strong>')+'<span class="resourceType">'+esc(r.type)+'</span></div>'+(r.version?'<small>'+esc(r.version)+'</small>':'')+((r.weight!==''&&r.weight!=null)?'<small>Strength '+esc(r.weight)+'</small>':'')+'<div data-download-status="'+esc(r.versionId)+'"></div></li>';
+  return '<li><div class="civitaiResourceRow">'+(url?button(esc(r.name||r.type),'class="resourceName" data-civi-link="'+esc(url)+'"'):'<strong class="resourceName">'+esc(r.name||r.type)+'</strong>')+
+   (isLora&&r.versionId?button('＋','class="resourceDownload" data-resource-download="'+esc(r.versionId)+'" data-civi-download="'+esc(r.versionId)+'" aria-label="Download LoRA"'):'')+
+   '<span class="resourceType">'+esc(r.type)+'</span></div>'+(r.version?'<small>'+esc(r.version)+'</small>':'')+((r.weight!==''&&r.weight!=null)?'<small>Strength '+esc(r.weight)+'</small>':'')+'<div data-download-status="'+esc(r.versionId)+'"></div></li>';
+
  }).join('')+'</ul>';}
  async function wireResources(host){
   $$('[data-civi-link]',host).forEach(b=>b.onclick=()=>openModelSource(b.dataset.civiLink));
@@ -284,8 +306,9 @@ const CivitaiBrowser=(()=>{
   });update();
  }
  function socialHTML(item,collections){
-  const followed=item.following,bookmark=collections.find(c=>c.bookmark),bookmarked=bookmark&&membershipIds(item.collections).includes(String(bookmark.id));
-  return '<div class="civitaiAuthor">'+(item.avatarPath?'<img src="'+esc(path(item.avatarPath))+'" alt="">':'<span class="avatarPlaceholder">'+esc((item.credit||'?')[0])+'</span>')+button(esc(item.credit||'Unknown creator'),'class="creatorName" data-civi-link="https://civitai.com/user/'+esc(encodeURIComponent(item.credit||''))+'"')+(item.creatorId?button(followed?'Following ✓':'Follow','data-civi-follow class="'+(followed?'selected':'')+'"'):'')+'</div><div class="civitaiReactions">'+Object.entries(emoji).map(([key,value])=>button(value+' <small>'+esc(item.stats[key.toLowerCase()+'CountAllTime']??item.stats[key.toLowerCase()+'Count']??'')+'</small>','data-civi-react="'+key+'" aria-label="'+key+'" aria-pressed="'+item.reactions.includes(key)+'" class="'+(item.reactions.includes(key)?'selected':'')+'"')).join('')+(bookmark?button(bookmarked?'Bookmarked ✓':'Bookmark','data-civi-bookmark="'+bookmark.id+'" class="'+(bookmarked?'selected':'')+'"'):'')+'</div><details class="civitaiCollect"><summary>Bookmark / add to collection</summary><div class="collectionChoices">'+collections.map(c=>'<label><input type="checkbox" data-civi-collect="'+c.id+'">'+esc(c.name)+'</label>').join('')+'</div>'+button('＋ New collection','data-civi-create')+'</details><p class="civitaiActionError warning" role="status"></p>';
+  const followed=item.following;
+  return '<div class="civitaiAuthor">'+(item.avatarPath?'<img src="'+esc(path(item.avatarPath))+'" alt="">':'<span class="avatarPlaceholder">'+esc((item.credit||'?')[0])+'</span>')+button(esc(item.credit||'Unknown creator'),'class="creatorName" data-civi-link="https://civitai.com/user/'+esc(encodeURIComponent(item.credit||''))+'"')+(item.creatorId?button(followed?'Following ✓':'Follow','data-civi-follow class="'+(followed?'selected':'')+'"'):'')+'</div><div class="civitaiReactions">'+Object.entries(emoji).map(([key,value])=>button('<span class="reactionEmoji">'+value+'</span><small>'+reactionCount(item,key)+'</small>','data-civi-react="'+key+'" aria-label="'+key+'" aria-pressed="'+item.reactions.includes(key)+'" class="'+(item.reactions.includes(key)?'selected':'')+'"')).join('')+button(ribbonIcon,'class="viewerCollect" aria-label="Add to collection"')+'</div><p class="civitaiActionError warning" role="status"></p>';
+
  }
  function membershipIds(raw){
   if(!raw)return [];
@@ -298,12 +321,10 @@ const CivitaiBrowser=(()=>{
   async function run(b,payload,done){b.disabled=true;error.textContent='';try{const r=await action({...payload,account:boundAccount});if(host.isConnected)done(r);}catch(e){error.textContent=e.message;if(b.type==='checkbox')b.checked=!b.checked;}finally{b.disabled=false;}}
   $('[data-civi-follow]',host)?.addEventListener('click',e=>run(e.currentTarget,{kind:'follow',creatorId:item.creatorId,selected:!item.following},r=>{item.following=r.selected;e.target.textContent=r.selected?'Following ✓':'Follow';e.target.classList.toggle('selected',r.selected);}));
   $$('[data-civi-react]',host).forEach(b=>b.onclick=()=>run(b,{kind:'reaction',imageId:item.id,reaction:b.dataset.civiReact,selected:!item.reactions.includes(b.dataset.civiReact)},r=>{item.reactions=r.reactions;$$('[data-civi-react]',host).forEach(x=>{const selected=r.reactions.includes(x.dataset.civiReact);x.classList.toggle('selected',selected);x.setAttribute('aria-pressed',String(selected));});}));
-  const memberships=membershipIds(item.collections);
-  const bookmarkButton=$('[data-civi-bookmark]',host);if(bookmarkButton)bookmarkButton.onclick=()=>{const desired=!bookmarkButton.classList.contains('selected');run(bookmarkButton,{kind:'collect',imageId:item.id,collectionId:bookmarkButton.dataset.civiBookmark,selected:desired},()=>{bookmarkButton.classList.toggle('selected',desired);bookmarkButton.textContent=desired?'Bookmarked ✓':'Bookmark';const cb=$('[data-civi-collect="'+bookmarkButton.dataset.civiBookmark+'"]',host);if(cb)cb.checked=desired;});};
-  $$('[data-civi-collect]',host).forEach(b=>{b.checked=memberships.includes(b.dataset.civiCollect);b.onchange=()=>run(b,{kind:'collect',imageId:item.id,collectionId:b.dataset.civiCollect,selected:b.checked},()=>{toast(b.checked?'Saved to collection':'Removed from collection');if(bookmarkButton?.dataset.civiBookmark===b.dataset.civiCollect){bookmarkButton.classList.toggle('selected',b.checked);bookmarkButton.textContent=b.checked?'Bookmarked ✓':'Bookmark';}});});
-  $('[data-civi-create]',host).onclick=()=>createCollection($('.civitaiCollect',host));
+  $('.viewerCollect',host).onclick=()=>showCollections(item,boundAccount);
+
  }
- function tagHTML(tags){return '<div class="civitaiTags">'+tags.map(t=>'<div class="civitaiTag"><span>'+esc(t.name)+'</span><small>'+esc(t.score??'')+'</small>'+button('↑','class="'+(t.vote===1?'selected':'')+'" data-vote="1" data-tag="'+t.id+'" aria-label="Upvote '+esc(t.name)+'"')+button('↓','class="'+(t.vote===-1?'selected':'')+'" data-vote="-1" data-tag="'+t.id+'" aria-label="Downvote '+esc(t.name)+'"')+'</div>').join('')+'</div>';}
+ function tagHTML(tags){return '<div class="civitaiTags">'+tags.map(t=>'<div class="civitaiTag"><span>'+esc(t.name)+'</span><small>'+esc(t.score??'')+'</small>'+button(caretIcon(false),'class="'+(t.vote===1?'selected':'')+'" data-vote="1" data-tag="'+t.id+'" aria-label="Upvote '+esc(t.name)+'"')+button(caretIcon(true),'class="'+(t.vote===-1?'selected':'')+'" data-vote="-1" data-tag="'+t.id+'" aria-label="Downvote '+esc(t.name)+'"')+'</div>').join('')+'</div>';}
  function wireTags(host,item){const boundAccount=account;$$('[data-vote]',host).forEach(b=>b.onclick=async()=>{b.disabled=true;try{const was=b.classList.contains('selected');await action({account:boundAccount,kind:'vote',imageId:item.id,tagId:b.dataset.tag,vote:b.classList.contains('selected')?0:Number(b.dataset.vote)});$$('[data-tag="'+b.dataset.tag+'"]',host).forEach(x=>x.classList.toggle('selected',x===b&&!was));}catch(e){toast(e.message);}finally{b.disabled=false;}});}
  async function enrich(host,image){
   if(!image.id)return;
@@ -312,23 +333,115 @@ const CivitaiBrowser=(()=>{
   target.textContent='Loading creator and interactions…';
   try{
    const result=await api('browse/detail/'+image.id);if(!target.isConnected)return;
-   account=result.account;const item=result.item;target.innerHTML=socialHTML(item,result.collections);wireSocial(target,item,result.collections);
+   account=result.account;const item=result.item;Object.assign(image,item);
+   const prompts=$('.civitaiPromptBlocks',host);if(prompts){prompts.outerHTML=promptHTML(item);wirePromptCopies(host,item);}
+   target.innerHTML=socialHTML(item,result.collections);wireSocial(target,item,result.collections);
    const resourceHost=$('.civitaiResourceHost',host);if(resourceHost){resourceHost.innerHTML=resourcesHTML(item.resources);wireResources(resourceHost);}
    let tags=$('.civitaiTagHost',host);if(!tags){tags=document.createElement('section');tags.className='civitaiTagHost';$('.modelPreviewDetails',host)?.append(tags);}
    tags.innerHTML='<h2>Tags</h2>'+tagHTML(item.tags||[]);wireTags(tags,item);
   }catch(e){if(target.isConnected)target.textContent=e.message;}
  }
  function peek(host){host.addEventListener('scroll',()=>host.classList.toggle('pastPeek',host.scrollTop>20),{passive:true});}
- function close(){if(viewer){viewer.el.remove();viewer=null;}document.body.classList.remove('civitaiViewerOpen');}
+ function viewerMotion(v){
+  const el=v.el,scroll=$('.civitaiViewerScroll',el),hero=$('.modelPreviewHero',el);
+  const media=$('img,video',hero),peek=$('.modelPreviewPeek',el);
+  let gap=0,gesture=null,frame=0,closed=false;
+  function align(){
+   const width=media.naturalWidth||media.videoWidth||v.item.width;
+   const height=media.naturalHeight||media.videoHeight||v.item.height;
+   const renderedHeight=width&&height?Math.min(hero.clientHeight,hero.clientWidth*height/width):hero.clientHeight;
+   gap=Math.max(0,(hero.clientHeight-renderedHeight)/2)+(peek?.offsetHeight||0);
+   hero.style.transform='translateY('+Math.min(scroll.scrollTop,gap)+'px)';
+  }
+  const resize=new ResizeObserver(align);
+  resize.observe(hero);
+  media.addEventListener('load',align);
+  media.addEventListener('loadedmetadata',align);
+  scroll.addEventListener('scroll',align,{passive:true});
+  align();
+  function reset(){
+   scroll.style.transition='transform .22s ease-out';
+   scroll.style.transform='';
+   el.style.transition='background-color .22s ease-out';
+   el.style.setProperty('--viewer-shade','1');
+   el.classList.remove('tossing');
+  }
+  function finishToss(g){
+   const distance=Math.hypot(g.dx,g.dy),speed=Math.hypot(g.vx,g.vy);
+   const commit=distance>Math.min(innerWidth,innerHeight)*.55||(distance>70&&speed>.9);
+   if(!commit){reset();return;}
+   const factor=Math.max(innerWidth,innerHeight)*1.4/Math.max(distance,1);
+   el.classList.add('tossing');
+   scroll.style.transition='transform .2s ease-out';
+   scroll.style.transform='translate('+g.dx*factor+'px,'+g.dy*factor+'px) scale(.95)';
+   el.style.transition='background-color .2s ease-out';
+   el.style.setProperty('--viewer-shade','0');
+   setTimeout(()=>{if(viewer===v)close();},210);
+  }
+  function coast(velocity){
+   let last=performance.now();
+   function step(now){
+    if(closed)return;
+    const elapsed=Math.min(32,now-last);last=now;
+    const previous=scroll.scrollTop;
+    scroll.scrollTop-=velocity*elapsed;
+    velocity*=Math.exp(-elapsed/180);
+    if(Math.abs(velocity)>.02&&Math.abs(scroll.scrollTop-previous)>.1)frame=requestAnimationFrame(step);
+   }
+   frame=requestAnimationFrame(step);
+  }
+  hero.addEventListener('dragstart',e=>e.preventDefault());
+  hero.addEventListener('pointerdown',e=>{
+   if(!e.isPrimary){gesture=null;reset();return;}
+   if(e.button!==0||e.target.closest('button,video'))return;
+   cancelAnimationFrame(frame);
+   scroll.style.transition='none';el.style.transition='none';
+   gesture={id:e.pointerId,x:e.clientX,y:e.clientY,lastX:e.clientX,lastY:e.clientY,time:performance.now(),last:performance.now(),top:scroll.scrollTop,mode:'',dx:0,dy:0,vx:0,vy:0};
+   hero.setPointerCapture(e.pointerId);
+  });
+  hero.addEventListener('pointermove',e=>{
+   const g=gesture;if(!g||e.pointerId!==g.id)return;
+   const now=performance.now(),dt=Math.max(1,now-g.last);
+   g.dx=e.clientX-g.x;g.dy=e.clientY-g.y;
+   g.vx=(e.clientX-g.lastX)/dt;g.vy=(e.clientY-g.lastY)/dt;
+   g.lastX=e.clientX;g.lastY=e.clientY;g.last=now;
+   if(!g.mode&&Math.hypot(g.dx,g.dy)>9){
+    const held=now-g.time>=220;
+    g.mode=held||Math.abs(g.dx)>Math.abs(g.dy)*1.25||(g.dy>0&&g.top<=1)?'toss':'scroll';
+   }
+   if(g.mode==='scroll'){scroll.scrollTop=g.top-g.dy;return;}
+   if(g.mode==='toss'){
+    el.classList.add('tossing');
+    const progress=Math.min(1,Math.hypot(g.dx,g.dy)/Math.min(innerWidth,innerHeight));
+    scroll.style.transform='translate('+g.dx+'px,'+g.dy+'px) scale('+(1-progress*.04)+')';
+    el.style.setProperty('--viewer-shade',String(Math.max(0,1-progress*1.5)));
+   }
+  });
+  hero.addEventListener('pointerup',e=>{
+   const g=gesture;if(!g||e.pointerId!==g.id)return;gesture=null;
+   if(performance.now()-g.last>100){g.vx=0;g.vy=0;}
+   if(g.mode==='toss')finishToss(g);
+   else if(g.mode==='scroll')coast(g.vy);
+   if(hero.hasPointerCapture(e.pointerId))hero.releasePointerCapture(e.pointerId);
+  });
+  hero.addEventListener('pointercancel',()=>{gesture=null;reset();});
+  return ()=>{
+   closed=true;cancelAnimationFrame(frame);resize.disconnect();
+   media.removeEventListener('load',align);media.removeEventListener('loadedmetadata',align);
+   scroll.removeEventListener('scroll',align);
+  };
+ }
+
+ function close(){if(viewer){viewer.dispose?.();viewer.el.remove();viewer=null;}document.body.classList.remove('civitaiViewerOpen');}
  function open(item,list){
   close();const el=document.createElement('section');el.className='civitaiViewer';el.setAttribute('role','dialog');el.setAttribute('aria-modal','true');el.setAttribute('aria-label','Civitai media details');
   const v={el,item,list};viewer=v;document.body.append(el);document.body.classList.add('civitaiViewerOpen');
-  el.innerHTML='<div class="civitaiViewerHead"><strong>Civitai</strong>'+button('×','class="civitaiClose" aria-label="Close media"')+'</div><div class="civitaiViewerScroll modelPreviewViewer"><div class="modelPreviewHero">'+imageHTML(item,true)+'<div class="modelPreviewNavigation">'+button('‹','data-prev aria-label="Previous media"')+button('›','data-next aria-label="Next media"')+'</div></div><div class="modelPreviewPeek"><strong>Prompt & resources <span>⌄</span></strong><p>'+esc(item.prompt||'Scroll for details')+'</p></div><div class="modelPreviewDetails"><div class="civitaiSocial"></div><div class="row spread"><h2>Prompt</h2>'+button('Copy','data-copy')+'</div><p class="modelPreviewPrompt">'+esc(item.prompt||'The uploader did not share a prompt.')+'</p>'+(item.negativePrompt?'<h2>Negative prompt</h2><p class="modelPreviewPrompt">'+esc(item.negativePrompt)+'</p>':'')+'<h2>Resources</h2><div class="civitaiResourceHost">'+resourcesHTML(item.resources||[])+'</div><dl class="modelPreviewParameters">'+Object.entries(item.parameters||{}).map(([k,val])=>'<dt>'+esc(k)+'</dt><dd>'+esc(val)+'</dd>').join('')+'</dl><div class="civitaiTagHost"></div>'+button('Open on Civitai ↗','data-origin')+'</div></div>';
+  el.innerHTML='<div class="civitaiViewerHead">'+button('×','class="civitaiClose" aria-label="Close media"')+'</div><div class="civitaiViewerScroll modelPreviewViewer"><div class="modelPreviewHero">'+imageHTML(item,true)+'<div class="modelPreviewNavigation">'+button('‹','data-prev aria-label="Previous media"')+button('›','data-next aria-label="Next media"')+'</div></div><div class="modelPreviewPeek"><strong>Prompt & resources <span>⌄</span></strong><p>'+esc(item.prompt||'Scroll for details')+'</p></div><div class="modelPreviewDetails"><div class="civitaiSocial"></div>'+promptHTML(item)+'<h2>Resources</h2><div class="civitaiResourceHost">'+resourcesHTML(item.resources||[])+'</div><dl class="modelPreviewParameters">'+Object.entries(item.parameters||{}).map(([k,val])=>'<dt>'+esc(k)+'</dt><dd>'+esc(val)+'</dd>').join('')+'</dl><div class="civitaiTagHost"></div>'+button('Open on Civitai ↗','data-origin')+'</div></div>';
   $('.civitaiClose',el).onclick=close;$('.civitaiClose',el).focus();$('[data-origin]',el).onclick=()=>openModelSource(item.imageUrl);
-  $('[data-copy]',el).onclick=async()=>{try{if(window.Native?.copyText)await Native.copyText(item.prompt);else await navigator.clipboard.writeText(item.prompt);toast('Prompt copied');}catch{toast('Could not copy prompt');}};
+  wirePromptCopies(el,item);
   const position=list.findIndex(i=>i.id===item.id);$('[data-prev]',el).disabled=position<=0;$('[data-next]',el).disabled=position>=list.length-1;
   $('[data-prev]',el).onclick=()=>open(list[position-1],list);$('[data-next]',el).onclick=()=>open(list[position+1],list);
-  const scroll=$('.civitaiViewerScroll',el);peek(scroll);hydrate(el);wireResources(el);detail(v);
+  const scroll=$('.civitaiViewerScroll',el);peek(scroll);hydrate(el);wireResources(el);v.dispose=viewerMotion(v);detail(v);
   if(item.type!=='video'){const img=$('.modelPreviewHero img',el),full=new Image();full.onload=()=>{if(img.isConnected)img.src=full.src;};full.src=path(item.fullPath);}
  }
  async function detail(v){if(viewer===v)await enrich(v.el,v.item);}
@@ -337,5 +450,5 @@ const CivitaiBrowser=(()=>{
  });
  document.addEventListener('keydown',e=>{if(e.key==='Escape'){if(viewer){e.preventDefault();close();}else if(page==='browse'&&back())e.preventDefault();}});
  document.addEventListener('visibilitychange',()=>{if(available())refreshStatus(true).catch(()=>{});});
- return {render,open,close,back,isOpen:()=>!!viewer,enrich,peek,resourcesHTML,wireResources};
+ return {render,open,close,back,isOpen:()=>!!viewer,enrich,peek,resourcesHTML,wireResources,promptHTML,wirePromptCopies};
 })();
