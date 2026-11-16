@@ -42,5 +42,3 @@ const assert=require('node:assert/strict'),path=require('node:path');
  assert.deepEqual(errors,[]);
  await p.close();
 }console.log('Discovery: artist spacing, yellow LoRA provenance, public collection attribution, follow state and curator navigation passed on phone/desktop widths.');}finally{await browser.close();}})().catch(e=>{console.error(e);process.exit(1);});
-
-

@@ -88,5 +88,3 @@ class DiscoveryTests(unittest.TestCase):
         self.b.public_curations('1','account-a',[7,8])
         for _ in range(2):self.assertTrue(self.b.feed({'channel':'mix'})['items'])
         self.assertEqual(len([c for c in self.api.calls if c[0]=='collection.getInfinite']),1)
-
-
