@@ -4,6 +4,7 @@ import tempfile
 import time
 import unittest
 import uuid
+import random
 from civitai_browser import Browser, cdn
 
 
@@ -119,10 +120,80 @@ class BrowseTests(unittest.TestCase):
         self.b.remember('1',image());self.b.action(self.act(kind='follow',creatorId=7,selected=True))
         self.assertFalse(any(r=='user.toggleFollow' for r,_,_ in self.api.calls))
         self.b.action(self.act(kind='collect',imageId=1,collectionId=4,selected=True));self.assertEqual(self.b.weights('1')['tags']['12'],1)
-    def test_tag_vote_only_changes_local_tag_score_and_requested_vote(self):
+    def test_tag_vote_only_changes_personal_weight_by_five(self):
         self.b.remember('1',image());self.b.action(self.act(kind='vote',imageId=1,tagId=12,vote=1))
-        self.assertEqual(self.b.weights('1')['tags']['12'],1);self.assertEqual(self.b.weights('1')['creators'],{})
-        self.assertEqual([r for r,_,w in self.api.calls if w],['tag.addTagVotes'])
+        self.assertEqual(self.b.weights('1')['tags']['12'],5);self.assertEqual(self.b.weights('1')['creators'],{})
+        self.assertEqual([r for r,_,w in self.api.calls if w],[])
+
+    def test_tag_steps_clamp_hold_zero_retry_and_reactivate(self):
+        item=self.b.remember('1',image());self.b.observe('1','reactions',item,3,'1')
+        down=self.act(kind='tag-weight',imageId=1,tagId=12,delta=-5)
+        result=self.b.action(down);self.assertEqual(result['weight'],0)
+        self.assertEqual(self.b.action(down),result)
+        self.b.observe('1','collection:4',item,10,'2')
+        self.assertNotIn('12',self.b.weights('1')['tags'])
+        up=self.act(kind='tag-weight',imageId=1,tagId=12,delta=5)
+        self.assertEqual(self.b.action(up)['weight'],5)
+        self.assertEqual(self.b.action(up)['weight'],5)
+        self.assertEqual(self.b.action(self.act(kind='tag-weight',imageId=1,tagId=12,delta=5))['weight'],10)
+        self.assertEqual(self.b.tag_weight_snapshot('2')['tagWeights'],{})
+        self.b.action(self.act(kind='preference',subject='tag',id=12,banned=True))
+        with self.assertRaisesRegex(ValueError,'Unban'):self.b.action(self.act(kind='tag-weight',imageId=1,tagId=12,delta=5))
+
+    def test_detail_reports_personal_weights_not_public_votes(self):
+        self.b.remember('1',image());self.b.action(self.act(kind='tag-weight',imageId=1,tagId=12,delta=5))
+        result=self.b.detail(1);tag=result['item']['tags'][0]
+        self.assertEqual(tag['weight'],5);self.assertNotIn('score',tag);self.assertNotIn('vote',tag)
+        self.assertEqual(result['tagWeights']['12'],5)
+
+    def test_pair_sampling_is_distinct_weighted_and_excludes_zero(self):
+        rng=random.Random(7);hits={'1':0,'2':0,'3':0}
+        for _ in range(3000):
+            pair=self.b.roll_tag_pair({'1':30,'2':1,'3':1,'4':0,'5':-1},rng)
+            self.assertEqual(len(set(pair)),2)
+            for tid in pair:hits[tid]+=1
+        self.assertGreater(hits['1'],hits['2']*1.7)
+        self.assertGreater(hits['1'],hits['3']*1.7)
+        self.assertEqual(self.b.roll_tag_pair({'1':5,'2':0}),[])
+
+    def test_selected_tags_search_requires_all_tags_and_keeps_media_filter(self):
+        original=self.b.transport
+        def request(token,route,value,write,rest):
+            if route=='image.getInfinite' and value.get('tags'):
+                self.api.calls.append((route,value,write))
+                return {'items':[image(1,tags=[{'id':12,'name':'ceramics'}]),image(2,tags=[{'id':12,'name':'ceramics'},{'id':13,'name':'blue'}]),
+                    image(3,tags=[{'id':12,'name':'ceramics'},{'id':13,'name':'blue'},{'id':14,'name':'glaze'}])]}
+            return original(token,route,value,write,rest)
+        self.b.transport=request
+        # Explicit searches are allowed even with no positive personal weights.
+        self.assertFalse(self.b.weights('1')['tags'])
+        result=self.b.feed({'channel':'tags:14,12,13,12:video'})
+        self.assertEqual([i['id'] for i in result['items']],['3'])
+        self.assertEqual(result['items'][0]['chosenBy'],dict(kind='tags',ids=['12','13','14']))
+        query=[v for r,v,_ in self.api.calls if r=='image.getInfinite'][-1]
+        self.assertEqual(query['tags'],[12,13,14]);self.assertEqual(query['types'],['video'])
+        with self.assertRaises(ValueError):self.b.feed({'channel':'tags:12,nope:all'})
+
+    def test_pair_feed_enforces_and_and_labels_actual_selection(self):
+        item=self.b.remember('1',image(tags=[{'id':12,'name':'ceramics'},{'id':13,'name':'blue'}]))
+        self.b.observe('1','reactions',item,5,'1')
+        self.b.action(self.act(kind='preference',subject='creator',id=7,disabled=True))
+        original=self.b.transport
+        def request(token,route,value,write,rest):
+            if route=='image.getInfinite' and len(value.get('tags',[]))==2:
+                self.api.calls.append((route,value,write));self.api.serial+=3
+                return {'items':[image(self.api.serial,tags=[{'id':12,'name':'ceramics'}]),image(self.api.serial+1,tags=[{'id':13,'name':'blue'}]),image(self.api.serial+2,tags=[{'id':12,'name':'ceramics'},{'id':13,'name':'blue'}])]}
+            return original(token,route,value,write,rest)
+        self.b.transport=request
+        result=self.b.feed({'channel':'mix'})
+        paired=[i for i in result['items'] if i['chosenBy'].get('kind')=='tags']
+        self.assertTrue(paired)
+        self.assertTrue(all(set(i['chosenBy']['ids'])=={'12','13'} and self.b.matches_tags(i,['12','13']) for i in paired))
+        self.b.action(self.act(kind='tag-weight',imageId=1,tagId=12,delta=-5))
+        again=self.b.feed({'channel':'mix','cursor':result['nextCursor']})
+        self.assertFalse(any(i['chosenBy'].get('kind')=='tags' for i in again['items']))
+        creator=self.b.feed({'channel':'creator:7:all'})['items']
+        self.assertTrue(all(i['chosenBy']=={'kind':'creator','id':'7'} for i in creator))
     def test_relationships_dominate_lora_filler(self):
         self.b.save('1','follows',[7]);x=self.b.remember('1',image());self.b.observe('1','reactions',x,2,'1')
         result=self.b.feed({});sources=[i['reason'] for i in result['items']]

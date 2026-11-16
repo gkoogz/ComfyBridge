@@ -263,3 +263,46 @@ weights, restart/unfollow persistence, all feed channels, buffered items without
 tag metadata, sort/filter/column layout, failed writes, ban/unban, and cached
 page pruning on mobile and desktop. These are neutral fixtures, not live social
 writes. Physical Android gestures remain a separate unobserved check.
+
+
+## Beta 83 personal tag weights and intersecting tag feeds
+
+Media details display personal tag weights, descending then alphabetical, rather
+than Civitai's public votes. Each caret adds/subtracts five; subtraction clamps
+to zero and holds the tag unweighted even as history imports continue. A later
++5 reactivates it at five. Banned tags require Unban in Your feed first. These
+controls do not submit public tag votes. The legacy vote route maps +/-1 requests
+to +/-5 personal adjustments. Adjustment and retry receipt commit together.
+Account-scoped, timestamped weight snapshots refresh cached media across devices
+and prevent older metadata replies from undoing a confirmed adjustment.
+
+Mixed-feed tag slots sample two distinct positive tags without replacement;
+each draw is proportional to the remaining weights. Zero/disabled/banned tags
+are excluded. With fewer than two eligible tags, other available sources fill
+the feed; there is no single-tag substitute for a two-tag recommendation.
+
+Civitai's image query accepts a tag array but can implement OR matching. See the
+[image schema](https://github.com/civitai/civitai/blob/main/src/server/schema/image.schema.ts)
+and [image service](https://github.com/civitai/civitai/blob/main/src/server/services/image.service.ts).
+The bridge pages bounded candidate sets, resolves missing tag metadata, then
+requires every selected tag before returning a match. Pair buffers use a stable
+sorted tag-pair key, are checked again on emission, and cease to be selected when
+a member's weight reaches zero. Sparse intersections may need more paging;
+there is no relaxation to OR just to fill the screen.
+
+Each delivered item carries chosenBy for its actual feed context. Tag-selected
+items highlight the selecting tags in yellow; creator-selected items highlight
+the creator. This context is not part of shared per-image metadata, so viewing
+the same image from a collection does not inherit a recommendation highlight.
+
+Tapping a tag selects/deselects it in green without navigation. Selections belong
+to the current media viewer and survive weight updates. Any selection reveals a
+fixed bottom-left Search by tag button. This opens a tags:<sorted IDs>:<media type>
+feed that requires all selected tags, including explicitly selected zero-weight
+tags (manual search is independent of random recommendations). Back preserves
+the prior feed position. The selection clears when changing media; deselecting
+all tags removes the button. Image/video/all filters work on tag intersections.
+
+Your feed also has a live, case-insensitive name search above the list. It combines
+with the type filter and selected sort across weighted, unweighted and banned
+sections. Clearing the search restores the visible list without a network call.

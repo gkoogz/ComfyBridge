@@ -7,6 +7,7 @@ const CivitaiBrowser=(()=>{
  const details=new Map(),detailRequests=new Map(),imageRequests=new Map();
  const socialRevisions=new Map();let followRevision=0,banRevision=0;
  let lastActivity=0,lastActivitySaved=0,suspended=null,pendingCreator=null;
+ let personalTags={},personalTagsAt=0,personalTagAccount='';const pendingTagWeights=new Set(),lastTagAdjust=new Map();
  const emoji={Like:'👍',Heart:'❤️',Laugh:'😂',Cry:'😢'};
  const path=p=>'/'+String(p||'').replace(/^\//,'');
  const button=(label,attrs='')=>'<button '+attrs+'>'+label+'</button>';
@@ -115,7 +116,7 @@ const CivitaiBrowser=(()=>{
   reset();details.clear();muted={};account='';status=null;cacheScope=key;
   try{
    const data=JSON.parse(localStorage.getItem(key)||'null');if(!data?.account)return;
-   account=data.account;status=data.status;channel=data.channel;strip=(data.strip||[]).filter(i=>!isBanned(i));stripResume=true;muted=data.muted||{};
+   account=data.account;status=data.status;acceptTagWeights({...status,account});channel=data.channel;strip=(data.strip||[]).filter(i=>!isBanned(i));stripResume=true;muted=data.muted||{};
    feed=(data.feed||[]).filter(i=>!isMuted(i)&&!isBanned(i));for(const entry of data.details||[])if(entry[1]?.result?.item?.detailVersion===2)details.set(...entry);
   }catch{/* A damaged snapshot is replaced after the next successful fetch. */}
  }
@@ -184,6 +185,7 @@ const CivitaiBrowser=(()=>{
     // A read begun before a confirmed write must not put old social state back.
     for(const field of ['reactions','stats','collections','following'])if(field in item)result.item[field]=item[field];
    }
+   acceptTagWeights(result);
    details.delete(key);details.set(key,{result,at:Date.now()});
    while(details.size>100)details.delete(details.keys().next().value);
    updateItemSocial(item,result.item);return result;
@@ -281,7 +283,7 @@ const CivitaiBrowser=(()=>{
   if(account===s.account&&followTicket!==followRevision&&status?.followingIds){s.followingIds=status.followingIds;s.follows=status.follows;}
   if(account&&account!==s.account){reset();details.clear();detailQueue=[];muted={};close();$('#browseFeed')?.replaceChildren();$('#browseCarousel')?.replaceChildren();}
   if(account===s.account&&banTicket!==banRevision)s.bans=status?.bans||[];
-  account=s.account;status=s;$('#browseHello').textContent='Hello '+s.username;
+  account=s.account;status=s;acceptTagWeights(s);$('#browseHello').textContent='Hello '+s.username;
   muted=s.timeouts||muted;
   if(!channel||(channel!=='reactions'&&!s.collections.some(c=>'collection:'+c.id===channel)))channel=s.collections.length?'collection:'+s.collections[0].id:'reactions';
   if(view.kind==='mix'){feed=feed.filter(i=>!isMuted(i));$$('.browseTile').forEach(el=>{if(isMuted(el.browseItem||{}))el.remove();});}
@@ -420,12 +422,12 @@ const CivitaiBrowser=(()=>{
   $('#workspace').scrollTop=0;loadFeed();observeMore();
  }
  async function openPreferences(){
-  saveView();view={kind:'preferences',sort:'weight',filter:'both',items:[]};
+  saveView();view={kind:'preferences',sort:'weight',filter:'both',search:'',items:[]};
   try{Object.assign(view,JSON.parse(localStorage.getItem(scope()+':preferences:'+account)||'{}'));}catch{}
   $('#main').innerHTML='<section class="civitaiBrowse"><div class="subjectHeading">'+button('‹','class="browseBack" aria-label="Back"')+'<h2>Your feed</h2></div><div class="weightTools">'+
    '<details class="weightMenu"><summary aria-label="Sort feed preferences"><span id="weightSortLabel"></span>'+caretIcon(true)+'</summary><div class="browseMenu">'+button('Weight','data-weight-sort="weight"')+button('Alphabetical','data-weight-sort="alpha"')+'</div></details>'+
    '<details class="weightMenu"><summary aria-label="Filter feed preferences"><span id="weightFilterLabel"></span>'+caretIcon(true)+'</summary><div class="browseMenu">'+button('Both','data-weight-filter="both"')+button('Creators','data-weight-filter="creator"')+button('Tags','data-weight-filter="tag"')+'</div></details></div>'+
-   '<p class="preferenceError warning" role="status"></p><div class="weightColumns"><span>Tag/Creator</span><span>Weight</span><span>Vote</span><span>Unweight</span><span>Ban</span></div>'+
+   '<div class="weightSearchBox"><input id="weightSearch" type="search" autocomplete="off" placeholder="Search tags or creators…" aria-label="Search feed preferences"></div><p class="preferenceError warning" role="status"></p><div class="weightColumns"><span>Tag/Creator</span><span>Weight</span><span>Vote</span><span>Unweight</span><span>Ban</span></div>'+
    '<div id="weightActive"></div><section class="weightSection"><h3>Unweighted</h3><div id="weightDisabled"></div></section><section class="weightSection bannedSection"><h3>Ban</h3><div id="weightBanned"></div></section></section>';
   $('.browseBack').onclick=back;$('#workspace').scrollTop=0;
   for(const [attribute,key] of [['weight-sort','sort'],['weight-filter','filter']]){
@@ -433,6 +435,7 @@ const CivitaiBrowser=(()=>{
     try{localStorage.setItem(scope()+':preferences:'+account,JSON.stringify({sort:view.sort,filter:view.filter}));}catch{}
     paintPreferences();});
   }
+  $('#weightSearch').oninput=e=>{view.search=e.target.value;paintPreferences();};
   paintPreferences();
   try{await refreshPreferences();}catch(error){$('.preferenceError').textContent=error.message;}
  }
@@ -441,7 +444,7 @@ const CivitaiBrowser=(()=>{
   const result=await api('browse/preferences');
   if(ticket!==session||view.kind!=='preferences')return;
   if(result.account!==account){reset();render();return;}
-  view.items=result.items;status.bans=result.bans||result.items.filter(i=>i.banned).map(i=>({kind:i.kind,id:i.id,name:i.name}));
+  acceptTagWeights(result);view.items=result.items;status.bans=result.bans||result.items.filter(i=>i.banned).map(i=>({kind:i.kind,id:i.id,name:i.name}));
   pruneBanned();paintPreferences();
  }
  function paintPreferences(){
@@ -449,7 +452,7 @@ const CivitaiBrowser=(()=>{
   $('#weightSortLabel').textContent='Sort: '+(view.sort==='alpha'?'Alphabetical':'Weight');
   $('#weightFilterLabel').textContent='Show: '+({both:'Both',creator:'Creators',tag:'Tags'}[view.filter]||'Both');
   for(const id of ['weightActive','weightDisabled','weightBanned'])$('#'+id).replaceChildren();
-  const items=[...(view.items||[])].filter(i=>view.filter==='both'||i.kind===view.filter).sort((a,b)=>
+  const items=[...(view.items||[])].filter(i=>(view.filter==='both'||i.kind===view.filter)&&i.name.toLocaleLowerCase().includes((view.search||'').trim().toLocaleLowerCase())).sort((a,b)=>
    (view.sort==='alpha'?0:b.weight-a.weight)||a.name.localeCompare(b.name,undefined,{sensitivity:'base',numeric:true})||a.kind.localeCompare(b.kind));
   for(const item of items){
    const row=document.createElement('div');
@@ -597,7 +600,7 @@ const CivitaiBrowser=(()=>{
  }
  function socialHTML(item,collections){
   const followed=following(item);
-  return '<div class="civitaiAuthor">'+(item.avatarPath?'<img src="'+esc(path(item.avatarPath))+'" alt="">':'<span class="avatarPlaceholder">'+esc((item.credit||'?')[0])+'</span>')+button(esc(item.credit||'Unknown creator'),'class="creatorName" data-civi-link="https://civitai.red/user/'+esc(encodeURIComponent(item.credit||''))+'"')+(item.creatorId?button('Feed','data-creator-feed class="creatorFeed"'):'')+button('↗','data-creator-profile class="creatorProfile" aria-label="Open creator profile"')+'</div><div class="civitaiReactions">'+Object.entries(emoji).map(([key,value])=>button(reactionLabel(item,key),'data-civi-react="'+key+'" aria-label="'+key+'" aria-pressed="'+(item.reactions||[]).includes(key)+'" class="'+((item.reactions||[]).includes(key)?'selected':'')+'"')).join('')+button(ribbonIcon,'class="viewerCollect '+(membershipIds(item.collections).length?'bookmarked':'')+'" aria-label="Add to collection"')+'</div><p class="civitaiActionError warning" role="status"></p>';
+  return '<div class="civitaiAuthor">'+(item.avatarPath?'<img src="'+esc(path(item.avatarPath))+'" alt="">':'<span class="avatarPlaceholder">'+esc((item.credit||'?')[0])+'</span>')+button(esc(item.credit||'Unknown creator'),'class="creatorName '+(item.chosenBy?.kind==='creator'&&String(item.chosenBy.id)===String(item.creatorId)?'chosenSource':'')+'" data-civi-link="https://civitai.red/user/'+esc(encodeURIComponent(item.credit||''))+'"')+(item.creatorId?button('Feed','data-creator-feed class="creatorFeed"'):'')+button('↗','data-creator-profile class="creatorProfile" aria-label="Open creator profile"')+'</div><div class="civitaiReactions">'+Object.entries(emoji).map(([key,value])=>button(reactionLabel(item,key),'data-civi-react="'+key+'" aria-label="'+key+'" aria-pressed="'+(item.reactions||[]).includes(key)+'" class="'+((item.reactions||[]).includes(key)?'selected':'')+'"')).join('')+button(ribbonIcon,'class="viewerCollect '+(membershipIds(item.collections).length?'bookmarked':'')+'" aria-label="Add to collection"')+'</div><p class="civitaiActionError warning" role="status"></p>';
 
  }
  function membershipIds(raw){
@@ -607,10 +610,10 @@ const CivitaiBrowser=(()=>{
  }
  function showCreatorFeed(item){
   close();if($('#modal')?.open)closeModal();
-  if(page==='browse')openSubject('creator',item.creatorId,item.credit);
+  if(page==='browse')openSubject(item.subjectKind||'creator',item.creatorId,item.credit);
   else {pendingCreator=item;navigate('browse');}
  }
- function openPendingCreator(){if(pendingCreator){const item=pendingCreator;pendingCreator=null;openSubject('creator',item.creatorId,item.credit);}}
+ function openPendingCreator(){if(pendingCreator){const item=pendingCreator;pendingCreator=null;openSubject(item.subjectKind||'creator',item.creatorId,item.credit);}}
  function wireSocial(host,item,collections){
   hydrate(host);$$('[data-civi-link]',host).forEach(b=>b.onclick=()=>openModelSource(b.dataset.civiLink));
   $('[data-creator-feed]',host)?.addEventListener('click',()=>showCreatorFeed(item));
@@ -622,8 +625,52 @@ const CivitaiBrowser=(()=>{
   $('.viewerCollect',host).onclick=()=>showCollections(item,boundAccount);
 
  }
- function tagHTML(tags){return '<div class="civitaiTags">'+tags.map(t=>'<div class="civitaiTag"><span>'+esc(t.name)+'</span><small>'+esc(t.score??'')+'</small>'+button(caretIcon(false),'class="'+(t.vote===1?'selected':'')+'" data-vote="1" data-tag="'+t.id+'" aria-label="Upvote '+esc(t.name)+'"')+button(caretIcon(true),'class="'+(t.vote===-1?'selected':'')+'" data-vote="-1" data-tag="'+t.id+'" aria-label="Downvote '+esc(t.name)+'"')+'</div>').join('')+'</div>';}
- function wireTags(host,item){const boundAccount=account;$$('[data-vote]',host).forEach(b=>b.onclick=async()=>{b.disabled=true;try{const was=b.classList.contains('selected');await action({account:boundAccount,kind:'vote',imageId:item.id,tagId:b.dataset.tag,vote:b.classList.contains('selected')?0:Number(b.dataset.vote)});$$('[data-tag="'+b.dataset.tag+'"]',host).forEach(x=>x.classList.toggle('selected',x===b&&!was));}catch(e){toast(e.message);}finally{b.disabled=false;}});}
+ function tagWeight(tag){return personalTagAccount===account&&personalTagsAt?Number(personalTags[String(tag.id)]||0):Number(tag.weight||0);}
+ function acceptTagWeights(data){
+  if(!data.tagWeights||!data.account)return;
+  if(personalTagAccount!==data.account){personalTagAccount=data.account;personalTagsAt=0;personalTags={};lastTagAdjust.clear();}
+  if(Number(data.tagWeightsAt||0)>=personalTagsAt){personalTags=data.tagWeights;personalTagsAt=Number(data.tagWeightsAt)||Date.now()/1000;}
+  if(status){status.tagWeights=personalTags;status.tagWeightsAt=personalTagsAt;}
+  for(const item of allItems())for(const tag of item.tags||[])tag.weight=tagWeight(tag);
+  $$('.civitaiTagHost').forEach(host=>{if(host.tagItem)paintTags(host,host.tagItem);});
+  saveSnapshot();
+  try{const saved=JSON.parse(localStorage.getItem(scope())||'null');if(saved?.account===data.account){saved.status.tagWeights=personalTags;saved.status.tagWeightsAt=personalTagsAt;localStorage.setItem(scope(),JSON.stringify(saved));}}catch{}
+ }
+ function tagHTML(item,selected=new Set()){
+  const chosen=item.chosenBy?.kind==='tags'?item.chosenBy.ids.map(String):[];
+  return '<div class="civitaiTags">'+[...(item.tags||[])].sort((a,b)=>tagWeight(b)-tagWeight(a)||a.name.localeCompare(b.name)).map(t=>{
+   const weight=tagWeight(t),id=String(t.id),banned=(status?.bans||[]).some(r=>r.kind==='tag'&&String(r.id)===id),busy=pendingTagWeights.has(account+':'+id);
+   return '<div class="civitaiTag '+(chosen.includes(id)?'chosenSource':'')+(selected.has(id)?' selectedTag':'')+'" data-weight-tag="'+esc(id)+'">'+
+    button(esc(t.name),'class="tagSearch" data-tag-search="'+esc(id)+'" aria-pressed="'+selected.has(id)+'" aria-label="Select tag '+esc(t.name)+'"')+'<small class="personalTagWeight" title="Your weight">'+weight+'</small>'+
+    button(caretIcon(false),'class="'+(lastTagAdjust.get(id)===5?'selected':'')+'" data-vote="5" data-tag="'+esc(id)+'" aria-label="Add 5 weight to '+esc(t.name)+'" '+(busy||banned?'disabled':''))+
+    button(caretIcon(true),'class="'+(lastTagAdjust.get(id)===-5?'selected':'')+'" data-vote="-5" data-tag="'+esc(id)+'" aria-label="Subtract 5 weight from '+esc(t.name)+'" '+(busy||banned||weight<=0?'disabled':''))+'</div>';
+  }).join('')+'</div>';
+ }
+ function paintTags(host,item){
+  if(host.tagItem?.id!==item.id)host.tagSelection=new Set();
+  host.tagItem=item;host.tagSelection??=new Set();
+  const ids=new Set((item.tags||[]).map(t=>String(t.id)));for(const id of host.tagSelection)if(!ids.has(id))host.tagSelection.delete(id);
+  host.classList.toggle('hasTagSelection',host.tagSelection.size>0);
+  host.innerHTML='<h2>Tags · your weights</h2>'+tagHTML(item,host.tagSelection)+(host.tagSelection.size?button('Search by tag','class="tagSearchSubmit" aria-label="Search by selected tags"'):'');
+  wireTags(host,item);
+ }
+ function wireTags(host,item){
+  const boundAccount=account;
+  $$('[data-tag-search]',host).forEach(b=>b.onclick=()=>{const id=b.dataset.tagSearch;host.tagSelection.has(id)?host.tagSelection.delete(id):host.tagSelection.add(id);paintTags(host,item);});
+  $('.tagSearchSubmit',host)?.addEventListener('click',()=>{
+   const tags=item.tags.filter(t=>host.tagSelection.has(String(t.id))).sort((a,b)=>Number(a.id)-Number(b.id));
+   if(tags.length)showCreatorFeed({subjectKind:'tags',creatorId:tags.map(t=>t.id).join(','),credit:tags.map(t=>t.name).join(' + ')});
+  });
+  $$('[data-vote]',host).forEach(b=>b.onclick=async()=>{
+   const key=boundAccount+':'+b.dataset.tag,delta=Number(b.dataset.vote);if(pendingTagWeights.has(key))return;
+   pendingTagWeights.add(key);paintTags(host,item);
+   try{
+    const result=await action({account:boundAccount,kind:'tag-weight',imageId:item.id,tagId:b.dataset.tag,delta});
+    if(account!==boundAccount)return;
+    acceptTagWeights({account:boundAccount,...result});lastTagAdjust.set(b.dataset.tag,delta);
+   }catch(e){toast(e.message);}finally{pendingTagWeights.delete(key);if(account===boundAccount&&host.isConnected)paintTags(host,item);}
+  });
+ }
  async function enrich(host,image){
   if(!image.id)return;
   let target=$('.civitaiSocial',host);
@@ -631,13 +678,13 @@ const CivitaiBrowser=(()=>{
   target.innerHTML=socialHTML(image,status?.collections||[]);wireSocial(target,image,status?.collections||[]);
   try{
    const result=await fetchDetail(image);if(!target.isConnected)return;
-   account=result.account;const item=result.item;Object.assign(image,item);
+   account=result.account;Object.assign(image,result.item);const item=image;
    const prompts=$('.civitaiPromptBlocks',host);if(prompts){prompts.outerHTML=promptHTML(item);wirePromptCopies(host,item);}
    target.innerHTML=socialHTML(item,result.collections);wireSocial(target,item,result.collections);
    const parameters=$('.modelPreviewParameters',host);if(parameters)parameters.innerHTML=Object.entries(item.parameters||{}).map(([k,val])=>'<dt>'+esc(k)+'</dt><dd>'+esc(val)+'</dd>').join('');
    const resourceHost=$('.civitaiResourceHost',host);if(resourceHost){resourceHost.innerHTML=resourcesHTML(item.resources);wireResources(resourceHost);}
    let tags=$('.civitaiTagHost',host);if(!tags){tags=document.createElement('section');tags.className='civitaiTagHost';$('.modelPreviewDetails',host)?.append(tags);}
-   tags.innerHTML='<h2>Tags</h2>'+tagHTML(item.tags||[]);wireTags(tags,item);
+   paintTags(tags,item);
   }catch(e){if(target.isConnected)$('.civitaiActionError',target).textContent=e.message;}
  }
  function peek(host){host.addEventListener('scroll',()=>host.classList.toggle('pastPeek',host.scrollTop>20),{passive:true});}

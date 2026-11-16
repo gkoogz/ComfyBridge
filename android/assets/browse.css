@@ -168,3 +168,15 @@ body[data-page=browse] #workspace{overscroll-behavior-y:contain}
 .bannedSection h3{color:#ff7b83}
 #weightDisabled:not(:empty){margin-top:0;border-top:0}
 .weightEmpty{font-size:12px;color:var(--muted);margin:10px 8px}
+.civitaiTag .tagSearch{width:auto;height:auto;min-height:32px;min-width:0;border:0;background:none;text-align:left;padding:0 3px;color:inherit;font:inherit}
+.civitaiTag .personalTagWeight{min-width:18px;text-align:center;font-variant-numeric:tabular-nums}
+.civitaiTag button[data-vote="-5"].selected{color:#ff777d;border-color:#ff777d;background:#44262c}
+.civitaiTag.chosenSource,.civitaiAuthor .creatorName.chosenSource{color:#ffdb73;border:1px solid #b89a3d;background:#4b3d183d;border-radius:7px}
+.civitaiAuthor .creatorName.chosenSource{padding:5px 8px}
+.civitaiTag.chosenSource .personalTagWeight{color:#ffdb73}
+.civitaiTag.selectedTag{color:var(--mint);border-color:var(--mint);background:#1d3b31}
+.civitaiTag.selectedTag .personalTagWeight{color:var(--mint)}
+.tagSearchSubmit{position:fixed;left:12px;bottom:calc(12px + env(safe-area-inset-bottom,0px));z-index:210;background:var(--mint);color:#10231d;border:1px solid var(--mint);border-radius:12px;min-height:44px;padding:10px 16px;box-shadow:0 3px 18px #0007;font-weight:650}
+.civitaiTagHost.hasTagSelection{padding-bottom:60px}
+.weightSearchBox{padding:0 8px 8px}
+#weightSearch{width:100%;min-height:40px;padding:9px 12px;font-size:14px}

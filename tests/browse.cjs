@@ -17,6 +17,7 @@ const assert=require('node:assert/strict'),path=require('node:path');
     if(route==='browse/status')return {account:'1',username:'Potter',collections:[{id:4,name:'Ceramics',count:12,bookmark:true}],learned:14,follows:3,importState:{complete:true}};
     if(route.startsWith('browse/feed'))return {account:'1',items:Array.from({length:6},(_,i)=>({...item,id:String(i+1)})),nextCursor:null};
     if(route.startsWith('browse/detail')){const snapshot=structuredClone({...item,id:route.split('/').pop()});if(window.delayDetail&&snapshot.id==='1'){window.delayDetail=false;await new Promise(resolve=>window.releaseDetail=resolve);}return {account:'1',item:snapshot,collections:[{id:4,name:'Ceramics',count:12,bookmark:true}]};}
+    if(route==='browse/action'&&body.kind==='tag-weight')return {ok:true,tagWeights:{12:5},tagWeightsAt:Date.now()/1000};
     if(route==='browse/action'&&body.kind==='reaction')return {ok:true,reactions:body.selected?['Like','Heart']:['Like']};
     if(route==='browse/action')return {ok:true,selected:body.selected,reactions:['Like','Heart'],vote:body.vote,collections:[{id:4,name:'Ceramics',count:12},{id:5,name:'New',count:0}]};
     if(route==='lora-download/status')return {'12':{status:'installed'}};
@@ -110,7 +111,7 @@ const assert=require('node:assert/strict'),path=require('node:path');
   assert.equal(await p.evaluate(()=>window.copied),'blurry');
   assert.equal(await p.locator('.civitaiResourceHost .resourceType').first().textContent(),'Checkpoint');
   assert.equal(await p.locator('.civitaiViewerHead strong').count(),0);
-  await p.locator('[data-vote="1"]').click();assert(await p.locator('[data-vote="1"]').evaluate(el=>el.classList.contains('selected')));
+  await p.locator('[data-vote="5"]').click();assert(await p.locator('[data-vote="5"]').evaluate(el=>el.classList.contains('selected')));
   const action=await p.evaluate(()=>calls.find(c=>c.body?.kind==='reaction'));assert.equal(action.body.account,'1');assert.match(action.body.requestId,/^[a-f0-9-]{36}$/);
   await p.locator('.civitaiViewerScroll').evaluate(el=>el.scrollTop=0);
   await p.waitForTimeout(50);

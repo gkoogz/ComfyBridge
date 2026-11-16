@@ -46,7 +46,7 @@ class Browser:
         self.models, self.gallery, self.transport = models, gallery, transport
         self.lock = threading.RLock()
         self.network = threading.Lock()
-        self.action_lock = threading.Lock()
+        self.action_lock = threading.RLock()
         self.media_lock = threading.Lock()
         self.identity = None
         self.leases = {}
@@ -282,13 +282,31 @@ class Browser:
                 self.images(me['id'], token, {'userId':int(row['id']), 'sort':'Newest'}, 1, meta=False)
             except ValueError:
                 break
-        return dict(account=me['id'], items=self.preference_rows(me['id']), bans=self.bans(me['id']))
+        return dict(account=me['id'], items=self.preference_rows(me['id']), bans=self.bans(me['id']),**self.tag_weight_snapshot(me['id']))
 
     def weights(self, account):
         rows = self.preference_rows(account)
         return dict(creators={r['id']:r['weight'] for r in rows if r['kind']=='creator' and not r['disabled'] and r['weight']>0},
                     tags={r['id']:r['weight'] for r in rows if r['kind']=='tag' and not r['disabled'] and r['weight']>0},
                     names={r['id']:r['name'] for r in rows if r['kind']=='tag'})
+
+    def tag_weight_snapshot(self, account):
+        with self.action_lock:
+            stamp=time.time()
+            return dict(tagWeightsAt=stamp,tagWeights={r['id']:r['weight'] for r in self.preference_rows(account) if r['kind']=='tag'})
+
+    @staticmethod
+    def roll_tag_pair(weights, rng=random):
+        candidates={str(k):v for k,v in weights.items() if v>0}
+        if len(candidates)<2:return []
+        first=rng.choices(list(candidates),weights=list(candidates.values()))[0]
+        candidates.pop(first)
+        second=rng.choices(list(candidates),weights=list(candidates.values()))[0]
+        return sorted([first,second],key=int)
+
+    @staticmethod
+    def matches_tags(item, tags):
+        return set(map(str,tags)).issubset({str(t['id']) for t in item.get('tags',[])})
 
     def status(self, active=True, cursors=None, activity_age=7200):
         me, token = self.account(); account=me['id']
@@ -323,7 +341,7 @@ class Browser:
             count = db.execute('SELECT COUNT(DISTINCT image) FROM observations WHERE account=?', (account,)).fetchone()[0]
         return dict(account=account, username=me['username'], profile=self.user_url(me['username']), collections=collections,
                     followingIds=[str(x) for x in self.setting(account,'follows',[])],
-                    timeouts=self.timeouts(account), bans=self.bans(account), importState=state, learned=count, follows=len(self.setting(account, 'follows', [])))
+                    timeouts=self.timeouts(account), bans=self.bans(account), importState=state, learned=count, follows=len(self.setting(account, 'follows', [])),**self.tag_weight_snapshot(account))
 
     def import_loop(self, account, token):
         try:
@@ -393,10 +411,11 @@ class Browser:
             muted=self.timeouts(account) if channel=='mix' else {}
             weights['creators']={k:v for k,v in weights['creators'].items() if k not in muted}
             follows=[uid for uid in self.setting(account,'follows',[]) if str(uid) in weights['creators']]
-            rich=bool(follows or weights['creators'] or weights['tags'])
+            rich=bool(follows or weights['creators'] or len(weights['tags'])>=2)
             following={str(x) for x in self.setting(account,'follows',[])}
             for attempt in range(36 if channel=='mix' else (12 if recovered else 2)):
                 if len(out)>=12:break
+                chosen={};required_tags=[]
                 if channel=='mix':
                     # Relationship sources dominate. LoRA samples occupy only one in
                     # ten slots once preferences exist, or fill empty source pages.
@@ -407,18 +426,28 @@ class Browser:
                     elif slot in (0,2,4,6) and follows:
                         uid=random.choices(follows, weights=[weights['creators'][str(u)] for u in follows])[0]
                         key='creator:'+str(uid);filters={'userId':int(uid),'sort':'Newest'};reason='Creators you follow'
-                    elif (slot in (1,3,5) or not weights['tags']) and weights['creators']:
+                        chosen=dict(kind='creator',id=str(uid))
+                    elif (slot in (1,3,5) or len(weights['tags'])<2) and weights['creators']:
                         uid=random.choices(list(weights['creators']),weights=list(weights['creators'].values()))[0]
                         key='creator:'+uid;filters={'userId':int(uid),'sort':'Newest'};reason='A creator you enjoy'
-                    elif weights['tags']:
-                        tag=random.choices(list(weights['tags']),weights=list(weights['tags'].values()))[0]
-                        key='tag:'+tag;filters={'tags':[int(tag)],'sort':'Newest'};reason='Because you enjoy '+weights['names'][tag]
+                        chosen=dict(kind='creator',id=str(uid))
+                    elif len(weights['tags'])>=2:
+                        required_tags=self.roll_tag_pair(weights['tags'])
+                        key='tags:'+','.join(required_tags);filters={'tags':list(map(int,required_tags)),'sort':'Newest'}
+                        reason='Because you enjoy '+' + '.join(weights['names'][t] for t in required_tags)
+                        chosen=dict(kind='tags',ids=required_tags)
                     else:key='discover';filters={'sort':'Newest'};reason='Discover something new'
-                elif channel.startswith(('creator:', 'tag:')):
+                elif channel.startswith(('creator:', 'tag:', 'tags:')):
                     parts=channel.split(':')
                     if len(parts)!=3 or parts[2] not in ('all','image','video'):raise ValueError('Invalid feed filter')
-                    subject=ident(parts[1]);key=channel;reason=''
-                    filters={'sort':'Newest', **({'userId':subject} if parts[0]=='creator' else {'tags':[subject]})}
+                    key=channel;reason=''
+                    if parts[0]=='creator':
+                        subject=ident(parts[1]);filters={'sort':'Newest','userId':subject};chosen=dict(kind='creator',id=str(subject))
+                    else:
+                        ids=parts[1].split(',')
+                        if not ids or len(ids)>100:raise ValueError('Choose between 1 and 100 tags.')
+                        required_tags=sorted({str(ident(t)) for t in ids},key=int)
+                        filters={'sort':'Newest','tags':list(map(int,required_tags))};chosen=dict(kind='tags',ids=required_tags)
                     if parts[2]!='all':filters['types']=[parts[2]]
                 elif channel=='reactions':key=channel;filters={'reactions':list(REACTIONS),'sort':'Newest'};reason='Your reactions'
                 elif channel.startswith('collection:'):
@@ -446,7 +475,15 @@ class Browser:
                 source=state['sources'][key]
                 if not source['items'] and not source['done']:
                     if source['cursor'] is not None:filters['cursor']=source['cursor']
-                    items,nxt=self.images(account,token,filters,12)
+                    items,nxt=self.images(account,token,filters,48 if len(required_tags)>=2 else 12)
+                    # Civitai can treat a multi-tag filter as OR. Require the full
+                    # intersection here, including resumed buffers below.
+                    if required_tags:
+                        for candidate in items:
+                            if not candidate.get('tagsKnown'):
+                                candidate['tags']=self.call(token,'tag.getVotableTags',{'type':'image','id':int(candidate['id'])})
+                                candidate['tagsKnown']=True
+                        items=[candidate for candidate in items if self.matches_tags(candidate,required_tags)]
                     source.update(items=items,cursor=nxt,started=True,done=nxt is None)
                 take=1 if channel=='mix' else 12
                 before=len(out)
@@ -455,6 +492,7 @@ class Browser:
                     item=source['items'].pop(0)
                     if self.is_muted(item,muted):continue
                     if item['id'] in state['seen']:continue
+                    if required_tags and not self.matches_tags(item,required_tags):continue
                     if self.is_banned(item,bans):continue
                     if any(b['kind']=='tag' for b in bans) and not item.get('tagsKnown'):
                         # Cached LoRA examples and old persisted cursors can lack tags.
@@ -462,7 +500,7 @@ class Browser:
                         item['tags']=self.call(token,'tag.getVotableTags',{'type':'image','id':int(item['id'])})
                         item['tagsKnown']=True
                         if self.is_banned(item,bans):continue
-                    public=dict(self.public(item),reason=reason,following=str(item.get('creatorId')) in following)
+                    public=dict(self.public(item),reason=reason,chosenBy=chosen,following=str(item.get('creatorId')) in following)
                     if channel.startswith('collection:'):public['collections']=[{'collectionId':int(channel.split(':')[1])}]
                     state['seen'].append(item['id']);out.append(public)
                 state['empty']=state.get('empty',0)+1 if len(out)==before else 0
@@ -530,7 +568,11 @@ class Browser:
         memberships=self.call(token,'collection.getUserCollectionItemsByItem',{'imageId':int(image_id)})
         item['collections']=memberships
         with self.db() as db:db.execute('UPDATE media SET payload=? WHERE account=? AND id=?',(json.dumps(item),account,image_id))
-        return dict(account=account,item=self.public(item),collections=self.collections(account,token))
+        snapshot=self.tag_weight_snapshot(account)
+        public=self.public(item)
+        public['tags']=[dict(id=t['id'],name=t.get('name',''),weight=snapshot['tagWeights'].get(str(t['id']),0)) for t in item['tags']]
+        public['tags'].sort(key=lambda t:(-t['weight'],t['name'].casefold()))
+        return dict(account=account,item=public,collections=self.collections(account,token),**snapshot)
 
     def action(self, payload):
         me,token=self.account();account=me['id']
@@ -623,14 +665,25 @@ class Browser:
                     self.observe(account,'collection:'+str(cid),item,1 if desired else 0,str(time.time()))
                     self.save(account,'collections',{})
                     result=dict(ok=True,selected=desired)
-                elif kind=='vote':
-                    tid=ident(payload.get('tagId'));vote=payload.get('vote')
-                    if type(vote) is not int or vote not in (-1,0,1):raise ValueError('Invalid vote')
+                elif kind in ('tag-weight','vote'):
+                    tid=ident(payload.get('tagId'))
+                    delta=payload.get('delta') if kind=='tag-weight' else (payload.get('vote')*5 if type(payload.get('vote')) is int else None)
+                    if type(delta) is not int or delta not in (-5,5):raise ValueError('Choose +5 or -5 for your tag weight.')
                     tags=item.get('tags',[]);tag=next((t for t in tags if int(t['id'])==tid),None)
-                    if not tag:raise ValueError('Refresh the tags before voting.')
-                    self.call(token,'tag.addTagVotes',{'type':'image','id':iid,'tags':[tid],'vote':vote},True)
-                    self.observe(account,'vote:'+str(tid),dict(id=str(iid),tags=[tag]),vote,str(time.time()))
-                    result=dict(ok=True,vote=vote)
+                    if not tag:raise ValueError('Refresh the tags before adjusting their weight.')
+                    row=next((r for r in self.preference_rows(account) if r['kind']=='tag' and r['id']==str(tid)),dict(base=0,weight=0,banned=False))
+                    if row['banned']:raise ValueError('Unban this tag in Your feed before changing its weight.')
+                    overrides=self.setting(account,'weight-overrides',{});key='tag:'+str(tid)
+                    change=overrides.get(key,{})
+                    weight=max(0,row['weight']+delta)
+                    change.update(name=tag['name'],offset=weight-row['base'],disabled=weight==0)
+                    overrides[key]=change
+                    snapshot=self.tag_weight_snapshot(account);snapshot['tagWeights'][str(tid)]=weight
+                    result=dict(ok=True,tagId=str(tid),weight=weight,**snapshot)
+                    with self.db() as db:
+                        db.execute('INSERT OR REPLACE INTO settings VALUES(?,?,?)',(account,'weight-overrides',json.dumps(overrides)))
+                        db.execute('UPDATE actions SET state=?,result=? WHERE account=? AND id=?',('done',json.dumps(result),account,request_id))
+                    return result
                 else:raise ValueError('Unknown Civitai action')
             with self.db() as db:
                 db.execute('UPDATE actions SET state=?,result=? WHERE account=? AND id=?',('done',json.dumps(result),account,request_id))
