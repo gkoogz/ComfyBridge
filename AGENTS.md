@@ -30,6 +30,7 @@
 | Inputs, reproducible recipes and ancestry | `bridge/recipes.py`, `provenance.py`, `extension.py` |
 | Live result selection, previews and completed playback | `android/assets/live-image.js`, `app.js`, `gallery.js`, `gallery.css` |
 | Model listing catalogue and sample galleries | `bridge/model_library.py`, `model_gallery.py`, `model_downloads.py`; `android/assets/model-browser.js`, `model-cache.js` and CSS |
+| Civitai browser, account preferences and social actions | `bridge/civitai_browser.py`; `android/assets/browse.js`, `browse.css`; `docs/civitai-browser.md` |
 | Build/install | `Build.ps1`, `bridge/Install.ps1`, `bridge/WebView2.ps1` |
 | Verification | `bridge/test_*.py`, `tests/`; historical evidence in `docs/BETA-TESTING.md` |
 
@@ -103,6 +104,7 @@ and the existing ComfyUI Python environment. No Gradle or Electron is used.
 node tests/android-assets.cjs
 # Set PLAYWRIGHT_MODULE to an available Playwright installation if needed:
 node tests/desktop.cjs
+node tests/browse.cjs
 node tests/model-browser.cjs
 node tests/lora-controls.cjs
 node tests/lora-library.cjs

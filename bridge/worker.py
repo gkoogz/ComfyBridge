@@ -21,6 +21,7 @@ import recipes
 import provenance
 import gpu_handoff as gpu
 from model_gallery import Gallery
+from civitai_browser import Browser as CivitaiBrowser
 from model_downloads import Downloads as ModelDownloads
 from model_library import Library as ModelLibrary
 from handoff import adopt
@@ -87,6 +88,7 @@ CATALOG_VIDEO_ON_DISK = None
 CATALOG_LOCK = asyncio.Lock()
 MODELS = ModelLibrary(ROOT, DATA)
 MODEL_GALLERY = Gallery(MODELS)
+CIVITAI_BROWSER = CivitaiBrowser(DATA, MODELS, MODEL_GALLERY)
 MODEL_DOWNLOADS = ModelDownloads(MODELS)
 STOPPING = set()
 CANCEL_STARTED = {}
@@ -787,6 +789,18 @@ async def api(request):
         return web.json_response(await asyncio.to_thread(MODEL_DOWNLOADS.start,(await request.json()).get('confirmation')))
     if path == 'model-library':
         return web.json_response(MODELS.snapshot())
+    if path == 'browse/status' and request.method == 'GET':
+        return web.json_response(await asyncio.to_thread(CIVITAI_BROWSER.status))
+    if path == 'browse/feed' and request.method == 'GET':
+        return web.json_response(await asyncio.to_thread(CIVITAI_BROWSER.feed, dict(request.query)))
+    if path.startswith('browse/detail/') and request.method == 'GET':
+        return web.json_response(await asyncio.to_thread(CIVITAI_BROWSER.detail, path.split('/')[-1]))
+    if path == 'browse/action' and request.method == 'POST':
+        return web.json_response(await asyncio.to_thread(CIVITAI_BROWSER.action, await request.json()))
+    if path.startswith('model-preview/browse/') and request.method == 'GET':
+        _, _, account, image_id, size = path.split('/')
+        file = await asyncio.to_thread(CIVITAI_BROWSER.media_file, account, image_id, size)
+        return web.FileResponse(file, headers={'Cache-Control':'private, max-age=86400'})
     if path.startswith('model-gallery/'):
         identity=path.split('/',1)[1]
         return web.json_response(await asyncio.to_thread(MODEL_GALLERY.page,identity,request.query.get('cursor','')))
@@ -854,7 +868,7 @@ async def api(request):
                     j['etaSeconds']=None
                 else:
                     j['progress'],j['current_node']=TRACKER.sample()
-        return web.json_response(dict(protocol=20,build='0.1.0-beta.74',jobs=jobs, active=ACTIVE, preview=bool(PREVIEW), previewRevision=PREVIEW_REV,ownedComfy=bool(OWNED),queueEtaSeconds=total_eta))
+        return web.json_response(dict(protocol=20,build='0.1.0-beta.75',jobs=jobs, active=ACTIVE, preview=bool(PREVIEW), previewRevision=PREVIEW_REV,ownedComfy=bool(OWNED),queueEtaSeconds=total_eta))
     if path.startswith('preview/'):
         job=str(uuid.UUID(path[8:]))
         after=int(request.query.get('after','-1'))

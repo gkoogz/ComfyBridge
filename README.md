@@ -1,6 +1,6 @@
 # ComfyBridge
 
-**[Open the beta 74 release page](https://github.com/gkoogz/ComfyBridge/releases/tag/v0.1.0-beta.74)** · [Download the Android APK](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.74/ComfyBridge-0.1.0-beta.74.apk) · [Download Windows](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.74/ComfyBridge-Windows-0.1.0-beta.74.zip) · [All releases](https://github.com/gkoogz/ComfyBridge/releases)
+**[Open the beta 75 release page](https://github.com/gkoogz/ComfyBridge/releases/tag/v0.1.0-beta.75)** · [Download the Android APK](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.75/ComfyBridge-0.1.0-beta.75.apk) · [Download Windows](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.75/ComfyBridge-Windows-0.1.0-beta.75.zip) · [All releases](https://github.com/gkoogz/ComfyBridge/releases)
 
 <img src="artwork/comfybridge.png" width="128" alt="ComfyBridge white cube and play icon on black">
 
@@ -9,6 +9,8 @@ An Android remote for an existing Windows ComfyUI installation. The phone edits 
 **Local project:** this PC's canonical checkout is `E:\ComfyBridge`. Source, builds, installed app data, local LLMs and archived work are consolidated there. See [the local folder map](docs/local-layout.md) for private-data exclusions, compatibility links and external ComfyUI dependencies. Run `Start-ComfyBridge.ps1` to open the installed PC panel.
 
 **Working on the project:** agents and contributors should start with [AGENTS.md](AGENTS.md) for the code map, build/test commands, live queue preservation and delivery instructions.
+
+**Beta 75** fills Browse with your Civitai collections, reacted media and a personalized feed. Connect through the API key in the Windows gear. Existing reactions and owned media collections build creator/tag preferences progressively; followed creators and those preferences dominate, with local LoRA examples used mainly as filler. Media details include creator/follow, reactions, bookmarks/collections, resource links/downloads and tag voting. [Browser behavior, account isolation and API limitations](docs/civitai-browser.md)
 
 **Beta 69** keeps Eros Max Beta 7 selected when attaching or inheriting a Stable Character reference. Select Eros Max or stock Ref2VA under Canvas & model. Update both Android and Windows to use Eros with a character reference. [Setup and behavior](docs/character-reference.md)
 
@@ -48,7 +50,7 @@ Run **Setup-Chat.ps1** in the Windows package once to install the pinned llama.c
 
 Chat starts its model process only for a message and releases it after the reply. Sending a message during a supported H3/Eros Euler video requests a checkpoint at the next sampling boundary. The bridge holds the remaining queue, saves the unfinished packed audio/video latent, cooperatively unloads Comfy models and execution caches, verifies VRAM release, and lets chat use the GPU. After the chat process exits, video reloads its unchanged workflow and continues at the saved step. Images, unsupported samplers and videos started before this update finish before handing off. A large video step can take minutes: pausing is not instant and does not recover an already-stuck step. New generations can join the held queue without interrupting chat. A loopback-only server with an ephemeral access key serves inference; phone requests use the existing encrypted, authenticated bridge. Prompts and replies are not sent to a cloud model. The latest conversation turns are used within the model's context budget; older turns remain visible in the active chat.
 
-**0.1.0-beta.74 is a personal-workflow beta**, adapted specifically to `Image gen.json` and `Video gen.json` in `E:\ComfyUI-Zluda\user\default\workflows`. It is not a general ComfyUI workflow importer. Models, LoRAs, workflow files, prompts, generated media, pairing credentials, and signing keys are not included in this repository or release. Beta 37 requires the updated Windows companion for local chat. Existing generation queues survive the tray update.
+**0.1.0-beta.75 is a personal-workflow beta**, adapted specifically to `Image gen.json` and `Video gen.json` in `E:\ComfyUI-Zluda\user\default\workflows`. It is not a general ComfyUI workflow importer. Models, LoRAs, workflow files, prompts, generated media, pairing credentials, and signing keys are not included in this repository or release. Beta 37 requires the updated Windows companion for local chat. Existing generation queues survive the tray update.
 
 The phone shows **PC connected** as soon as the bridge answers. Loading models and unavailable telemetry have their own messages. If the server or VPN drops, leave the phone app open: it retries automatically using the saved pairing. **Disconnect** or **Cancel reconnect** stops those retries.
 
@@ -56,7 +58,7 @@ After a Windows update, the previous worker can finish its jobs and continue ser
 
 Generator progress bars show an approximate time remaining for the current job. The elapsed-time line also shows the total queue ETA. Estimates use completed jobs on this PC and live sampler timing, and show “estimating” when timing is unavailable. The sidebar offers Skip, Stop batch and Stop all. Stop all cancels current ComfyBridge batches from both paired phones.
 
-In Beta 70, the Android sidebar opens with connection controls at the top and a vertical list of Browse, Image, Video, Library and Notepad at the bottom. Telemetry, backups, notifications and the queue are in the scrollable area between them. The sidebar and Windows tray show the installed app version. Browse is reserved for a future page. Collapsed generator panels show a read-only summary and open when tapped.
+In Beta 70, the Android sidebar opens with connection controls at the top and a vertical list of Browse, Image, Video, Library and Notepad at the bottom. Telemetry, backups, notifications and the queue are in the scrollable area between them. The sidebar and Windows tray show the installed app version. Beta 75 activates Browse as the Civitai discovery page. Collapsed generator panels show a read-only summary and open when tapped.
 
 Beta 71 shows up to ten thumbnails in the collapsed Latest result card, with durations underneath videos. Collapsed prompts show the full text and collapsed Video canvas settings show duration and FPS. The collapsed PC Queue shows running and pending jobs with previews as they arrive, plus a count of finished jobs from the last 24 hours. The sidebar has larger navigation buttons and a connection badge.
 

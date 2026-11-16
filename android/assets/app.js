@@ -117,7 +117,7 @@ function render(){
   const active=b.dataset.nav===page;b.classList.toggle('active',active);
   if(active)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current');
  });
- if(page==='browse')$('#main').innerHTML='<p class="subhead">Coming soon.</p>';
+ if(page==='browse')CivitaiBrowser.render();
  else if(page==='library'){if(!viewerOpen())renderLibrary();else galleryDirty=true;}
  else if(page==='notepad')renderNotepad();else renderGenerator();
  connection(connected);notice();

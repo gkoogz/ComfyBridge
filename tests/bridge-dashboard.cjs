@@ -8,7 +8,7 @@ const path=require('node:path');
  try{
   const context=await browser.newContext({viewport:{width:460,height:956}});
   await context.route('https://bridge.test/**',r=>r.fulfill({path:path.join(__dirname,'../android/assets',new URL(r.request().url()).pathname.slice(1)||'index.html')}));
-  await context.addInitScript(()=>{window.Native={configuration:()=>JSON.stringify({device:'one',paired:false}),notificationRoute:()=>'',appVersion:()=> '0.1.0-beta.74'};});
+  await context.addInitScript(()=>{window.Native={configuration:()=>JSON.stringify({device:'one',paired:false}),notificationRoute:()=>'',appVersion:()=> '0.1.0-beta.75'};});
   const page=await context.newPage();await page.goto('https://bridge.test');await page.waitForSelector('#connect');
   assert.equal(await page.locator('#appVersion').textContent(),'Beta 74');
   assert.deepEqual(await page.locator('#drawer nav button').allTextContents(),['◉Browse','▧Image','▷Video','▦Library','✎Notepad']);
