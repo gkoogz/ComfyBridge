@@ -13,7 +13,7 @@ function renderLibrary(){
  const items=library.filter(j=>!!j.archived===archived),review=library.filter(j=>j.warning);
  const main=$('#main');
  if(!$('.librarygrid',main))main.innerHTML='<div class="collectionTools"><button id="archiveLink"></button><small></small><button id="shelfInfo" aria-label="Phone copies and sync status"></button></div><div class="librarygrid"></div>';
- $('#archiveLink').textContent=archived?'‹ Library':'Archive ›';
+ $('#archiveLink').innerHTML=archived?backChevron+'Library':'Archive ›';
  $('.collectionTools small').textContent=items.length+' '+(items.length===1?'item':'items');
  $('#shelfInfo').textContent=review.length?'Review · '+review.length:shelfError?'Check copies':'Phone copies';
  $('#pageTitle').textContent=archived?'Archive':'Library';
@@ -73,7 +73,7 @@ function refreshRatings(){
   $$('button',group).forEach(b=>{b.setAttribute('aria-pressed',String(value>=4));b.setAttribute('aria-label',value>=4?'Remove from favorites':'Add to favorites');});
  });
 }
-const mediaChevron=direction=>'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="'+(direction<0?'M15 5l-7 7 7 7':'M9 5l7 7-7 7')+'"/></svg>';
+const backChevron='<svg class="backChevron" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg>';
 function pageMedia(direction){
  const current=library.find(x=>x.id===$('#viewer').dataset.id);
  const items=library.filter(x=>!!x.archived===!!current?.archived),index=items.findIndex(x=>x.id===$('#viewer').dataset.id);
@@ -256,7 +256,7 @@ function mountResult(j,posterOverride=null){
 }
 function renderResults(){
  const box=$('#result');if(!box)return;
- const items=library.filter(x=>x.kind===page&&!x.archived),first=items[0];
+ const items=recentResults(),first=items[0];
  if(['image','video'].includes(page)&&!liveSelection){
   if(!first&&currentGeneration(page))liveSelection={id:active,kind:page};
   else if(first&&!first.local&&frames.has(first.job))liveSelection={id:first.job,kind:page};
@@ -276,7 +276,7 @@ function openMedia(item){
  view.releaseFooter?.();view.releaseProvenance?.();$('video',view)?.pause();
  view.className='';view.hidden=false;work.inert=true;work.classList.add('behind');galleryDirty=false;
  view.scrollTop=0;
- view.innerHTML='<div class="mediaHero"><div class="asset"></div><div class="viewerTop"><button id="viewerBack" aria-label="Back to collection">'+mediaChevron(-1)+'</button><div><b>'+esc(item.kind==='video'?'Video':'Image')+'</b><small>'+esc(new Date(item.created*1000).toLocaleString())+'</small></div></div><div class="viewerFoot"><div id="mediaWarning"></div><div class="viewerActions"><button id="saveMedia">↓　Save to camera roll</button><button id="archiveMedia">'+(item.archived?'Unarchive':'Archive')+'</button></div><div id="mediaMessage" role="status"></div></div></div>';
+ view.innerHTML='<div class="mediaHero"><div class="asset"></div><div class="viewerTop"><button id="viewerBack" aria-label="Back to collection">'+backChevron+'</button><div><b>'+esc(item.kind==='video'?'Video':'Image')+'</b><small>'+esc(new Date(item.created*1000).toLocaleString())+'</small></div></div><div class="viewerFoot"><div id="mediaWarning"></div><div class="viewerActions"><button id="saveMedia">↓　Save to camera roll</button><button id="archiveMedia">'+(item.archived?'Unarchive':'Archive')+'</button></div><div id="mediaMessage" role="status"></div></div></div>';
  $('.viewerTop',view).append(ratingButtons(item));refreshRatings();
  const current=()=>library.find(x=>x.id===item.id)||item;
  const stillHere=()=>viewerOpen()&&$('#viewerBack')===back;

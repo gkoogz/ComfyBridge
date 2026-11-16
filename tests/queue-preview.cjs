@@ -23,26 +23,34 @@ const assert=require('node:assert/strict'),path=require('node:path');
    jobs=['running','pending','complete'].map((status,i)=>({id:['first','next','old'][i],kind:'video',status,created:100+i,owner:'two',progress:0}));
    queueHistory=jobs;drawer(false);renderGenerator();updateProgress();
   });
-  let rows=p.locator('#generatorQueue .queueJob');
+  let rows=p.locator('#generatorQueue .foldBody .queueJob');
+  const summary=p.locator('#generatorQueue .foldSummary');
   assert(await p.locator('.inflightThumb').isEnabled());await p.locator('.inflightThumb').click();
   assert(await p.locator('#result .previewBusy').isVisible());
   const rings=()=>rows.locator('.jobSpinner').count();
   assert.equal(await rings(),2);assert.equal(await rows.nth(1).locator('img').count(),0);
+  assert.equal(await summary.locator('.queueJob').count(),2);
+  assert.equal(await summary.locator('.jobThumb').count(),2);
+  assert.equal(await summary.locator('.foldQueueCount').textContent(),'1 in the last 24 hours');
   assert.equal(await rows.nth(0).locator('.jobSpinner').evaluate(el=>getComputedStyle(el).animationPlayState),'running');
   for(const rev of [1,2]){
    await p.waitForFunction(()=>!!window.deliver);await p.evaluate(n=>deliver(n),rev);
-   await p.waitForFunction(n=>{const img=$('.queuePreview'),head=$('#livePreview');return frames.get('first')?.revision===n&&img?.naturalWidth===4&&!img.hidden&&head.src===img.src;},rev);
+   await p.waitForFunction(n=>{const img=$('.foldSummary .queuePreview'),head=$('#livePreview');return frames.get('first')?.revision===n&&img?.naturalWidth===4&&!img.hidden&&head.src===img.src;},rev);
    await p.waitForFunction(()=>$('#result .watchPixels')?.naturalWidth===4&&$('#result .watchPixels').src===$('#livePreview').src);
   }
   assert.deepEqual(await p.evaluate(()=>requests),['/preview/first?after=-1','/preview/first?after=1','/preview/first?after=2']);
   await p.evaluate(()=>{jobs[0].status='complete';jobs[0].media='output';active='next';jobs[1].status='running';updateProgress();});
   assert.equal(await rings(),1);assert.equal(await rows.nth(0).locator('[data-output]').count(),1);
+  assert.equal(await summary.locator('.foldQueueCount').textContent(),'2 in the last 24 hours');
   assert(await rows.nth(1).locator('img').isHidden());assert(await p.locator('#livePreview').isHidden());
   await p.evaluate(()=>{navigate('browse');drawer(true);renderBridge();});await p.evaluate(()=>deliver(3));
   rows=p.locator('#queueList .queueJob');
   await p.waitForFunction(()=>$('#queueList .queuePreview')?.naturalWidth===4&&$('#queueList .queuePreview').dataset.frameJob==='next');
   await p.evaluate(()=>{jobs[1].status='error';active=null;updateBridgeActivity();});
   assert.equal(await rings(),0);assert.equal(await rows.locator('.queuePreview').count(),0);
+  await p.locator('#queueList .foldToggle').click();
+  assert.equal(await p.locator('#queueList .foldHead .foldHint').textContent(),'3 in the last 24 hours');
+  assert.equal(await p.locator('#queueList .foldSummary').textContent(),'Nothing in queue');
   console.log('Shared video frames, pending spinners, job handoff, Bridge queue and terminal states passed.');
  }finally{await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;});

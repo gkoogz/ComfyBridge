@@ -42,20 +42,24 @@
 .desktop #desktopBridge .bridgeStage{display:block;font-size:11px}.desktop #bridgeStage,.desktop #activeTimer{display:block}
 .desktop #desktopBridge .progress{height:23px}.desktop #desktopBridge .progress span{font-size:11px}
 /* Keep five complete 52px entries visible; only the list scrolls afterward. */
-.desktop #desktopBridge #queueList{min-height:290px;flex:1;display:flex}
+.desktop #desktopBridge #queueList{min-height:322px;flex:1;display:flex}
 .desktop #desktopBridge .historyCard{margin:0;padding:8px;flex:1;min-height:0;display:flex;flex-direction:column}
 .desktop #desktopBridge .queueRows{height:0;max-height:none;min-height:260px;overflow:auto;flex:1}
+.desktop #desktopBridge #queueList:has(.folded){min-height:0;flex:none}
+.desktop #desktopBridge .historyCard .foldBody:not([hidden]){display:flex;flex:1;flex-direction:column;min-height:0;padding-bottom:0}
 .desktop #desktopBridge .queueJob{gap:5px}.desktop #desktopBridge .jobThumb{width:38px;height:42px;min-width:38px}
 .desktop #desktopBridge .queueJob button[data-cancel]{font-size:10px;padding:4px;width:45px;min-height:30px}
 .desktop #desktopBridge .jobRecall{min-width:26px;padding:3px}.desktop #desktopBridge .jobInfo{font-size:12px}
 .desktop #desktopBridge .jobInfo small{font-size:10px}.desktop #desktopBridge .jobSpinner{width:12px;height:12px;min-width:12px}
 .desktop #drawer{inset:var(--desktop-top) auto 0 0;width:var(--desktop-left);transform:none!important;transition:none;padding:8px 0 0;z-index:10;box-shadow:none}
 .desktop #drawer .drawerTop{padding:0 8px}
+.desktop #drawer nav button{min-height:clamp(44px,5.8dvh,51px)}
 .desktop #desktopBridge>*:not(#queueList){flex-shrink:0}
 .desktop #shade,.desktop #hamburger{display:none!important}
 .desktop #workspace{inset:var(--desktop-top) 0 0 var(--desktop-left);transform:none!important}
 .desktop #workspace.behind{transform:none;transition:none;z-index:0}
 .desktop #main{max-width:none}.desktop #workspace header{padding-left:16px}
+.desktop #latestPanel :is(#result,#carousel){width:auto;margin-inline:-21px}
 .desktop #viewer{inset:var(--desktop-top) 0 0 var(--desktop-left);transition:none}
 .desktop #viewer .viewerActions{flex-wrap:wrap;gap:6px}.desktop #viewer .viewerActions button{font-size:12px;min-height:34px;padding:6px 10px}
 .desktop #modal{max-width:1000px;width:calc(100% - 40px);height:calc(100% - 70px);margin:auto;border:1px solid var(--line);border-radius:14px}

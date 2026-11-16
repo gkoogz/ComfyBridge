@@ -8,7 +8,7 @@ const assert=require('node:assert/strict'),path=require('node:path');
   await p.route('https://desktop.test/**',r=>r.fulfill({path:path.join(__dirname,'../android/assets',new URL(r.request().url()).pathname.slice(1)||'index.html')}));
   await p.route('**/local/**',r=>r.fulfill({contentType:'image/svg+xml',body:'<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300"><rect width="400" height="300" fill="#a3f2cc"/></svg>'}));
   await p.addInitScript(()=>{
-   window.Desktop=true;window.desktopConfiguration={device:'pc',name:'This PC',paired:true,version:'0.1.0-beta.70'};window.calls=[];
+   window.Desktop=true;window.desktopConfiguration={device:'pc',name:'This PC',paired:true,version:'0.1.0-beta.71'};window.calls=[];
    const listeners=[];let on=false;
    const config=()=>({online:on,phones:on?2:0,code:on?'123456':'—',hint:on?'Enter this code on your phone.':'Turn the server on to pair a phone.',addresses:['https://example.test:18764'],address:'https://example.test:18764'});
    window.chrome??={};window.chrome.webview={addEventListener:(name,fn)=>listeners.push(fn),postMessage:msg=>{
@@ -28,7 +28,7 @@ const assert=require('node:assert/strict'),path=require('node:path');
    render();
   });
   assert.equal(await p.locator('[data-nav=bridge]').count(),0);
-  assert.equal(await p.locator('#appVersion').textContent(),'Beta 70');
+  assert.equal(await p.locator('#appVersion').textContent(),'Beta 71');
   await p.locator('[data-nav=browse]').click();
   assert.equal(await p.locator('#pageTitle').textContent(),'Browse');
   await p.locator('[data-nav=image]').click();
@@ -64,6 +64,17 @@ const assert=require('node:assert/strict'),path=require('node:path');
   });
   assert(await p.locator('#bridgeCommands [data-action=skip]').isEnabled());
   assert(await p.locator('#bridgeCommands [data-action=stop]').isEnabled());
+  assert(await p.evaluate(()=>{
+   const work=$('#workspace').getBoundingClientRect();
+   return ['#result','#carousel'].every(id=>{
+    const r=$(id).getBoundingClientRect();
+    return Math.abs(r.left-work.left)<1&&Math.abs(r.right-$('#workspace').clientWidth-work.left)<1;
+   });
+  }));
+  await p.locator('#queueList .foldToggle').click();
+  assert.equal(await p.locator('#queueList .foldSummary .jobThumb').count(),1);
+  assert.equal(await p.locator('#queueList .foldSummary .foldQueueCount').textContent(),'0 in the last 24 hours');
+  await p.locator('#queueList .foldToggle').click();
   await p.evaluate(()=>{
    queueHistory=[{id:'saved-video',kind:'video',owner:'other-phone',status:'error',created:100,checkpointAvailable:true}];
    renderQueue();window.resumedCheckpoint=null;window.savedApi=api;

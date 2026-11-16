@@ -102,20 +102,32 @@ function queueTiming(){
  return (spent?'Elapsed '+spent:'Waiting')+(queueProtocol>=17||rollingStopAll?' · Total ETA '+etaText(queueEtaSeconds):'');
 }
 setInterval(()=>{if(!document.hidden&&($('#generatorQueue')||dashboardVisible()))updateTimers();},1000);
+function queuePlaceholder(job,withPreview){
+ const preview=withPreview&&frames.get(job.id)?.url;
+ return '<span class="jobThumb">'+(job.kind==='video'?'▷':'▧')+(withPreview?
+  '<img class="queuePreview" data-frame-job="'+esc(job.id)+'" '+(preview?'src="'+esc(preview)+'"':'hidden')+' alt="Live generation preview">':'')+'</span>';
+}
+function foldedQueue(){
+ const {pending}=queueProgress();
+ const count=queueHistory.filter(j=>!liveStatus(liveJob(j.id)?.status??j.status)).length;
+ const history=historyFailure?'History unavailable':count+' in the last 24 hours';
+ if(!pending.length)return {hint:history,content:'<small>Nothing in queue</small>'};
+ return '<div class="foldQueueRows">'+pending.map(j=>'<div class="queueJob">'+
+  queuePlaceholder(j,imagePreviewProtocol&&j.id===active)+'<div class="jobInfo"><b>'+esc(j.kind)+
+  '</b><small>'+esc(j.status)+' <span class="jobElapsed" data-clock="'+esc(j.id)+'"></span></small></div>'+
+  '<i class="spinner jobSpinner" aria-hidden="true"></i></div>').join('')+'</div><small class="foldQueueCount">'+esc(history)+'</small>';
+}
 function renderQueue(box=$('#queueList')){
  if(!box)return;
  const items=queueHistory.length?queueHistory:jobs.filter(j=>liveStatus(j.status));
  const frameId=imagePreviewProtocol?active:null;
  const key=JSON.stringify([frameId,items.map(j=>[j.id,j.status,j.media,media(j.media,true),j.ended,j.checkpointAvailable])]);
  watchFrames();
- if(box.dataset.version===key&&box.dataset.failure===historyFailure){$('.historyCard',box)?.refreshFoldSummary?.();updateTimers();return;}
+ if(box.dataset.version===key&&box.dataset.failure===historyFailure){$('.historyCard',box)?.refreshFoldSummary?.();if(frameId)paintFrame(frameId);updateTimers();return;}
  if(box.dataset.touching==='1'){updateTimers();return;}
  if(!$('.queueRows',box)){
   box.innerHTML='<section class="card historyCard"><div class="row spread"><strong>PC Queue</strong><small>Last 24 hours</small></div><small class="historyError" role="status" hidden></small><div class="queueRows"></div></section>';
-  if(box.id==='generatorQueue')installFold($('.historyCard',box),()=>{
-   const {job,label}=queueProgress();
-   return job?esc(label):queueHistory.length?queueHistory.length+' in the last 24 hours':'Queue empty';
-  });
+  installFold($('.historyCard',box),foldedQueue,box.id==='queueList'?{scope:'sidebar',defaultClosed:false}:undefined);
   const rows=$('.queueRows',box);
   rows.addEventListener('touchstart',()=>{box.dataset.touching='1';},{passive:true});
   const ended=e=>{
@@ -133,7 +145,7 @@ function renderQueue(box=$('#queueList')){
  rows.innerHTML=items.map(j=>{
   const active=liveStatus(j.status),label={complete:'Success',cancelled:'Aborted',error:'Fail'}[j.status]||j.status;
   const cover=j.media&&media(j.media,true);
-  return '<div class="queueJob">'+(j.media?'<button class="jobThumb" data-output="'+j.media+'" aria-label="Open result in Library">'+(cover?'<img src="'+cover+'" loading="lazy" alt="">':'▦')+'</button>':'<span class="jobThumb">'+(j.kind==='video'?'▷':'▧')+(active&&j.id===frameId?'<img class="queuePreview" data-frame-job="'+j.id+'" hidden alt="Live generation preview">':'')+'</span>')+
+  return '<div class="queueJob">'+(j.media?'<button class="jobThumb" data-output="'+j.media+'" aria-label="Open result in Library">'+(cover?'<img src="'+cover+'" loading="lazy" alt="">':'▦')+'</button>':queuePlaceholder(j,active&&j.id===frameId))+
    '<div class="jobInfo"><b>'+esc(j.kind)+' <small>'+new Date(j.created*1000).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})+'</small></b><small>'+esc(active?j.status:'Finished')+' <span class="jobElapsed" data-clock="'+j.id+'"></span></small></div>'+
    (active?'<i class="spinner jobSpinner" aria-hidden="true"></i>':'')+
    (active&&(window.Desktop||j.owner===info().device)?'<button data-cancel="'+j.batch+'">Cancel batch</button>':'<small class="outcome '+esc(j.status)+'">'+esc(label)+'</small>')+

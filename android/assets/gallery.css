@@ -9,6 +9,9 @@ body[data-page=library] main{padding:0;max-width:none}
 .collectionTools{min-height:42px;padding:2px 8px;display:flex;align-items:center;gap:8px}
 .collectionTools button,#bridgeOptions{background:transparent;border:0;color:var(--mint);font-weight:600}
 .collectionTools button{min-height:38px;padding:4px 8px}
+.backChevron{width:27px;height:27px;fill:none;stroke:currentColor;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round;flex:none}
+#modalClose:has(.backChevron){display:grid;place-items:center;min-width:44px;min-height:44px;padding:0}
+:is(#archiveLink,#modelArchiveLink):has(.backChevron){display:flex;align-items:center;gap:3px}
 #shelfInfo{margin-left:auto}
 .librarygrid{gap:1px;grid-template-columns:repeat(3,minmax(0,1fr))}
 .libraryitem{border-radius:0;aspect-ratio:1;display:grid;place-items:center}
@@ -81,7 +84,6 @@ canvas,input[type=range]{touch-action:none}
 .viewerTop>div:not(.mediaRating){display:none}
 .viewerTop .mediaRating{margin-left:auto;pointer-events:auto}
 #viewerBack{display:grid;place-items:center;flex:0 0 40px;width:40px;height:40px;min-height:40px;padding:0}
-#viewerBack svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 .resultActions{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 12px;flex-wrap:wrap}
 .resultActions .makeVideo{margin:0}
 .asset .bigPlay{min-width:60px;min-height:60px;max-width:60px;max-height:60px;aspect-ratio:1;flex:none}

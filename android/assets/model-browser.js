@@ -102,10 +102,10 @@ async function openModelBrowser(type,only=null){
  view.title=type==='checkpoints'?'Checkpoint Browser':type==='video'?'Video model listing':only?'LoRA listing':'LoRA Browser';
  openModal(view.title,
   '<div class="modelBrowser">'+(type==='loras'&&!only?'<div class="modelBrowserTools"><button id="modelArchiveLink">Archive ›</button></div>':'')+'<input id="modelSearch" type="search" placeholder="Search title, author, filename or activation keyword…" aria-label="Search model listings"><p id="modelStatus" role="status">Loading the PC catalogue…</p><p id="modelNsfwNote" class="modelNsfwNote" hidden></p><div id="modelCards"></div></div>');
- modelBrowser=view;$('#modal').classList.add('modelBrowserDialog');$('#modalClose').textContent='×';
+ modelBrowser=view;$('#modal').classList.add('modelBrowserDialog');$('#modalClose').textContent='×';$('#modalClose').setAttribute('aria-label','Close');
  view.cancel=e=>{e.preventDefault();if(view.preview)closeModelPreview(view);else closeModal();};$('#modal').addEventListener('cancel',view.cancel);
  $('#modelSearch').oninput=()=>paintModelBrowser(view);
- $('#modelArchiveLink')?.addEventListener('click',()=>{view.archived=!view.archived;view.title=view.archived?'LoRA Archive':'LoRA Browser';$('#modalTitle').textContent=view.title;$('#modelArchiveLink').textContent=view.archived?'‹ LoRAs':'Archive ›';$('#modelSearch').value='';paintModelBrowser(view);$('#modalBody').scrollTop=0;});
+ $('#modelArchiveLink')?.addEventListener('click',()=>{view.archived=!view.archived;view.title=view.archived?'LoRA Archive':'LoRA Browser';$('#modalTitle').textContent=view.title;$('#modelArchiveLink').innerHTML=view.archived?backChevron+'LoRAs':'Archive ›';$('#modelSearch').value='';paintModelBrowser(view);$('#modalBody').scrollTop=0;});
  paintModelBrowser(view);
  async function refresh(){
   if(modelBrowser!==view||!$('#modelCards')||!$('#modal').open||epoch!==view.session)return;

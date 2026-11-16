@@ -96,7 +96,12 @@ function navigate(to){
  page=to;archived=false;presetName='';drawer(false);render();$('#workspace').scrollTop=0;
  if(connected){poll();if(['image','video'].includes(to))syncSettings();if(to==='notepad')syncNotes();}
 }
-function connection(value){connected=value;ModelPreviews.connected(value);prefetchVisibility();paintChatStatus();$$('.dot').forEach(d=>d.classList.toggle('connected',value));$('#statusDot').setAttribute('aria-label',value?'Connected':'Disconnected');$('#drawerStatus').textContent=value?(window.Desktop?'Local studio':'PC connected'):wanted?'Reconnecting…':'Disconnected';}
+function paintConnectionStatus(){
+ const status=$('#drawerStatus'),working=connecting||wanted;
+ status.textContent=connected?(window.Desktop?'Local studio':'PC connected'):connecting?'Connecting…':wanted?'Reconnecting…':'Disconnected';
+ status.parentElement.dataset.state=connected?'online':working?'connecting':'offline';
+}
+function connection(value){connected=value;ModelPreviews.connected(value);prefetchVisibility();paintChatStatus();$$('.dot').forEach(d=>d.classList.toggle('connected',value));$('#statusDot').setAttribute('aria-label',value?'Connected':'Disconnected');paintConnectionStatus();}
 function dashboardVisible(){return window.Desktop||$('#drawer').classList.contains('open');}
 function render(){
  document.body.dataset.page=page;
@@ -178,7 +183,7 @@ function renderBridge(){
  if($('#retryCatalog'))$('#retryCatalog').onclick=loadCatalog;
  if($('#changePair'))$('#changePair').onclick=()=>{clearSession();editPair=!editPair;pairAddress=null;renderBridge();};
  if($('#bridgeOptions'))$('#bridgeOptions').hidden=!connected;
- $('#drawerStatus').textContent=connected?'PC connected':wanted?'Reconnecting…':connecting?'Connecting…':'Disconnected';
+ paintConnectionStatus();
  $('#liveLabel').textContent=connected?'LIVE':'OFFLINE';
  if(!connected)showMetrics(null);
  button.disabled=connecting&&!connected;
@@ -190,7 +195,7 @@ function renderBridge(){
    if(!url)return error('Enter the PC address shown in the Windows ComfyBridge panel.',$('#host'));
    if(!/^[0-9]{6}$/.test(code))return error('Enter the six-digit pairing code from the PC panel.',$('#code'));
   }
-  connecting=true;bridgeError='';$('#pairError').hidden=true;button.disabled=true;button.textContent=enroll?'Pairing…':'Connecting…';
+  connecting=true;paintConnectionStatus();bridgeError='';$('#pairError').hidden=true;button.disabled=true;button.textContent=enroll?'Pairing…':'Connecting…';
   const session=++epoch;catalog=null;
   try{
    if(enroll){await new Promise((resolve,reject)=>{const id=++rpcId;pending.set(id,{resolve,reject});Native.pair(id,url,code);});if(session!==epoch)return;editPair=false;pairAddress=null;}
@@ -215,7 +220,7 @@ function renderGenerator(){
  if(kind==='video'&&!ext&&!s.exactFrames)s.frames=5+17*Math.max(0,Math.ceil((s.frames-5)/17));
  if(textVideo)[s.width,s.height]=videoSize(s,0);
  if(!inp.data)s.denoise=1;
- $('#main').innerHTML=`<div class="gentoolbar"><div class="row spread"><div class="row"><span id="runSpinner" class="spinner" hidden></span><div class="playwrap"><button id="play" class="green">▶ Generate</button><button id="batchButton" class="green" aria-label="Choose batch">⌄</button><div class="pop" id="batchMenu" hidden>${[2,4,8,16].map(n=>`<button data-batch="${n}" style="display:block;width:100%">Batch of ${n}</button>`).join('')}</div></div></div><button id="stopBatch" class="stop" hidden>■ Stop mine</button><span class="batchlabel" id="batchLabel">${s.batch>1?s.batch+' in batch':'Single generation'}</span></div><div class="progressrow" id="progressRow" hidden><img class="preview" id="livePreview" alt="Generation preview"><div class="progress"><i id="progressFill"></i><span id="progressText"></span></div></div><div class="statusmessage" id="jobMessage"></div></div><div id="genError"></div>${window.Desktop?'':'<div id="generatorQueue"></div>'}<div class="row spread modeRow"><p class="eyebrow">${kind==='image'?'A STILL, A STORY':'VIDEO STUDIO'}</p><span class="pill" id="mode">${kind==='video'&&hasCharacterReference(s,inp)?(ext?'EXTEND WITH CHARACTER':'CHARACTER → VIDEO'):ext?(inp.finalFrame?.data||s.finalFrame?'EXTEND → FINAL FRAME':'EXTEND VIDEO'):textVideo?(inp.finalFrame?.data||s.finalFrame?'TEXT → FINAL FRAME':'TEXT → VIDEO'):kind==='video'?(inp.finalFrame?.data||s.finalFrame?'FIRST → FINAL FRAME':'IMAGE → VIDEO'):inp.mask?'INPAINT':inp.data?'IMAGE → IMAGE':'TEXT → IMAGE'}</span></div>${kind==='video'?videoFrameFields(s,inp)+characterReferenceField(s,inp):imageSourceField(inp)}<section class="card"><h2>Canvas & model</h2>${kind==='image'?canvasInputs(s):`${textVideo?canvasInputs(s,32)+'<div class="field scaleField"><label for="textVideoResolution">Resolution</label><div id="resolutionInfo"></div><input id="textVideoResolution" class="scaleRange" type="range" aria-label="Video resolution"><small>Red starts above 768 × 1152 pixels.</small></div>' :`<div class="field scaleField"><div class="row spread"><label for="videoScale">Scale from source</label><strong id="scaleValue"></strong></div><div id="resolutionInfo"></div><input id="videoScale" class="scaleRange" type="range" data-setting="scale" step="1"><div class="row spread"><small id="scaleBounds"></small><button type="button" id="originalScale" class="textbutton">Original · 0%</button></div></div>`}<div class="field"><div class="row spread"><label for="videoSeconds">${ext?'Time to add':'Video length'}</label><strong id="secondsValue"></strong></div><input id="videoSeconds" type="range" min="1" max="20" step="0.25"></div><div class="grid2 field"><div><label>${ext?'Frames to add':'Frames'}</label><input type="number" data-setting="frames" min="1" max="${ext?3570:3592}" value="${s.frames}"></div><div><label>FPS</label><input type="number" data-setting="fps" step="any" ${ext?'disabled':''} min="1" max="120" value="${s.fps}"></div></div><div id="durationInfo" aria-label="Video duration"></div><label class="togglelabel soundToggle"><input type="checkbox" id="videoSound" ${s.sound!==false?'checked':''}><span><strong>Include sound</strong><small>${ext?'Off saves a silent copy of the entire extension.':'Generate a soundtrack with the video.'}</small></span></label>`}<div class="field"><label>${kind==='video'?'Video model':'Checkpoint'}</label>${kind==='video'?`<div id="videoModelControls">${videoModelField(s)}</div>`:`<div class="checkpointPicker"><select data-setting="model">${[...new Set([s.model,...(catalog?.models||[])])].map(m=>`<option value="${esc(m)}" ${m===s.model?'selected':''}>${esc(modelLabel('checkpoints',m))}</option>`).join('')}</select><button type="button" id="checkpointBrowser">Checkpoint Browser</button></div>`}</div></section><section class="card"><div class="row spread"><h2>LoRAs</h2><button id="addLora" class="textbutton">＋ Add</button></div><div id="loras"></div></section>${promptField('positive','Positive prompt')}${promptField('negative','Negative prompt')}<section class="card"><h2>Generation settings</h2>${slider('steps','Steps',1,maxSteps)}${kind==='image'?slider('cfg','CFG',0,20,.1)+slider('denoise','Denoise'+(!inp.data?' · locked for text to image':''),0,1,.01,!inp.data):''}<div class="field"><label>Seed</label><input type="text" inputmode="numeric" data-setting="seed" value="${esc(s.seed)}"></div><div class="seedActions"><button id="randomSeed" type="button" class="seedRandom">Randomize</button><label class="togglelabel"><input type="checkbox" id="increment" ${s.increment?'checked':''}>Increment seed after each generation</label></div></section><section id="latestPanel"><div class="sectionline"><h2>Latest result</h2><button id="toLibrary" class="textbutton">Library ↗</button></div><div class="resultbox" id="result"></div><div class="carousel" id="carousel"></div></section>`;
+ $('#main').innerHTML=`<div class="gentoolbar"><div class="row spread"><div class="row"><span id="runSpinner" class="spinner" hidden></span><div class="playwrap"><button id="play" class="green">▶ Generate</button><button id="batchButton" class="green" aria-label="Choose batch">⌄</button><div class="pop" id="batchMenu" hidden>${[2,4,8,16].map(n=>`<button data-batch="${n}" style="display:block;width:100%">Batch of ${n}</button>`).join('')}</div></div></div><button id="stopBatch" class="stop" hidden>■ Stop mine</button><span class="batchlabel" id="batchLabel">${s.batch>1?s.batch+' in batch':'Single generation'}</span></div><div class="progressrow" id="progressRow" hidden><img class="preview" id="livePreview" alt="Generation preview"><div class="progress"><i id="progressFill"></i><span id="progressText"></span></div></div><div class="statusmessage" id="jobMessage"></div></div><div id="genError"></div>${window.Desktop?'':'<div id="generatorQueue"></div>'}<div class="row spread modeRow"><p class="eyebrow">${kind==='image'?'A STILL, A STORY':'VIDEO STUDIO'}</p><span class="pill" id="mode">${kind==='video'&&hasCharacterReference(s,inp)?(ext?'EXTEND WITH CHARACTER':'CHARACTER → VIDEO'):ext?(inp.finalFrame?.data||s.finalFrame?'EXTEND → FINAL FRAME':'EXTEND VIDEO'):textVideo?(inp.finalFrame?.data||s.finalFrame?'TEXT → FINAL FRAME':'TEXT → VIDEO'):kind==='video'?(inp.finalFrame?.data||s.finalFrame?'FIRST → FINAL FRAME':'IMAGE → VIDEO'):inp.mask?'INPAINT':inp.data?'IMAGE → IMAGE':'TEXT → IMAGE'}</span></div>${kind==='video'?videoFrameFields(s,inp)+characterReferenceField(s,inp):imageSourceField(inp)}<section class="card"><h2>Canvas & model</h2>${kind==='image'?canvasInputs(s):`${textVideo?canvasInputs(s,32)+'<div class="field scaleField"><label for="textVideoResolution">Resolution</label><div id="resolutionInfo"></div><input id="textVideoResolution" class="scaleRange" type="range" aria-label="Video resolution"><small>Red starts above 768 × 1152 pixels.</small></div>' :`<div class="field scaleField"><div class="row spread"><label for="videoScale">Scale from source</label><strong id="scaleValue"></strong></div><div id="resolutionInfo"></div><input id="videoScale" class="scaleRange" type="range" data-setting="scale" step="1"><div class="row spread"><small id="scaleBounds"></small><button type="button" id="originalScale" class="textbutton">Original · 0%</button></div></div>`}<div class="field"><div class="row spread"><label for="videoSeconds">${ext?'Time to add':'Video length'}</label><strong id="secondsValue"></strong></div><input id="videoSeconds" type="range" min="1" max="20" step="0.25"></div><div class="grid2 field"><div><label>${ext?'Frames to add':'Frames'}</label><input type="number" data-setting="frames" min="1" max="${ext?3570:3592}" value="${s.frames}"></div><div><label>FPS</label><input type="number" data-setting="fps" step="any" ${ext?'disabled':''} min="1" max="120" value="${s.fps}"></div></div><div id="durationInfo" aria-label="Video duration"></div><label class="togglelabel soundToggle"><input type="checkbox" id="videoSound" ${s.sound!==false?'checked':''}><span><strong>Include sound</strong><small>${ext?'Off saves a silent copy of the entire extension.':'Generate a soundtrack with the video.'}</small></span></label>`}<div class="field"><label>${kind==='video'?'Video model':'Checkpoint'}</label>${kind==='video'?`<div id="videoModelControls">${videoModelField(s)}</div>`:`<div class="checkpointPicker"><select data-setting="model">${[...new Set([s.model,...(catalog?.models||[])])].map(m=>`<option value="${esc(m)}" ${m===s.model?'selected':''}>${esc(modelLabel('checkpoints',m))}</option>`).join('')}</select><button type="button" id="checkpointBrowser">Checkpoint Browser</button></div>`}</div></section><section class="card"><div class="row spread"><h2>LoRAs</h2><button id="addLora" class="textbutton">＋ Add</button></div><div id="loras"></div></section>${promptField('positive','Positive prompt')}${promptField('negative','Negative prompt')}<section class="card"><h2>Generation settings</h2>${slider('steps','Steps',1,maxSteps)}${kind==='image'?slider('cfg','CFG',0,20,.1)+slider('denoise','Denoise'+(!inp.data?' · locked for text to image':''),0,1,.01,!inp.data):''}<div class="field"><label>Seed</label><input type="text" inputmode="numeric" data-setting="seed" value="${esc(s.seed)}"></div><div class="seedActions"><button id="randomSeed" type="button" class="seedRandom">Randomize</button><label class="togglelabel"><input type="checkbox" id="increment" ${s.increment?'checked':''}>Increment seed after each generation</label></div></section><section class="card" id="latestPanel"><div class="sectionline"><h2>Latest result</h2><button id="toLibrary" class="textbutton">Library ↗</button></div><div class="resultbox" id="result"></div><div class="carousel" id="carousel"></div></section>`;
  $('#upload').onchange=e=>loadStartingMedia(e.target);$('#clearUpload').onclick=()=>{state.inputs[kind]=kind==='video'?videoReferenceInputs(inp):{};delete s.extension;delete s.sourceMedia;delete s.sourceOrigin;delete s.replayOf;s.upload=null;s.mask=null;s.scale=0;if(kind==='video'&&s.textCanvas)Object.assign(s,s.textCanvas);if(kind==='image'){s.width=1024;s.height=1536;s.denoise=1;if(s.aspectLock)s.aspectLock=[s.width,s.height];}persist();renderGenerator();};
  if($('#maskButton'))$('#maskButton').onclick=openMask;if($('#clearMask'))$('#clearMask').onclick=()=>{delete inp.mask;delete s.mask;persist();renderGenerator();};
  if(kind==='video'){
@@ -233,7 +238,7 @@ function renderGenerator(){
  renderLoras();wirePrompts();bindSteps(s,maxSteps);
  if(kind==='image')bindCanvas(s);else if(textVideo)bindCanvas(s,32);else{bindVideoScale(s,inp);updateVideo(false);}
  if(kind==='video')bindVideoTime(s);
- $$('#main > section.card,#latestPanel').forEach(panel=>installFold(panel,generatorPanelSummary));
+ $$('#main > section.card').forEach(panel=>installFold(panel,generatorPanelSummary));
  bindPromptSizing();
  renderResults();updateProgress();
 }
@@ -245,18 +250,21 @@ function foldMedia(label,thumbnail,detail){
 function generatorPanelSummary(name){
  const s=state.settings[page],input=state.inputs[page];
  if(name==='Starting image'){
-  return foldMedia('',input.data,input.data?[foldDimensions(input),input.mask?'Mask applied':''].filter(Boolean).join(' · '):s.upload?'Saved on PC':'No starting image');
+  if(!input.data&&!s.upload)return {hint:'No starting image'};
+  return foldMedia('',input.data,input.data?[foldDimensions(input),input.mask?'Mask applied':''].filter(Boolean).join(' · '):'Saved on PC');
  }
  if(name==='First / last frame'){
   const ext=s.extension,first=ext||input;
   const last=input.finalFrame;
+  if(!ext&&!input.data&&!s.upload&&!last?.data&&!s.finalFrame)return {hint:'No frames attached'};
   return '<div class="foldFrames">'+foldMedia(ext?'Source clip':'First frame',ext?media(ext.id,true):input.data,
    (ext||input.data?foldDimensions(first):'')||(s.upload?'Saved on PC':'No image'))+
    foldMedia('Last frame',last?.data,foldDimensions(last)||(s.finalFrame?'Saved on PC':last?.data?'Image attached':'No image'))+'</div>';
  }
  if(name==='Stable Character reference'){
   const reference=input.characterReference;
-  return foldMedia('',videoReferenceImage(reference),foldDimensions(reference)||(s.characterReference?'Saved on PC':reference?.data?'Image attached':'No character image'));
+  if(!reference?.data&&!s.characterReference)return {hint:'No character image'};
+  return foldMedia('',videoReferenceImage(reference),foldDimensions(reference)||(s.characterReference?'Saved on PC':'Image attached'));
  }
  if(name==='Canvas & model'){
   let model=s.model?modelLabel('checkpoints',s.model):'No model selected';
@@ -264,29 +272,22 @@ function generatorPanelSummary(name){
    if(hasCharacterReference(s,input)&&s.model!==erosModel)model='MiniMax H3 · Ref2VA';
    else model=catalog?.videoModels?.find(p=>p.model===s.model)?.label||(s.model===erosModel?'10Eros Max · Beta 7':model);
   }
-  return '<strong>'+esc(foldDimensions(s))+'</strong><div class="foldModel">'+esc(model)+'</div>';
+  const timing=page==='video'&&s.fps>0?'<span> · '+esc(Number((videoFrameCount(s)/s.fps).toFixed(2)))+' s'+(s.extension?' to add':'')+' · '+esc(s.fps)+' FPS</span>':'';
+  return '<strong>'+esc(foldDimensions(s))+'</strong>'+timing+'<div class="foldModel">'+esc(model)+'</div>';
  }
  if(name==='LoRAs'){
   if(page==='video'&&hasCharacterReference(s,input)&&s.model!==erosModel)return 'Stock Ref2VA uses its base weights.';
   return s.loras.map(l=>'<div class="foldLora'+(l.enabled===false?' inactive':'')+'"><span>'+esc(modelLabel('loras',l.name))+
-   '</span><span>'+esc(l.strength)+'</span></div>').join('')||'No LoRAs';
+   '</span><span>'+esc(l.strength)+'</span></div>').join('')||{hint:'No LoRAs'};
  }
  if(name==='Positive prompt'||name==='Negative prompt'){
-  const prompt=s[name==='Positive prompt'?'positive':'negative'];
-  return '<p class="foldPrompt">'+esc(prompt?.trim()?prompt:'No prompt')+'</p>';
+  const prompt=s[name==='Positive prompt'?'positive':'negative']?.trimEnd();
+  return prompt?'<p class="foldPrompt">'+esc(prompt)+'</p>':{hint:'No prompt'};
  }
  if(name==='Generation settings'){
   return esc([s.steps+' steps',...(page==='image'?['CFG '+s.cfg,'Denoise '+s.denoise]:[]),'Seed '+s.seed].join(' · '));
  }
- if(name==='Latest result'){
-  const selected=$('#result .asset')?.dataset.id;
-  const result=library.find(item=>item.id===selected)||library.find(item=>item.kind===page&&!item.archived);
-  if(liveSelection?.kind===page&&liveJob(liveSelection.id)&&liveStatus(liveJob(liveSelection.id).status)){
-   return foldMedia('',frames.get(liveSelection.id)?.url,'Generation in progress');
-  }
-  const detail=result?.kind==='video'&&result.duration?'Video · '+duration(result.duration):result?.kind==='video'?'Video':'Image';
-  return result?foldMedia('',media(result.id,true),detail):'No results yet';
- }
+ if(name==='Latest result')return latestResultSummary();
  return '';
 }
 function imageSourceField(input){
@@ -409,7 +410,6 @@ function openPrompt(key){
  openModal(key==='positive'?'Positive prompt':'Negative prompt','<textarea id="fullPrompt"></textarea>','<button class="green" id="applyPrompt">Done</button>');
  const back=$('#modalClose'),editor=$('#fullPrompt');
  back.setAttribute('aria-label','Back to generator');
- back.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg>';
  editor.value=settings[key]||'';
  editor.oninput=()=>{settings[key]=editor.value;persist(kind);};
  $('#applyPrompt').onclick=closeModal;
@@ -621,6 +621,7 @@ function bindVideoTime(s){
  };
  frames.onblur=()=>{frames.value=s.frames;};
 }
+function videoFrameCount(s){return s.extension||s.exactFrames?s.frames:5+17*Math.max(0,Math.ceil((s.frames-5)/17));}
 function updateVideo(rescale){
  const s=state.settings.video,inp=state.inputs.video;
  if(rescale&&inp.data)[s.width,s.height]=videoSize(inp,s.scale);
@@ -634,7 +635,7 @@ function updateVideo(rescale){
  const seconds=s.seconds??s.frames/s.fps;
  $('#videoSeconds').value=seconds;
  $('#secondsValue').textContent=Number(seconds.toFixed(2))+' s'+(seconds<1||seconds>20?' · custom':'');
- const frames=s.extension||s.exactFrames?s.frames:5+17*Math.max(0,Math.ceil((s.frames-5)/17));
+ const frames=videoFrameCount(s);
  const valid=s.frames>=(s.extension||s.exactFrames?1:5)&&s.fps>=1;
  $('#durationInfo').innerHTML='<small>Duration</small><strong>'+(valid?(frames/s.fps).toFixed(2)+' s':'—')+'</strong><span>'+frames+' actual frames ÷ '+s.fps+' FPS'+(s.frames>300?' · Above 300 frames':'')+'</span>';
  if(s.extension){
@@ -651,7 +652,7 @@ function renderPresets(){let list=state.presets[page];$('#presetMenu').innerHTML
  $('#savePreset').onclick=async()=>{const kind=page;let name=await askName('Save settings preset');if(!name)return;list.push({name,settings:structuredClone(state.settings[kind]),input:structuredClone(state.inputs[kind])});presetName=name;persist();$('#presetMenu').hidden=true;render();};
 }
 function askName(title,value=''){return new Promise(resolve=>{openModal(title,'<label>Name</label><input id="newName" maxlength="100">','<button class="green" id="nameDone">Save</button>');$('#newName').value=value;$('#newName').focus();$('#nameDone').onclick=()=>{let n=$('#newName').value.trim();if(!n)return;closeModal();resolve(n);};$('#modalClose').onclick=()=>{closeModal();resolve(null);};});}
-function openModal(title,body,actions=''){if(typeof stopModelBrowser==='function')stopModelBrowser();$('#modalClose').textContent='←';$('#modalClose').setAttribute('aria-label','Close');$('#modalTitle').textContent=title;$('#modalBody').innerHTML=body;$('#modalActions').innerHTML=actions;$('#modalClose').onclick=closeModal;if(!$('#modal').open)$('#modal').showModal();}
+function openModal(title,body,actions=''){if(typeof stopModelBrowser==='function')stopModelBrowser();$('#modalClose').innerHTML=backChevron;$('#modalClose').setAttribute('aria-label','Back');$('#modalTitle').textContent=title;$('#modalBody').innerHTML=body;$('#modalActions').innerHTML=actions;$('#modalClose').onclick=closeModal;if(!$('#modal').open)$('#modal').showModal();}
 function closeModal(){if(typeof stopModelBrowser==='function')stopModelBrowser();$('#modal').close();$('#modalBody').innerHTML='';maskSession=null;}
 let maskSession=null;
 async function openMask(){
@@ -809,10 +810,28 @@ function refreshCarouselSelection(){
   tile.setAttribute('aria-current',String(current));
  });
 }
+const recentResults=()=>library.filter(x=>x.kind===page&&!x.archived);
+function latestResultSummary(){
+ const items=recentResults(),selected=$('#result .asset')?.dataset.id;
+ const live=liveSelection?.kind===page&&liveJob(liveSelection.id);
+ const activePreview=liveStatus(live?.status);
+ const first=items.find(item=>item.id===selected)||items[0];
+ const completed=activePreview?items.slice(0,9):first?[first,...items.filter(item=>item!==first).slice(0,9)]:[];
+ const thumbs=completed.map(item=>{
+  const src=media(item.id,true);
+  const time=item.kind==='video'&&item.duration>0?'<small>'+esc(duration(item.duration))+'</small>':'';
+  return '<div class="foldResult">'+(src?'<img class="foldThumb" src="'+esc(src)+'" loading="lazy" draggable="false" alt="Generated '+item.kind+'">':'<span class="foldThumb" aria-label="Thumbnail unavailable"></span>')+time+'</div>';
+ });
+ if(activePreview){
+  const preview=frames.get(live.id)?.url;
+  thumbs.unshift('<div class="foldResult foldLive" aria-label="Generation in progress"><img class="foldThumb" data-frame-job="'+esc(live.id)+'" '+(preview?'src="'+esc(preview)+'"':'hidden')+' alt=""><i class="spinner" aria-hidden="true"></i></div>');
+ }
+ return thumbs.length?'<div class="foldRecent">'+thumbs.join('')+'</div>':{hint:'No results yet'};
+}
 function renderCarousel(){
  const carousel=$('#carousel');if(!carousel)return;
  $('#latestPanel')?.refreshFoldSummary?.();
- const items=library.filter(x=>x.kind===page&&!x.archived).slice(0,20);
+ const items=recentResults().slice(0,20);
  if(!carousel.querySelector('.recentStrip'))carousel.innerHTML='<div class="recentStrip"></div>';
  const strip=carousel.querySelector('.recentStrip');
  const key=JSON.stringify(items.map(x=>[x.id,media(x.id,true),x.duration]));

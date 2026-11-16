@@ -1,6 +1,11 @@
 .historyCard{padding:10px 12px;margin:8px 0 14px}
 .historyCard>.row{margin-bottom:4px}
 .queueRows{max-height:260px;overflow-y:auto;overflow-x:hidden;overscroll-behavior-y:contain;touch-action:pan-y pinch-zoom}
+.foldQueueRows{max-height:220px;overflow:auto;touch-action:pan-y pinch-zoom}
+.foldQueueRows .queueJob{height:44px}
+.foldQueueCount{display:block;text-align:right;margin-top:4px}
+.historyCard .foldHead{min-height:35px}
+.historyCard .foldHead>small{font-size:11px}
 #bridgeActivity{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:6px 10px;margin:3px 0 0}
 #bridgeCommands{display:flex;gap:6px}
 #bridgeCommands button{min-height:32px;padding:4px 9px;font-size:12px}
@@ -14,6 +19,11 @@
 #drawer{display:flex;flex-direction:column;width:min(320px,88vw);padding:calc(12px + var(--status-inset)) 0 0;overflow:hidden}
 .drawerTop{padding:0 12px 8px;flex:none}
 .drawerHeading{display:flex;gap:8px;align-items:center;min-height:24px;margin-bottom:6px;font-size:13px}
+.connectionBadge{display:inline-flex;align-items:center;gap:8px;padding:4px 10px;border:1px solid #58363f;border-radius:20px;color:#ffb2b5;background:#2e2027;font-size:12px;font-weight:650}
+.connectionBadge[data-state=online]{color:var(--mint);background:#17342b;border-color:#2b5747}
+.connectionBadge[data-state=connecting]{color:#ffcf94;background:#38291d;border-color:#584129}
+.connectionBadge .dot{width:7px;height:7px}
+.connectionBadge[data-state=connecting] .dot{background:#ffbc74;box-shadow:0 0 0 3px #ffbc742a}
 .drawerHeading #appVersion{margin-left:auto;white-space:nowrap;font-size:11px}
 #drawer .connectbutton{margin:0;height:40px;min-height:40px;padding:6px 10px;border-radius:10px}
 #drawerBridge{flex:1;min-height:0;overflow:auto;overscroll-behavior-y:contain;padding:0 12px 8px;touch-action:pan-y pinch-zoom}
@@ -33,10 +43,10 @@
 #drawerBridge .historyCard{margin:6px 0 0;padding:6px 8px;font-size:12px}
 #drawerBridge .queueRows{overscroll-behavior-y:auto}
 #drawerBridge .jobRecall{width:25px}
-#drawer nav{flex:none;display:grid;grid-template-columns:1fr;gap:2px;padding:5px 8px max(5px,env(safe-area-inset-bottom));border-top:1px solid var(--line);background:#111b21}
-#drawer nav button{display:flex;align-items:center;gap:10px;min-width:0;min-height:42px;margin:0;padding:6px 10px;border-radius:8px;text-align:left;font-size:13px}
-#drawer nav button span{font-size:15px;line-height:1}
-@media(max-height:480px){#drawer nav button{min-height:32px;padding-block:3px}}
+#drawer nav{flex:none;display:grid;grid-template-columns:1fr;gap:3px;padding:6px 8px max(6px,env(safe-area-inset-bottom));border-top:1px solid var(--line);background:#111b21}
+#drawer nav button{display:flex;align-items:center;gap:12px;min-width:0;min-height:clamp(46px,6dvh,56px);margin:0;padding:6px 12px;border-radius:10px;text-align:left;font-size:16px}
+#drawer nav button span{width:22px;text-align:center;font-size:19px;line-height:1}
+@media(max-height:480px){#drawer nav button{min-height:32px;padding-block:3px;font-size:14px}}
 .queueJob{height:52px;display:flex;align-items:center;gap:7px;border-top:1px solid var(--line)}
 .jobThumb{width:34px;height:36px;flex:none;display:grid;place-items:center;padding:0;border:0;background:var(--bg);border-radius:5px;overflow:hidden;color:var(--muted)}
 .jobThumb img{width:100%;height:100%;object-fit:cover}

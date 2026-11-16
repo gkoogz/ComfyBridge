@@ -36,41 +36,45 @@ function aspect(w,h){
  return (w/a)+':'+(h/a);
 }
 
-function installFold(panel,summarize){
+function installFold(panel,summarize,{scope=page,defaultClosed}={}){
  if(!panel||panel.classList.contains('foldPanel'))return;
  const heading=panel.firstElementChild;
  const title=heading.matches('h2')?heading:heading.querySelector('h2,label,strong');
- const name=title.textContent.trim(),key='fold:'+page+':'+name;
+ const name=title.textContent.trim(),key='fold:'+scope+':'+name;
  const row=document.createElement('div');row.className='foldHead';
  panel.prepend(row);
  if(title!==heading){for(const child of [...heading.children])if(child!==title)row.append(child);}
  heading.remove();
- const body=document.createElement('div');body.className='foldBody';body.id='fold-'+name.toLowerCase().replace(/[^a-z]+/g,'-');
+ const body=document.createElement('div');body.className='foldBody';body.id='fold-'+scope+'-'+name.toLowerCase().replace(/[^a-z]+/g,'-');
  while(row.nextSibling)body.append(row.nextSibling);
  panel.append(body);panel.classList.add('foldPanel');
  const toggle=document.createElement('button');toggle.className='foldToggle';toggle.type='button';
  toggle.textContent=name;toggle.setAttribute('aria-controls',body.id);row.prepend(toggle);
  const summary=document.createElement('div');summary.className='foldSummary';summary.id=body.id+'-summary';
+ const note=document.createElement('small');note.className='foldHint';note.id=body.id+'-hint';note.hidden=true;row.append(note);
  row.after(summary);
  let previousSummary;
  panel.refreshFoldSummary=()=>{
   if(!body.hidden)return;
-  const contents=summarize(name);
+  const value=summarize(name),hint=value?.hint;
+  const contents=typeof value==='string'?value:value.content||'';
+  note.hidden=!hint;note.textContent=hint||'';
+  summary.hidden=!contents;
+  toggle.setAttribute('aria-describedby',[hint&&note.id,contents&&summary.id].filter(Boolean).join(' '));
   if(contents!==previousSummary){summary.innerHTML=contents;previousSummary=contents;}
  };
  const apply=closed=>{
   body.hidden=closed;summary.hidden=!closed;
   toggle.setAttribute('aria-expanded',String(!closed));panel.classList.toggle('folded',closed);
-  for(const action of row.children)if(action!==toggle)action.hidden=closed;
+  for(const action of row.children)if(action!==toggle&&action!==note)action.hidden=closed;
   if(closed){
    body.querySelector('video')?.pause();
-   toggle.setAttribute('aria-describedby',summary.id);
    panel.refreshFoldSummary();
-  }else toggle.removeAttribute('aria-describedby');
+  }else{note.hidden=true;toggle.removeAttribute('aria-describedby');}
  };
  const change=closed=>{apply(closed);localStorage.setItem(key,closed?'1':'0');};
  const saved=localStorage.getItem(key);
- apply(saved===null?['PC Queue','LoRAs'].includes(name):saved==='1');
+ apply(saved===null?(defaultClosed??['PC Queue','LoRAs'].includes(name)):saved==='1');
  toggle.onclick=e=>{e.stopPropagation();change(!body.hidden);};
  panel.addEventListener('click',()=>{if(body.hidden)change(false);});
 }
