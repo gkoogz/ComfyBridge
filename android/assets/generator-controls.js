@@ -36,7 +36,7 @@ function aspect(w,h){
  return (w/a)+':'+(h/a);
 }
 
-function installFold(panel){
+function installFold(panel,summarize){
  if(!panel||panel.classList.contains('foldPanel'))return;
  const heading=panel.firstElementChild;
  const title=heading.matches('h2')?heading:heading.querySelector('h2,label,strong');
@@ -50,15 +50,29 @@ function installFold(panel){
  panel.append(body);panel.classList.add('foldPanel');
  const toggle=document.createElement('button');toggle.className='foldToggle';toggle.type='button';
  toggle.textContent=name;toggle.setAttribute('aria-controls',body.id);row.prepend(toggle);
- const apply=closed=>{
-  body.hidden=closed;toggle.setAttribute('aria-expanded',String(!closed));panel.classList.toggle('folded',closed);
-  if(closed)body.querySelector('video')?.pause();
+ const summary=document.createElement('div');summary.className='foldSummary';summary.id=body.id+'-summary';
+ row.after(summary);
+ let previousSummary;
+ panel.refreshFoldSummary=()=>{
+  if(!body.hidden)return;
+  const contents=summarize(name);
+  if(contents!==previousSummary){summary.innerHTML=contents;previousSummary=contents;}
  };
+ const apply=closed=>{
+  body.hidden=closed;summary.hidden=!closed;
+  toggle.setAttribute('aria-expanded',String(!closed));panel.classList.toggle('folded',closed);
+  for(const action of row.children)if(action!==toggle)action.hidden=closed;
+  if(closed){
+   body.querySelector('video')?.pause();
+   toggle.setAttribute('aria-describedby',summary.id);
+   panel.refreshFoldSummary();
+  }else toggle.removeAttribute('aria-describedby');
+ };
+ const change=closed=>{apply(closed);localStorage.setItem(key,closed?'1':'0');};
  const saved=localStorage.getItem(key);
  apply(saved===null?['PC Queue','LoRAs'].includes(name):saved==='1');
- toggle.onclick=()=>{const closed=!body.hidden;apply(closed);localStorage.setItem(key,closed?'1':'0');};
- // An Add or Expand action next to a closed heading should still be useful.
- row.addEventListener('click',e=>{if(body.hidden&&e.target.closest('button')!==toggle&&e.target.closest('button')){apply(false);localStorage.setItem(key,'0');}},true);
+ toggle.onclick=e=>{e.stopPropagation();change(!body.hidden);};
+ panel.addEventListener('click',()=>{if(body.hidden)change(false);});
 }
 
 const linkIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 14 4-4m-6 3-1 1a3 3 0 1 0 4 4l3-3a3 3 0 0 0 0-4m2 0 1-1a3 3 0 1 0-4-4l-3 3a3 3 0 0 0 0 4"/></svg>';

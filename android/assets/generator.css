@@ -6,6 +6,19 @@ body:is([data-page=image],[data-page=video]) .modeRow{margin:2px 0 7px}
 .foldToggle{display:flex;align-items:center;gap:7px;flex:1;align-self:stretch;text-align:left;background:none;border:0;border-radius:0;padding:5px 0;min-width:0;font-size:16px;font-weight:650;color:var(--text)}
 .foldToggle:before{content:'';width:6px;height:6px;border:solid var(--muted);border-width:0 1.5px 1.5px 0;transform:rotate(45deg);margin:0 4px 3px 2px}
 .foldToggle[aria-expanded=false]:before{transform:rotate(-45deg);margin-bottom:0}
+.folded{cursor:pointer}
+.foldSummary{padding:0 0 8px 19px;color:var(--muted);font-size:12px;line-height:1.35;user-select:none}
+.foldSummary strong{color:var(--text);font-weight:600}
+.foldSummary .foldThumb{width:38px;height:38px;border-radius:6px;object-fit:cover;background:var(--bg);flex:none}
+.foldSummary .foldMedia,.foldSummary .foldLora{display:flex;align-items:center;gap:7px;min-width:0}
+.foldSummary .foldMedia>span{min-width:0}
+.foldSummary .foldMedia strong,.foldSummary .foldMedia small{display:block}
+.foldSummary .foldFrames{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
+.foldSummary .foldLora{justify-content:space-between;padding:2px 0}
+.foldSummary .foldLora span:last-child{flex:none;font-variant-numeric:tabular-nums}
+.foldSummary .foldLora.inactive{opacity:.6}
+.foldSummary .foldModel,.foldSummary .foldLora span:first-child{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.foldSummary .foldPrompt{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow:hidden}
 .foldHead .textbutton{min-height:34px;padding:3px 5px}
 .foldBody:not([hidden]){padding-bottom:10px}
 .foldBody .field{margin-bottom:9px}.foldBody .field:last-child{margin-bottom:0}
@@ -38,7 +51,10 @@ body:is([data-page=image],[data-page=video]) .modeRow{margin:2px 0 7px}
 .foldBody .promptEntry{height:118px;resize:vertical}
 .promptHeight{display:block;min-width:36px;min-height:28px;padding:0 6px;margin-top:2px;font-size:22px}
 .foldBody .togglelabel{margin:6px 0 0}
-#latestPanel>.foldHead{margin:2px 0 4px}
+#latestPanel>.foldHead{margin:2px 0 4px;padding-inline:12px}
+#latestPanel>.foldSummary{padding-inline:31px 12px}
+#modal:has(#fullPrompt) #modalClose{display:grid;place-items:center;min-width:44px;min-height:44px;padding:0}
+#modal:has(#fullPrompt) #modalClose svg{width:27px;height:27px;fill:none;stroke:currentColor;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round}
 .canvasFields{display:grid;grid-template-columns:minmax(0,1fr) 36px minmax(0,1fr);align-items:end;gap:6px}
 .canvasFields label{min-width:0}
 .canvasFields input{margin-top:3px;font-size:21px;font-weight:650;font-variant-numeric:tabular-nums}

@@ -314,16 +314,7 @@ function bridgeBack(){
  if(!$('#presetMenu').hidden){$('#presetMenu').hidden=true;return;}
  if($('#batchMenu')&&!$('#batchMenu').hidden){$('#batchMenu').hidden=true;return;}
  if(page==='library'&&archived){archived=false;renderLibrary();return;}
- if(page!=='bridge')navigate('bridge');
-}
-function outgoingBridge(){
- if(reduceMotion())return null;
- const old=$('#main').cloneNode(true);old.removeAttribute('id');old.querySelectorAll('[id]').forEach(e=>e.removeAttribute('id'));old.inert=true;old.className='departing';old.setAttribute('aria-hidden','true');old.style.top=$('#main').getBoundingClientRect().top+'px';document.body.append(old);return old;
-}
-function enterGenerator(old){
- const options={duration:200,easing:'cubic-bezier(.22,.75,.25,1)'};
- old.animate([{transform:'translateX(0)'},{transform:'translateX(-100vw)'}],options).onfinish=()=>old.remove();
- $('#main').animate([{transform:'translateX(100vw)'},{transform:'translateX(0)'}],options);
+ drawer(true);
 }
 
 // A vertical scroll or a control drag stays owned by its original surface.

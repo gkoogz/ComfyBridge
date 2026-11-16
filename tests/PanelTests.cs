@@ -32,6 +32,9 @@ partial class Bridge {
         try{
             app.ShowMonitor();Application.DoEvents();
             var header=(TableLayoutPanel)((TableLayoutPanel)app.compactPanel).GetControlFromPosition(0,0);
+            Check(header.GetControlFromPosition(1,0).Text.Contains(VersionLabel())
+                && app.tray.Text.Contains(VersionLabel())
+                && app.tray.ContextMenuStrip.Items[1].Text==VersionLabel(),"version is visible in the panel, tooltip and tray menu");
             foreach(Control control in header.Controls){
                 Check(control.Height>=TextRenderer.MeasureText(control.Text,control.Font).Height+4,"header text has vertical clearance");
                 if(control is Button)Check(((Button)control).FlatAppearance.BorderSize==0,"window controls are borderless");

@@ -220,6 +220,10 @@ public class MainActivity extends Activity {
   @JavascriptInterface public String configuration(){
    JSONObject d=new JSONObject();try{String h=prefs.getString("host","");d.put("host",h);d.put("paired",h.startsWith("https://")&&!prefs.getString("key","").isEmpty());d.put("fingerprint",prefs.getString("fingerprint",""));d.put("device",device(prefs));d.put("name",android.os.Build.MODEL);}catch(Exception ignored){}return d.toString();
   }
+  @JavascriptInterface public String appVersion(){
+   try{return getPackageManager().getPackageInfo(getPackageName(),0).versionName;}
+   catch(android.content.pm.PackageManager.NameNotFoundException ignored){return "";}
+  }
   @JavascriptInterface public void sliderTick(){
    runOnUiThread(()->web.performHapticFeedback(android.os.Build.VERSION.SDK_INT>=34
        ? android.view.HapticFeedbackConstants.SEGMENT_FREQUENT_TICK : android.view.HapticFeedbackConstants.CLOCK_TICK));

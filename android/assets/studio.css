@@ -1,10 +1,6 @@
 .historyCard{padding:10px 12px;margin:8px 0 14px}
 .historyCard>.row{margin-bottom:4px}
 .queueRows{max-height:260px;overflow-y:auto;overflow-x:hidden;overscroll-behavior-y:contain;touch-action:pan-y pinch-zoom}
-body[data-page=bridge] #workspace{display:flex;flex-direction:column}
-body[data-page=bridge] #workspace>header,body[data-page=bridge] #linkNotice{flex:none}
-body[data-page=bridge] #main{display:flex;flex-direction:column;width:100%;flex:1 0 auto;margin:0 auto;padding-bottom:0}
-.bridgePanes,#bridgeActivity{flex:none}
 #bridgeActivity{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:6px 10px;margin:3px 0 0}
 #bridgeCommands{display:flex;gap:6px}
 #bridgeCommands button{min-height:32px;padding:4px 9px;font-size:12px}
@@ -15,18 +11,32 @@ body[data-page=bridge] #main{display:flex;flex-direction:column;width:100%;flex:
 #activeTimer{display:block}
 #bridgeActivity .progress{margin:5px 0}
 .bridgeStage{font-size:12px;color:var(--muted)}
-body[data-page=bridge] #queueList{display:flex;flex:1 0 110px;min-height:110px}
-body[data-page=bridge] .historyCard{display:flex;flex:1;min-width:0;flex-direction:column;margin:7px 0 0;padding:7px 9px 0}
-body[data-page=bridge] .queueRows{height:0;min-height:0;max-height:none;flex:1}
-@media(max-height:740px){
- .bridgePanes:has(#bridgeOptions){max-height:max(80px,calc(100dvh - 306px));overflow-y:auto;overflow-x:hidden;overscroll-behavior-y:contain;touch-action:pan-y pinch-zoom}
- .bridgePanes .pairCard:has(.orb.connected){grid-template-columns:36px 1fr auto;padding:7px 9px}
- .bridgePanes .pairCard:has(.orb.connected) .orb{width:34px;height:34px}
- .bridgePanes .pairCard:has(.orb.connected) .connectbutton{grid-column:3;grid-row:1;width:auto;height:auto;min-height:36px;padding:5px 10px}
- .bridgePanes .metric{padding:3px 7px}
- .bridgePanes #bridgeOptions{min-height:34px}
-}
-@media(max-height:510px) and (min-width:520px){.bridgePanes{display:grid;grid-template-columns:1fr 1fr;gap:5px 12px}}
+#drawer{display:flex;flex-direction:column;width:min(320px,88vw);padding:calc(12px + var(--status-inset)) 0 0;overflow:hidden}
+.drawerTop{padding:0 12px 8px;flex:none}
+.drawerHeading{display:flex;gap:8px;align-items:center;min-height:24px;margin-bottom:6px;font-size:13px}
+.drawerHeading #appVersion{margin-left:auto;white-space:nowrap;font-size:11px}
+#drawer .connectbutton{margin:0;height:40px;min-height:40px;padding:6px 10px;border-radius:10px}
+#drawerBridge{flex:1;min-height:0;overflow:auto;overscroll-behavior-y:contain;padding:0 12px 8px;touch-action:pan-y pinch-zoom}
+#drawerBridge .pairFields p,#drawerBridge .pairHost{margin:0 0 6px;font-size:12px;color:var(--muted);overflow-wrap:anywhere}
+#drawerBridge .pairFields label{margin:7px 0 3px}
+#drawerBridge .pairFields input{padding:8px}
+#drawerBridge #pairError:not([hidden]){margin:6px 0;color:#ffd1d4;background:#39272c;padding:7px;border-radius:7px;font-size:12px}
+#drawerBridge #retryCatalog,#drawerBridge #changePair{width:100%;min-height:34px;padding:5px 7px;font-size:12px}
+#drawerBridge .sectionline{margin:6px 0}
+#drawerBridge .sectionline h2{font-size:15px}
+#drawerBridge .telemetry{gap:5px}
+#drawerBridge .metric{padding:4px 7px;border-radius:8px}
+#drawerBridge .metric strong{font-size:16px}
+#drawerBridge .metric label{margin:0;font-size:9px}
+#drawerBridge .metric small{font-size:10px;margin:0 0 0 4px}
+#drawerBridge .metric .meter{margin-top:3px}
+#drawerBridge .historyCard{margin:6px 0 0;padding:6px 8px;font-size:12px}
+#drawerBridge .queueRows{overscroll-behavior-y:auto}
+#drawerBridge .jobRecall{width:25px}
+#drawer nav{flex:none;display:grid;grid-template-columns:1fr;gap:2px;padding:5px 8px max(5px,env(safe-area-inset-bottom));border-top:1px solid var(--line);background:#111b21}
+#drawer nav button{display:flex;align-items:center;gap:10px;min-width:0;min-height:42px;margin:0;padding:6px 10px;border-radius:8px;text-align:left;font-size:13px}
+#drawer nav button span{font-size:15px;line-height:1}
+@media(max-height:480px){#drawer nav button{min-height:32px;padding-block:3px}}
 .queueJob{height:52px;display:flex;align-items:center;gap:7px;border-top:1px solid var(--line)}
 .jobThumb{width:34px;height:36px;flex:none;display:grid;place-items:center;padding:0;border:0;background:var(--bg);border-radius:5px;overflow:hidden;color:var(--muted)}
 .jobThumb img{width:100%;height:100%;object-fit:cover}

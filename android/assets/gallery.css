@@ -1,7 +1,6 @@
 /* The drawer and its shade extend behind the Android status icons. */
 :root{--status-inset:env(safe-area-inset-top,0px);background:#0b1014}
 #workspace{position:fixed;inset:var(--status-inset) 0 0;overflow:auto;overflow-x:clip;background:var(--bg);overscroll-behavior:contain;touch-action:pan-y pinch-zoom}
-#drawer{padding-top:calc(33px + var(--status-inset))}
 #modal{padding-top:var(--status-inset)}
 #workspace.behind{transform:translateX(-100%);overflow:hidden;transition:transform .18s ease-out}
 header{height:52px;padding-top:4px;padding-bottom:4px}
@@ -61,31 +60,11 @@ body[data-page=library] #linkNotice:not([hidden]){margin:0;padding:4px 12px;font
 .skipImage,.retryImage{position:absolute;top:8px;right:8px;z-index:1;padding:9px 14px;border-radius:7px}
 .skipImage{background:#ad3041;color:white;border:1px solid #ee7481}
 .resultbox .asset:not(:has(video,img)){padding:22px}
-.departing{position:fixed;left:0;right:0;z-index:11;background:var(--bg);pointer-events:none}
-#drawer{width:min(285px,82vw)}
 #drawer,#shade{touch-action:pan-y}
 .dragging #drawer,.dragging #workspace,.dragging #viewer{transition:none}
 #modal{touch-action:pan-y}
 .carousel{touch-action:pan-x pan-y}
 canvas,input[type=range]{touch-action:none}
-body[data-page=bridge] main,main.departing{padding:10px 12px}
-.pairCard{display:grid;grid-template-columns:44px 1fr;align-items:center;gap:4px 10px;margin:0 0 8px;padding:10px 12px}
-.pairCard .orb{grid-column:1;grid-row:1;width:42px;height:42px;margin:0}
-.pairCard .orb:before{inset:3px}.pairCard .orb svg{width:25px;height:25px}
-.pairCard .pairCheck{font-size:22px}
-.pairCard h1{grid-column:2;grid-row:1;font-size:20px;margin:0}
-.pairCard>*:not(.orb):not(h1){grid-column:1/-1}
-.pairCard .pairHost{font-size:12px;margin:0}
-.pairCard .connectbutton{margin:3px 0 0;padding:9px;font-size:16px}
-.pairCard .textbutton{padding:4px}
-.pairFields p,.pairFields small{font-size:12px;margin:3px 0}
-.pairFields label{font-size:12px;margin:5px 0 2px}
-.pairFields input{padding:6px 10px}
-.pathcards{margin:5px 0 9px;gap:6px}
-.pathcards button{padding:9px 10px;position:relative}
-.pathcards .largeicon{display:none}
-.pathcards small{display:block}
-body[data-page=bridge] .sectionline,.departing .sectionline{margin:6px 0}
 .telemetry{gap:5px}
 .metric{padding:6px 9px;border-radius:9px}
 .metric label{font-size:9px;margin:0;color:var(--muted)}
@@ -93,7 +72,6 @@ body[data-page=bridge] .sectionline,.departing .sectionline{margin:6px 0}
 .metric small{display:inline;font-size:10px;margin-left:5px}
 .metric .meter{margin-top:4px;height:3px}
 #bridgeOptions{padding:8px 2px;font-size:13px}
-@media(max-height:510px) and (min-width:520px){body[data-page=bridge] main{display:grid;grid-template-columns:1fr 1fr;gap:5px 12px}body[data-page=bridge] .pairCard{grid-column:1;grid-row:1/4}body[data-page=bridge] .sectionline,body[data-page=bridge] .telemetry,body[data-page=bridge] #destinations{grid-column:2}}
 @media(prefers-reduced-motion:reduce){#drawer,#workspace,#viewer,.viewerTop,.viewerFoot,.transport{transition:none!important}}
 
 /* The collection returns above a stationary viewer. */

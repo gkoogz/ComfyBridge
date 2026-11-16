@@ -41,7 +41,7 @@ function bindFrame(el,id){
  }
  if(id)paintFrame(id);
 }
-const showsQueue=()=>window.Desktop||['bridge','image','video'].includes(page);
+const showsQueue=()=>dashboardVisible()||['image','video'].includes(page);
 async function watchFrames(){
  const job=liveJob(active);
  if(!showsQueue()||!connected||document.hidden||!imagePreviewProtocol||job?.status!=='running'){

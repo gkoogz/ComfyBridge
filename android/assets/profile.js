@@ -25,10 +25,10 @@ async function startProfiles(id){if(profileLoad===id)return;profileLoad=id;profi
  const list=await api('profiles');if(id!==epoch||!connected)return;profileList=list;
  if(freshPhone&&list.length)await restoreProfile(list[0].device,id);
  if(id!==epoch||!connected)return;freshPhone=false;profileReady=true;
- if(page==='bridge')renderBridge();scheduleBackup();syncSettings();syncNotes();
+ scheduleBackup();syncSettings();syncNotes();
  }catch(e){retryProfiles=Date.now()+15000;profileMessage('PC backup unavailable: '+e.message);}finally{if(profileLoad===id)profileLoad=0;}}
-function profileControls(){if(!connected)return;
- const settings=document.createElement('button');settings.id='bridgeOptions';settings.textContent='Backups & notifications  ›';document.querySelector('#main').append(settings);
+function profileControls(){
+ const settings=document.createElement('button');settings.id='bridgeOptions';settings.textContent='Backups & notifications  ›';$('#drawerBridge').insertBefore(settings,$('#bridgeActivity'));
  settings.onclick=()=>{
  openModal('Backups & notifications','<section class="card"><h2>PC settings backup</h2><p id="backupStatus"></p><button id="backupNow">Save now</button> <button id="restoreFrom">Restore from a phone…</button> <button id="alerts">Generation notifications</button></section>');
  profileMessage(profileStatus||'Checking PC backups…');

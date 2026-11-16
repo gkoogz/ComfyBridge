@@ -101,25 +101,28 @@ function queueTiming(){
  const spent=elapsed(queueHistory.find(j=>j.id===job.id));
  return (spent?'Elapsed '+spent:'Waiting')+(queueProtocol>=17||rollingStopAll?' · Total ETA '+etaText(queueEtaSeconds):'');
 }
-setInterval(()=>{if(!document.hidden&&$('#queueList'))updateTimers();},1000);
-function renderQueue(){
- const box=$('#queueList');if(!box)return;
+setInterval(()=>{if(!document.hidden&&($('#generatorQueue')||dashboardVisible()))updateTimers();},1000);
+function renderQueue(box=$('#queueList')){
+ if(!box)return;
  const items=queueHistory.length?queueHistory:jobs.filter(j=>liveStatus(j.status));
  const frameId=imagePreviewProtocol?active:null;
  const key=JSON.stringify([frameId,items.map(j=>[j.id,j.status,j.media,media(j.media,true),j.ended,j.checkpointAvailable])]);
  watchFrames();
- if(box.dataset.version===key&&box.dataset.failure===historyFailure){updateTimers();return;}
+ if(box.dataset.version===key&&box.dataset.failure===historyFailure){$('.historyCard',box)?.refreshFoldSummary?.();updateTimers();return;}
  if(box.dataset.touching==='1'){updateTimers();return;}
  if(!$('.queueRows',box)){
   box.innerHTML='<section class="card historyCard"><div class="row spread"><strong>PC Queue</strong><small>Last 24 hours</small></div><small class="historyError" role="status" hidden></small><div class="queueRows"></div></section>';
-  if(page!=='bridge'&&!window.Desktop)installFold($('.historyCard',box));
+  if(box.id==='generatorQueue')installFold($('.historyCard',box),()=>{
+   const {job,label}=queueProgress();
+   return job?esc(label):queueHistory.length?queueHistory.length+' in the last 24 hours':'Queue empty';
+  });
   const rows=$('.queueRows',box);
   rows.addEventListener('touchstart',()=>{box.dataset.touching='1';},{passive:true});
   const ended=e=>{
    if(e.touches.length)return;
    delete box.dataset.touching;
    // Let the tap's click reach its original button before replacing any rows.
-   setTimeout(()=>{if(box.isConnected)renderQueue();},80);
+   setTimeout(()=>{if(box.isConnected)renderQueue(box);},80);
   };
   rows.addEventListener('touchend',ended,{passive:true});
   rows.addEventListener('touchcancel',ended,{passive:true});
@@ -138,6 +141,7 @@ function renderQueue(){
    '<button class="jobRecall" data-replay="'+j.id+'" aria-label="Load this generation in the editor">↗</button></div>';
  }).join('')+(items.length?'':'<small>No generations in the last 24 hours.</small>');
  rows.scrollTop=scroll;
+ $('.historyCard',box).refreshFoldSummary?.();
  if(frameId)paintFrame(frameId);
  $$('[data-cancel]',box).forEach(b=>b.onclick=()=>stopBatch(b.dataset.cancel));
  $$('[data-resume-checkpoint]',box).forEach(b=>b.onclick=async()=>{
@@ -205,12 +209,8 @@ function queueProgress(){
   (queueProtocol>=17||rollingStopAll?' · ETA '+etaText(job.etaSeconds):''):'Queue empty';
  return {pending,job,running,pct,label};
 }
-function addBridgeActivity(scroll){
- const main=$('#main'),panes=document.createElement('div');
- panes.className='bridgePanes';panes.append(...main.childNodes);main.append(panes);
- main.insertAdjacentHTML('beforeend','<section id="bridgeActivity" aria-label="Generation progress"><div class="row spread"><strong>Generation</strong><div id="bridgeCommands"></div></div><div class="progress" role="progressbar" aria-label="Current generation" aria-valuemin="0" aria-valuemax="100"><i></i><span></span></div><div class="bridgeStage"><span id="bridgeStage"></span> <span id="activeTimer"></span></div></section><div id="queueList"></div>');
- updateBridgeActivity();
- const rows=$('.queueRows');if(rows)rows.scrollTop=scroll;
+function bridgeActivityMarkup(){
+ return '<section id="bridgeActivity" aria-label="Generation progress"><div class="row spread"><strong>Generation</strong><div id="bridgeCommands"></div></div><div class="progress" role="progressbar" aria-label="Current generation" aria-valuemin="0" aria-valuemax="100"><i></i><span></span></div><div class="bridgeStage"><span id="bridgeStage"></span> <span id="activeTimer"></span></div></section><div id="queueList"></div>';
 }
 function updateBridgeActivity(error=false){
  const panel=$('#bridgeActivity');if(!panel)return;
@@ -237,7 +237,10 @@ function updateBridgeActivity(error=false){
  const canSkip=queueProtocol>=8||queueProtocol===7&&(job?.kind==='image'||rollingSkip);
  skip.disabled=!mine||!!bridgeCommand||!running||job.status!=='running'||!canSkip;
  if(connected)renderQueue();
- else $('#queueList').innerHTML='<section class="card historyCard"><strong>PC Queue</strong><small>Connect to see the last 24 hours.</small></section>';
+ else {
+  const queue=$('#queueList');delete queue.dataset.version;
+  queue.innerHTML='<section class="card historyCard"><strong>PC Queue</strong><small> Connect to see the last 24 hours.</small></section>';
+ }
  updateTimers();
 }
 async function runBridgeCommand(action,job){
@@ -254,5 +257,5 @@ async function runBridgeCommand(action,job){
   else{await api('stop',{batch:job.batch});toast('Stopping this batch');}
   await poll();
  }catch(e){toast(e.message);}
- finally{bridgeCommand=null;if(page==='bridge'||window.Desktop)updateBridgeActivity();}
+ finally{bridgeCommand=null;updateBridgeActivity();}
 }

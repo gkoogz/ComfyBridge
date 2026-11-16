@@ -128,9 +128,10 @@ node tests/queue-preview.cjs
 
 - Keep development inside this checkout; put temporary probes and sensitive
   observations under ignored `local`, not new folders around the PC.
-- Building, installing, pushing source and publishing a GitHub release are
-  separate actions. Perform the actions authorized by the user and report their
-  exact status. A source push does not create an APK download release.
+- When a beta is ready, install the Windows build on this PC, push its source
+  and publish a GitHub prerelease with the Android APK and Windows ZIP. This is
+  the default delivery workflow. Follow the live-work handoff instructions
+  above and report the installed version and published release.
 - Preserve the existing Android signing key under `local/data/signing`; replacing
   it breaks normal upgrades. Keep generated secrets out of packages and logs.
 - When publishing a release, inspect the complete current installer's file list,

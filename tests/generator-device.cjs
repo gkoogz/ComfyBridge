@@ -8,7 +8,7 @@ const assert=require('node:assert/strict');
  const check=(name,value)=>{assert.ok(value,name);console.log(name);};
  const storage=await ev(()=>Object.fromEntries(Object.entries(localStorage).filter(([k])=>k.startsWith('fold:'))));
  try{
-  await p.waitForSelector('#main #connect');
+  await p.waitForSelector('#drawer #connect');
   await ev(()=>{
    if(connected||wanted)throw Error('Disconnect before running the generator UI test');
    window.persist=()=>{};

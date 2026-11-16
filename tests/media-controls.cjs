@@ -13,7 +13,7 @@ const assert=require('node:assert/strict'),path=require('node:path');
   const canvas=document.createElement('canvas');canvas.width=100;canvas.height=200;window.cover=canvas.toDataURL();
   library=[{id:'one',job:'j1',kind:'image',local:'h1',created:3,rating:0},{id:'two',job:'j2',kind:'video',local:'h2',created:2,rating:0},{id:'three',job:'j3',kind:'image',local:'h3',created:1,rating:0}];
   window.calls=[];api=async(route,body)=>{calls.push({route,body});if(route==='studio/rating')return body;throw Error(route);};
-  page='library';render();openMedia(library[1]);
+  navigate('library');openMedia(library[1]);
  });
  await p.waitForSelector('.bigPlay');await p.waitForTimeout(400);
  assert((await p.locator('#workspace').boundingBox()).x<=-389,'Collection starts off-screen');

@@ -81,7 +81,7 @@ partial class Bridge {
         RefreshState();
     }
     void RefreshState(){int count=PhoneCount();bool live=online&&count>0;
-        tray.Text=!online?"ComfyBridge · server off":live?"ComfyBridge · "+count+(count==1?" phone connected":" phones connected"):"ComfyBridge · waiting for phone";
+        tray.Text=TrayText(!online?"server off":live?count+(count==1?" phone connected":" phones connected"):"waiting for phone");
         if(badge==null)return;
         badge.Text=online?"●  Server on":"●  Server off";badge.ForeColor=online?Mint:Red;
         int bg;lock(phones)bg=watchers.Keys.Count(id=>!phones.ContainsKey(id));
@@ -122,6 +122,15 @@ partial class Bridge {
             if(dlg.ShowDialog(monitor)==DialogResult.OK)RefreshCivitaiTip();
         }
     }
+    static string VersionLabel(){
+        var version=Application.ProductVersion;
+        int beta=version.IndexOf("-beta.",StringComparison.Ordinal);
+        return beta<0?"v"+version:"Beta "+version.Substring(beta+6);
+    }
+    static string TrayText(string status){
+        var text="ComfyBridge · "+VersionLabel()+" · "+status;
+        return text.Length<=63?text:text.Substring(0,63);
+    }
     void ShowMonitor(){
         if(monitor==null){
             monitor=new Form{Text="ComfyBridge",Icon=tray.Icon,ClientSize=new Size(492,428),BackColor=Ink,ForeColor=Color.White,ShowInTaskbar=false,TopMost=true,StartPosition=FormStartPosition.Manual,FormBorderStyle=FormBorderStyle.None,AutoScaleMode=AutoScaleMode.Dpi};
@@ -134,7 +143,7 @@ partial class Bridge {
             compactPanel=grid;
             var head=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=4,RowCount=1,Margin=Padding.Empty,Padding=Padding.Empty};head.RowStyles.Add(new RowStyle(SizeType.Percent,100));head.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,43));head.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));head.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,43));head.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,43));
             head.Controls.Add(WindowButton("↖","Expand desktop studio",(s,e)=>ExpandDesktop()),0,0);
-            var title=L("ComfyBridge",15,Color.White,true);title.Margin=Padding.Empty;head.Controls.Add(title,1,0);
+            var title=L("ComfyBridge · "+VersionLabel(),15,Color.White,true);title.Margin=Padding.Empty;head.Controls.Add(title,1,0);
             head.Controls.Add(WindowButton("–","Hide to tray",(s,e)=>HidePanel()),2,0);
             head.Controls.Add(WindowButton("×","Hide to tray",(s,e)=>HidePanel()),3,0);Add(grid,head,44);
             badge=L("",10,Mint,true);badge.Dock=DockStyle.None;badge.Size=new Size(88,30);phone=L("",10,Red);phone.Dock=DockStyle.None;phone.Size=new Size(155,30);

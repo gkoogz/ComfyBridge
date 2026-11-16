@@ -1,7 +1,7 @@
 'use strict';
 const $ = (s, root=document)=>root.querySelector(s), $$=(s,root=document)=>[...root.querySelectorAll(s)];
 const esc = s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-let db, state={settings:{},presets:{image:[],video:[]},prompts:[],inputs:{image:{},video:{}}}, page='bridge', connected=false, connecting=false, catalog=null, library=[], jobs=[], active=null, previewAvailable=false, archived=false, pollBusy=false, presetName='', saveTimer;
+let db, state={settings:{},presets:{image:[],video:[]},prompts:[],inputs:{image:{},video:{}}}, page='browse', connected=false, connecting=false, catalog=null, library=[], jobs=[], active=null, previewAvailable=false, archived=false, pollBusy=false, presetName='', saveTimer;
 const pending=new Map(); let rpcId=0;
 window.bridgeResult=(id,ok,value)=>{const p=pending.get(id);if(!p)return;pending.delete(id);ok?p.resolve(value):p.reject(new Error(value));};
 async function api(path,body){
@@ -66,23 +66,50 @@ async function init(){
  $('#modalClose').onclick=closeModal;$('#modal').addEventListener('cancel',()=>{if(maskSession)maskSession=null;});
  document.addEventListener('click',e=>{if(!e.target.closest('#presetButton,#presetMenu'))$('#presetMenu').hidden=true;});
  if(window.Native&&JSON.parse(Native.configuration()).paired){try{setShelf(await local('list'));}catch(e){shelfError=e.message;}}
- await loadNotes();await loadChat();await initDesktop();render();setInterval(heartbeat,2500);document.addEventListener('visibilitychange',()=>{if(!document.hidden){nextProbe=0;nextSync=0;nextSettings=0;heartbeat();if(page==='notepad')syncNotes();}else if(profileDirty)flushProfile();});
+ const version=window.Desktop?info().version:window.Native?.appVersion?.();
+ if(version){
+  const label=$('#appVersion'),beta=version.match(/-beta\.(\d+)$/i);
+  label.textContent=beta?'Beta '+beta[1]:'v'+version;label.title=version;label.hidden=false;
+ }
+ await loadNotes();await loadChat();await initDesktop();if(!window.Desktop)initBridgeDrawer();render();
+ if(!window.Desktop)drawer(true);
+ setInterval(heartbeat,2500);document.addEventListener('visibilitychange',()=>{if(!document.hidden){nextProbe=0;nextSync=0;nextSettings=0;heartbeat();if(page==='notepad')syncNotes();}else if(profileDirty)flushProfile();});
  window.openJobAlert=async()=>{const route=window.Native?.notificationRoute();if(!route)return;
   if(!connected&&info().paired&&!connecting&&!wanted){navigate('bridge');await $('#connect').onclick();}
   if(route==='library'){navigate('library');return;}
   if(connected){try{const status=await api('status'),j=status.jobs.find(x=>x.owner===info().device&&['running','pending','submitting','cancelling'].includes(x.status));navigate(j?.kind||'library');}catch(e){toast(e.message);}}
  };window.openJobAlert();
 }
-function drawer(open){if(window.Desktop){$('#drawer').inert=false;return;}document.querySelector('#drawer').inert=!open;$('#drawer').classList.toggle('open',open);$('#shade').hidden=!open;}
-function navigate(to){if(window.Desktop){if(to==='bridge'){$('#desktopPower').focus();return;}localStorage.setItem('desktopPage',to);}if(page!==to&&['image','video'].includes(to))promptExpanded={};if(page!==to&&(['image','video'].includes(page)||!['image','video','bridge'].includes(to)))leaveLivePreview();if(viewerOpen())closeViewer(true);const forward=page==='bridge'&&['image','video'].includes(to),out=forward?outgoingBridge():null;page=to;archived=false;presetName='';drawer(false);render();$('#workspace').scrollTop=0;if(out)enterGenerator(out);if(connected){poll();if(['image','video'].includes(to))syncSettings();if(to==='notepad')syncNotes();}}
-function connection(value){connected=value;ModelPreviews.connected(value);prefetchVisibility();paintChatStatus();$$('.dot').forEach(d=>d.classList.toggle('connected',value));$('#statusDot').setAttribute('aria-label',value?'Connected':'Disconnected');$('#drawerStatus').textContent=value?(window.Desktop?'Local studio':'PC connected'):'Disconnected';}
+function drawer(open){
+ const panel=$('#drawer');
+ if(window.Desktop){panel.inert=false;return;}
+ panel.inert=!open;panel.classList.toggle('open',open);$('#shade').hidden=!open;
+ $('#hamburger').setAttribute('aria-expanded',String(open));
+ if(open&&connected)poll();
+ else if(!showsQueue())stopFrames();
+}
+function navigate(to){
+ if(to==='bridge'){if(window.Desktop)$('#desktopPower').focus();else drawer(true);return;}
+ if(window.Desktop)localStorage.setItem('desktopPage',to);
+ if(page!==to){if(['image','video'].includes(to))promptExpanded={};leaveLivePreview();}
+ if(viewerOpen())closeViewer(true);
+ page=to;archived=false;presetName='';drawer(false);render();$('#workspace').scrollTop=0;
+ if(connected){poll();if(['image','video'].includes(to))syncSettings();if(to==='notepad')syncNotes();}
+}
+function connection(value){connected=value;ModelPreviews.connected(value);prefetchVisibility();paintChatStatus();$$('.dot').forEach(d=>d.classList.toggle('connected',value));$('#statusDot').setAttribute('aria-label',value?'Connected':'Disconnected');$('#drawerStatus').textContent=value?(window.Desktop?'Local studio':'PC connected'):wanted?'Reconnecting…':'Disconnected';}
+function dashboardVisible(){return window.Desktop||$('#drawer').classList.contains('open');}
 function render(){
  document.body.dataset.page=page;
  $('#pageTitle').textContent=page[0].toUpperCase()+page.slice(1);$('#presetButton').hidden=!['image','video'].includes(page);$('#presetButton').innerHTML=esc(presetName||'Current settings')+' <span>⌄</span>';
- $$('[data-nav]').forEach(b=>b.classList.toggle('active',b.dataset.nav===page));
- if(page==='bridge')renderBridge();else if(page==='library'){if(!viewerOpen())renderLibrary();else galleryDirty=true;}else if(page==='notepad')renderNotepad();else renderGenerator();connection(connected);notice();
+ $$('[data-nav]').forEach(b=>{
+  const active=b.dataset.nav===page;b.classList.toggle('active',active);
+  if(active)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current');
+ });
+ if(page==='browse')$('#main').innerHTML='<p class="subhead">Coming soon.</p>';
+ else if(page==='library'){if(!viewerOpen())renderLibrary();else galleryDirty=true;}
+ else if(page==='notepad')renderNotepad();else renderGenerator();
+ connection(connected);notice();
 }
-const pcIcon='<svg viewBox="0 0 64 64"><rect x="7" y="10" width="50" height="34" rx="5"/><path d="M23 54h18M32 44v10M17 34l8-9 8 6 13-13"/></svg>';
 let editPair=false,pairAddress=null,bridgeError="";
 let wanted=false,epoch=0,probing=false,nextProbe=0,misses=0,catalogLoading=false,retryCatalogAt=0,workerBuild='',serviceNote='',pollNote='';
 function notice(){const el=$('#linkNotice'),n=library.filter(j=>['missing','changed'].includes(j.warning)).length;const review=n?n+' PC file(s) changed or disappeared. Open Library to review your protected phone copies.':'';el.textContent=[wanted&&!connected?(window.Desktop?'Reconnecting to the local bridge. ':'Reconnecting to your PC. ')+bridgeError+' Accepted jobs continue on the PC.':connected?(/after the previous worker goes idle/i.test(serviceNote+' '+pollNote)?'PC connected. The Windows bridge is updating; retrying automatically.':[serviceNote,pollNote].filter(Boolean).join(' ')):'',page==='library'?'':review].filter(Boolean).join(' ');el.hidden=!el.textContent;}
@@ -97,12 +124,12 @@ async function loadCatalog(){
   Object.assign(data.defaults.video,{seconds:10,exactFrames:true,
    frames:Math.max(1,Math.round(data.defaults.video.fps*10))});
   for(const kind of ['image','video'])if(!state.settings[kind])state.settings[kind]=structuredClone(data.defaults[kind]);
-  catalog=data;ModelPreviews.start(data);retryCatalogAt=0;persist(null);serviceNote='';if(page==='video')refreshVideoModelField();if(page==='bridge'||!$('#play')&&['image','video'].includes(page))render();
+  catalog=data;ModelPreviews.start(data);retryCatalogAt=0;persist(null);serviceNote='';if(page==='video')refreshVideoModelField();if(!$('#play')&&['image','video'].includes(page))render();
  }catch(e){if(id!==epoch)return;retryCatalogAt=Date.now()+8000;serviceNote='Model list unavailable: '+e.message;}
- finally{if(id===epoch){catalogLoading=false;if(!catalog&&page==='bridge')renderBridge();notice();}}
+ finally{if(id===epoch){catalogLoading=false;renderBridge();notice();}}
 }
 function reached(){const cameBack=!connected;misses=0;nextProbe=0;bridgeError='';connection(true);
- if(cameBack&&page==='bridge')renderBridge();
+ if(cameBack)renderBridge();
  if(cameBack||!profileReady&&!profileLoad&&Date.now()>=retryProfiles)startProfiles(epoch).finally(()=>{if(connected&&!catalog)loadCatalog();});
  syncShelf(cameBack);checkNewMedia();notice();poll();
 }
@@ -110,28 +137,52 @@ function unreachable(e){
  queueProtocol=0;
  bridgeError=e.message;
  if(/HTTP 40[13]|verify the PC.s identity/i.test(bridgeError)){
-  const reason=bridgeError;clearSession();editPair=true;bridgeError=reason;if(page==='bridge')renderBridge();else toast(reason);return;
+  const reason=bridgeError;clearSession();editPair=true;bridgeError=reason;renderBridge();if(!window.Desktop)drawer(true);else toast(reason);return;
  }
  connection(false);nextProbe=Date.now()+Math.min(20000,2500*2**Math.min(misses++,3));
- if(page==='bridge')renderBridge();notice();
+ renderBridge();notice();
 }
 async function heartbeat(){
  if(connected&&!document.hidden){ModelPreviews.wake();ModelPreviews.refresh();if(!catalog&&!catalogLoading&&retryCatalogAt&&Date.now()>=retryCatalogAt)loadCatalog();if(Date.now()>=nextSettings)syncSettings();if(page==='notepad'&&Date.now()>=nextNoteSync)syncNotes();}
  if(!wanted||probing||connecting||document.hidden||Date.now()<nextProbe)return;const id=epoch;probing=true;
  try{await api('ping');if(id===epoch)reached();}catch(e){if(id===epoch)unreachable(e);}finally{probing=false;}
 }
+function machinePulse(label){
+ return '<div class="sectionline"><h2>Machine pulse</h2><span class="pill" id="liveLabel">'+label+'</span></div><div class="telemetry">'+
+  ['CPU','GPU','RAM','VRAM','SYSTEM COMMIT'].map((name,i)=>`<div class="metric" ${i===4?'style="grid-column:1/-1"':''}><label>${name}</label><strong id="m${i}">—</strong><small id="ms${i}">Waiting for bridge</small><div class="meter"><i id="mb${i}"></i></div></div>`).join('')+'</div>';
+}
+function initBridgeDrawer(){
+ const panel=$('#drawerBridge');
+ panel.innerHTML='<div id="pairFieldsHost"></div>'+machinePulse('OFFLINE')+bridgeActivityMarkup();
+ profileControls();
+ renderBridge();
+}
 function renderBridge(){
- const queueScroll=$('.queueRows')?.scrollTop||0;
- const cfg=window.Native?JSON.parse(Native.configuration()):{host:'',paired:false};
- const enroll=!wanted&&!connected&&(!cfg.paired||editPair), host=pairAddress??cfg.host;
- const fields=enroll?`<div class="pairFields"><p>On your PC, click the ComfyBridge cube by the Windows clock. Keep its panel open while you pair.</p><label for="host">1 · PC address</label><input id="host" type="url" value="${esc(host)}" placeholder="Address shown in the PC panel" autocapitalize="off" spellcheck="false"><label for="code">2 · Six-digit pairing code</label><input id="code" type="text" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="off" placeholder="000000"><small>After pairing, this phone remembers your PC.</small></div>`:`<p class="pairHost">${esc(cfg.host)}</p>`;
- $('#main').innerHTML=`<section class="pairCard"><div class="orb ${connected?'connected':''}" id="orb">${connected?'<span class="pairCheck">✓</span>':pcIcon}</div><h1 id="connectTitle">${connected?'PC connected':enroll?'Pair your phone':'Connect to your PC'}</h1>${fields}<div id="pairError" role="alert" ${bridgeError?'':'hidden'}>${esc(bridgeError)}</div><button class="green connectbutton" id="connect">${connected?'Disconnect':enroll?'Pair & connect':'Connect to bridge'}</button>${!connected&&cfg.paired?`<button class="textbutton" id="changePair">${editPair?'Use saved pairing':'Pair again or change PC address'}</button>`:''}</section><div id="destinations" class="grid2 pathcards" ${connected?'':'hidden'}><button data-open="image"><span class="largeicon">▧</span><strong>Create an image ↗</strong><small>Text, image or mask</small></button><button data-open="video"><span class="largeicon">▷</span><strong>Create a video ↗</strong><small>Start with a prompt or image</small></button></div><div class="sectionline"><h2>Machine pulse</h2><span class="pill" id="liveLabel">${connected?'LIVE':'OFFLINE'}</span></div><div class="telemetry">${['CPU','GPU','RAM','VRAM','SYSTEM COMMIT'].map((m,i)=>`<div class="metric" ${i===4?'style="grid-column:1/-1"':''}><label>${m}</label><strong id="m${i}">—</strong><small id="ms${i}">Waiting for bridge</small><div class="meter"><i id="mb${i}"></i></div></div>`).join('')}</div>`;
- const error=(msg,field)=>{bridgeError=msg;$('#pairError').hidden=false;$('#pairError').textContent=msg;if(field){field.setAttribute('aria-invalid','true');field.focus();}};
+ if(window.Desktop)return;
+ const cfg=window.Native?info():{host:'',paired:false};
+ const enroll=!wanted&&!connected&&(!cfg.paired||editPair), host=pairAddress??cfg.host??'';
+ const codeValue=$('#code')?.value||'';
+ const retry=connected&&!catalog&&!catalogLoading&&!!serviceNote;
+ const buttonText=connected?'Disconnect':wanted?'Cancel reconnect':enroll?'Pair & connect':'Connect to bridge';
+ $('#drawerConnection').innerHTML=`<button class="green connectbutton" id="connect">${buttonText}</button>`;
+ $('#pairFieldsHost').innerHTML=(enroll?`<div class="pairFields"><p>Use the address and pairing code shown in the Windows tray panel.</p><label for="host">PC address</label><input id="host" type="url" value="${esc(host)}" placeholder="Address shown in the PC panel" autocapitalize="off" spellcheck="false"><label for="code">Six-digit pairing code</label><input id="code" type="text" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="off" placeholder="000000" value="${esc(codeValue)}"></div>`:
+  `<p class="pairHost">${esc(cfg.host)}</p>`)+
+  `<div id="pairError" role="alert" ${bridgeError?'':'hidden'}>${esc(bridgeError)}</div>`+
+  (retry?'<button type="button" id="retryCatalog">Retry loading models</button>':'')+
+  (!connected&&cfg.paired?`<button class="textbutton" id="changePair">${editPair?'Use saved pairing':'Pair again or change PC address'}</button>`:'');
+ const button=$('#connect'),error=(msg,field)=>{
+  bridgeError=msg;$('#pairError').hidden=false;$('#pairError').textContent=msg;
+  if(field){field.setAttribute('aria-invalid','true');field.scrollIntoView({block:'nearest'});field.focus();}
+ };
  if($('#host'))$('#host').oninput=()=>{pairAddress=$('#host').value;};
- if(wanted&&!connected){$('#connectTitle').textContent='Reconnecting…';$('#connect').textContent='Cancel reconnect';$('#orb').classList.add('connecting');$('#pairError').hidden=true;}
- if(connected&&!catalog&&!catalogLoading&&serviceNote){const retry=document.createElement('button');retry.textContent='Retry loading models';retry.onclick=()=>loadCatalog();$('#connect').after(retry);}
+ if($('#retryCatalog'))$('#retryCatalog').onclick=loadCatalog;
  if($('#changePair'))$('#changePair').onclick=()=>{clearSession();editPair=!editPair;pairAddress=null;renderBridge();};
- $('#connect').onclick=async()=>{
+ if($('#bridgeOptions'))$('#bridgeOptions').hidden=!connected;
+ $('#drawerStatus').textContent=connected?'PC connected':wanted?'Reconnecting…':connecting?'Connecting…':'Disconnected';
+ $('#liveLabel').textContent=connected?'LIVE':'OFFLINE';
+ if(!connected)showMetrics(null);
+ button.disabled=connecting&&!connected;
+ button.onclick=async()=>{
   if(connecting)return;
   if(connected||wanted){const wasConnected=connected;clearSession();renderBridge();if(wasConnected)api('disconnect').catch(()=>{});return;}
   let url,code;
@@ -139,19 +190,20 @@ function renderBridge(){
    if(!url)return error('Enter the PC address shown in the Windows ComfyBridge panel.',$('#host'));
    if(!/^[0-9]{6}$/.test(code))return error('Enter the six-digit pairing code from the PC panel.',$('#code'));
   }
-  connecting=true;bridgeError='';$('#pairError').hidden=true;$('#connect').disabled=true;$('#orb').classList.add('connecting');$('#connect').textContent=enroll?'Pairing…':'Connecting…';
-  let id=++epoch;catalog=null;
+  connecting=true;bridgeError='';$('#pairError').hidden=true;button.disabled=true;button.textContent=enroll?'Pairing…':'Connecting…';
+  const session=++epoch;catalog=null;
   try{
-   if(enroll){await new Promise((resolve,reject)=>{const id=++rpcId;pending.set(id,{resolve,reject});Native.pair(id,url,code);});if(id!==epoch)return;editPair=false;pairAddress=null;catalog=null;}
-   if(id!==epoch)return;wanted=true;await api('ping');if(id===epoch)reached();
-  }catch(e){if(id!==epoch)return;if(wanted)unreachable(e);else{bridgeError='Pairing: '+e.message;if(page==='bridge')renderBridge();}}finally{connecting=false;}
+   if(enroll){await new Promise((resolve,reject)=>{const id=++rpcId;pending.set(id,{resolve,reject});Native.pair(id,url,code);});if(session!==epoch)return;editPair=false;pairAddress=null;}
+   if(session!==epoch)return;wanted=true;await api('ping');if(session===epoch)reached();
+  }catch(e){if(session===epoch){if(wanted)unreachable(e);else bridgeError='Pairing: '+e.message;}}
+  finally{connecting=false;renderBridge();}
  };
- profileControls();addBridgeActivity(queueScroll);$$('[data-open]').forEach(b=>b.onclick=()=>navigate(b.dataset.open));
+ updateBridgeActivity();
 }
 function slider(key,label,min,max,step=1,disabled=false){let s=state.settings[page];return `<div class="field"><label>${label}</label><div class="controlrow"><input type="range" data-setting="${key}" min="${min}" max="${max}" step="${step}" value="${s[key]}" ${disabled?'disabled':''}><input type="number" data-setting="${key}" min="${min}" max="${max}" step="${step}" value="${s[key]}" ${disabled?'disabled':''}></div></div>`;}
 function renderGenerator(){
  const kind=page,s=state.settings[kind],inp=state.inputs[kind];
- if(!s){$('#main').innerHTML='<div class="empty"><div class="symbol">◉</div><h2>'+(connected?'Waiting for workflow settings':(window.Desktop?'Turn on your server':'Connect your studio first'))+'</h2><p>'+(connected?'The PC is connected. Check Bridge for model loading status.':(window.Desktop?'Use the power button in the left column.':'Workflow defaults and your model library will load from the PC.'))+'</p><button class="green" id="goBridge">Open Bridge</button></div>';$('#goBridge').onclick=()=>navigate('bridge');return;}
+ if(!s){$('#main').innerHTML='<div class="empty"><div class="symbol">◉</div><h2>'+(connected?'Waiting for workflow settings':(window.Desktop?'Turn on your server':'Connect your studio first'))+'</h2><p>'+(connected?'The PC is connected. Check the sidebar for model loading status.':(window.Desktop?'Use the power button in the sidebar.':'Workflow defaults and your model library will load from the PC.'))+'</p><button class="green" id="goBridge">Open sidebar</button></div>';$('#goBridge').onclick=()=>navigate('bridge');return;}
  if(kind==='video'&&s.model===erosModel&&s.stepsBeforeCharacter!=null&&hasCharacterReference(s,inp)){
   // Beta 68 kept Eros in the editor but temporarily used the stock reference steps.
   s.steps=s.stepsBeforeCharacter;delete s.stepsBeforeCharacter;delete s.videoModelBeforeCharacter;
@@ -163,7 +215,7 @@ function renderGenerator(){
  if(kind==='video'&&!ext&&!s.exactFrames)s.frames=5+17*Math.max(0,Math.ceil((s.frames-5)/17));
  if(textVideo)[s.width,s.height]=videoSize(s,0);
  if(!inp.data)s.denoise=1;
- $('#main').innerHTML=`<div class="gentoolbar"><div class="row spread"><div class="row"><span id="runSpinner" class="spinner" hidden></span><div class="playwrap"><button id="play" class="green">▶ Generate</button><button id="batchButton" class="green" aria-label="Choose batch">⌄</button><div class="pop" id="batchMenu" hidden>${[2,4,8,16].map(n=>`<button data-batch="${n}" style="display:block;width:100%">Batch of ${n}</button>`).join('')}</div></div></div><button id="stopBatch" class="stop" hidden>■ Stop mine</button><span class="batchlabel" id="batchLabel">${s.batch>1?s.batch+' in batch':'Single generation'}</span></div><div class="progressrow" id="progressRow" hidden><img class="preview" id="livePreview" alt="Generation preview"><div class="progress"><i id="progressFill"></i><span id="progressText"></span></div></div><div class="statusmessage" id="jobMessage"></div></div><div id="genError"></div>${window.Desktop?'':'<div id="queueList"></div>'}<div class="row spread modeRow"><p class="eyebrow">${kind==='image'?'A STILL, A STORY':'VIDEO STUDIO'}</p><span class="pill" id="mode">${kind==='video'&&hasCharacterReference(s,inp)?(ext?'EXTEND WITH CHARACTER':'CHARACTER → VIDEO'):ext?(inp.finalFrame?.data||s.finalFrame?'EXTEND → FINAL FRAME':'EXTEND VIDEO'):textVideo?(inp.finalFrame?.data||s.finalFrame?'TEXT → FINAL FRAME':'TEXT → VIDEO'):kind==='video'?(inp.finalFrame?.data||s.finalFrame?'FIRST → FINAL FRAME':'IMAGE → VIDEO'):inp.mask?'INPAINT':inp.data?'IMAGE → IMAGE':'TEXT → IMAGE'}</span></div>${kind==='video'?videoFrameFields(s,inp)+characterReferenceField(s,inp):imageSourceField(inp)}<section class="card"><h2>Canvas & model</h2>${kind==='image'?canvasInputs(s):`${textVideo?canvasInputs(s,32)+'<div class="field scaleField"><label for="textVideoResolution">Resolution</label><div id="resolutionInfo"></div><input id="textVideoResolution" class="scaleRange" type="range" aria-label="Video resolution"><small>Red starts above 768 × 1152 pixels.</small></div>' :`<div class="field scaleField"><div class="row spread"><label for="videoScale">Scale from source</label><strong id="scaleValue"></strong></div><div id="resolutionInfo"></div><input id="videoScale" class="scaleRange" type="range" data-setting="scale" step="1"><div class="row spread"><small id="scaleBounds"></small><button type="button" id="originalScale" class="textbutton">Original · 0%</button></div></div>`}<div class="field"><div class="row spread"><label for="videoSeconds">${ext?'Time to add':'Video length'}</label><strong id="secondsValue"></strong></div><input id="videoSeconds" type="range" min="1" max="20" step="0.25"></div><div class="grid2 field"><div><label>${ext?'Frames to add':'Frames'}</label><input type="number" data-setting="frames" min="1" max="${ext?3570:3592}" value="${s.frames}"></div><div><label>FPS</label><input type="number" data-setting="fps" step="any" ${ext?'disabled':''} min="1" max="120" value="${s.fps}"></div></div><div id="durationInfo" aria-label="Video duration"></div><label class="togglelabel soundToggle"><input type="checkbox" id="videoSound" ${s.sound!==false?'checked':''}><span><strong>Include sound</strong><small>${ext?'Off saves a silent copy of the entire extension.':'Generate a soundtrack with the video.'}</small></span></label>`}<div class="field"><label>${kind==='video'?'Video model':'Checkpoint'}</label>${kind==='video'?`<div id="videoModelControls">${videoModelField(s)}</div>`:`<div class="checkpointPicker"><select data-setting="model">${[...new Set([s.model,...(catalog?.models||[])])].map(m=>`<option value="${esc(m)}" ${m===s.model?'selected':''}>${esc(modelLabel('checkpoints',m))}</option>`).join('')}</select><button type="button" id="checkpointBrowser">Checkpoint Browser</button></div>`}</div></section><section class="card"><div class="row spread"><h2>LoRAs</h2><button id="addLora" class="textbutton">＋ Add</button></div><div id="loras"></div></section>${promptField('positive','Positive prompt')}${promptField('negative','Negative prompt')}<section class="card"><h2>Generation settings</h2>${slider('steps','Steps',1,maxSteps)}${kind==='image'?slider('cfg','CFG',0,20,.1)+slider('denoise','Denoise'+(!inp.data?' · locked for text to image':''),0,1,.01,!inp.data):''}<div class="field"><label>Seed</label><input type="text" inputmode="numeric" data-setting="seed" value="${esc(s.seed)}"></div><div class="seedActions"><button id="randomSeed" type="button" class="seedRandom">Randomize</button><label class="togglelabel"><input type="checkbox" id="increment" ${s.increment?'checked':''}>Increment seed after each generation</label></div></section><section id="latestPanel"><div class="sectionline"><h2>Latest result</h2><button id="toLibrary" class="textbutton">Library ↗</button></div><div class="resultbox" id="result"></div><div class="carousel" id="carousel"></div></section>`;
+ $('#main').innerHTML=`<div class="gentoolbar"><div class="row spread"><div class="row"><span id="runSpinner" class="spinner" hidden></span><div class="playwrap"><button id="play" class="green">▶ Generate</button><button id="batchButton" class="green" aria-label="Choose batch">⌄</button><div class="pop" id="batchMenu" hidden>${[2,4,8,16].map(n=>`<button data-batch="${n}" style="display:block;width:100%">Batch of ${n}</button>`).join('')}</div></div></div><button id="stopBatch" class="stop" hidden>■ Stop mine</button><span class="batchlabel" id="batchLabel">${s.batch>1?s.batch+' in batch':'Single generation'}</span></div><div class="progressrow" id="progressRow" hidden><img class="preview" id="livePreview" alt="Generation preview"><div class="progress"><i id="progressFill"></i><span id="progressText"></span></div></div><div class="statusmessage" id="jobMessage"></div></div><div id="genError"></div>${window.Desktop?'':'<div id="generatorQueue"></div>'}<div class="row spread modeRow"><p class="eyebrow">${kind==='image'?'A STILL, A STORY':'VIDEO STUDIO'}</p><span class="pill" id="mode">${kind==='video'&&hasCharacterReference(s,inp)?(ext?'EXTEND WITH CHARACTER':'CHARACTER → VIDEO'):ext?(inp.finalFrame?.data||s.finalFrame?'EXTEND → FINAL FRAME':'EXTEND VIDEO'):textVideo?(inp.finalFrame?.data||s.finalFrame?'TEXT → FINAL FRAME':'TEXT → VIDEO'):kind==='video'?(inp.finalFrame?.data||s.finalFrame?'FIRST → FINAL FRAME':'IMAGE → VIDEO'):inp.mask?'INPAINT':inp.data?'IMAGE → IMAGE':'TEXT → IMAGE'}</span></div>${kind==='video'?videoFrameFields(s,inp)+characterReferenceField(s,inp):imageSourceField(inp)}<section class="card"><h2>Canvas & model</h2>${kind==='image'?canvasInputs(s):`${textVideo?canvasInputs(s,32)+'<div class="field scaleField"><label for="textVideoResolution">Resolution</label><div id="resolutionInfo"></div><input id="textVideoResolution" class="scaleRange" type="range" aria-label="Video resolution"><small>Red starts above 768 × 1152 pixels.</small></div>' :`<div class="field scaleField"><div class="row spread"><label for="videoScale">Scale from source</label><strong id="scaleValue"></strong></div><div id="resolutionInfo"></div><input id="videoScale" class="scaleRange" type="range" data-setting="scale" step="1"><div class="row spread"><small id="scaleBounds"></small><button type="button" id="originalScale" class="textbutton">Original · 0%</button></div></div>`}<div class="field"><div class="row spread"><label for="videoSeconds">${ext?'Time to add':'Video length'}</label><strong id="secondsValue"></strong></div><input id="videoSeconds" type="range" min="1" max="20" step="0.25"></div><div class="grid2 field"><div><label>${ext?'Frames to add':'Frames'}</label><input type="number" data-setting="frames" min="1" max="${ext?3570:3592}" value="${s.frames}"></div><div><label>FPS</label><input type="number" data-setting="fps" step="any" ${ext?'disabled':''} min="1" max="120" value="${s.fps}"></div></div><div id="durationInfo" aria-label="Video duration"></div><label class="togglelabel soundToggle"><input type="checkbox" id="videoSound" ${s.sound!==false?'checked':''}><span><strong>Include sound</strong><small>${ext?'Off saves a silent copy of the entire extension.':'Generate a soundtrack with the video.'}</small></span></label>`}<div class="field"><label>${kind==='video'?'Video model':'Checkpoint'}</label>${kind==='video'?`<div id="videoModelControls">${videoModelField(s)}</div>`:`<div class="checkpointPicker"><select data-setting="model">${[...new Set([s.model,...(catalog?.models||[])])].map(m=>`<option value="${esc(m)}" ${m===s.model?'selected':''}>${esc(modelLabel('checkpoints',m))}</option>`).join('')}</select><button type="button" id="checkpointBrowser">Checkpoint Browser</button></div>`}</div></section><section class="card"><div class="row spread"><h2>LoRAs</h2><button id="addLora" class="textbutton">＋ Add</button></div><div id="loras"></div></section>${promptField('positive','Positive prompt')}${promptField('negative','Negative prompt')}<section class="card"><h2>Generation settings</h2>${slider('steps','Steps',1,maxSteps)}${kind==='image'?slider('cfg','CFG',0,20,.1)+slider('denoise','Denoise'+(!inp.data?' · locked for text to image':''),0,1,.01,!inp.data):''}<div class="field"><label>Seed</label><input type="text" inputmode="numeric" data-setting="seed" value="${esc(s.seed)}"></div><div class="seedActions"><button id="randomSeed" type="button" class="seedRandom">Randomize</button><label class="togglelabel"><input type="checkbox" id="increment" ${s.increment?'checked':''}>Increment seed after each generation</label></div></section><section id="latestPanel"><div class="sectionline"><h2>Latest result</h2><button id="toLibrary" class="textbutton">Library ↗</button></div><div class="resultbox" id="result"></div><div class="carousel" id="carousel"></div></section>`;
  $('#upload').onchange=e=>loadStartingMedia(e.target);$('#clearUpload').onclick=()=>{state.inputs[kind]=kind==='video'?videoReferenceInputs(inp):{};delete s.extension;delete s.sourceMedia;delete s.sourceOrigin;delete s.replayOf;s.upload=null;s.mask=null;s.scale=0;if(kind==='video'&&s.textCanvas)Object.assign(s,s.textCanvas);if(kind==='image'){s.width=1024;s.height=1536;s.denoise=1;if(s.aspectLock)s.aspectLock=[s.width,s.height];}persist();renderGenerator();};
  if($('#maskButton'))$('#maskButton').onclick=openMask;if($('#clearMask'))$('#clearMask').onclick=()=>{delete inp.mask;delete s.mask;persist();renderGenerator();};
  if(kind==='video'){
@@ -181,9 +233,61 @@ function renderGenerator(){
  renderLoras();wirePrompts();bindSteps(s,maxSteps);
  if(kind==='image')bindCanvas(s);else if(textVideo)bindCanvas(s,32);else{bindVideoScale(s,inp);updateVideo(false);}
  if(kind==='video')bindVideoTime(s);
- $$('#main > section.card,#latestPanel').forEach(installFold);
+ $$('#main > section.card,#latestPanel').forEach(panel=>installFold(panel,generatorPanelSummary));
  bindPromptSizing();
  renderResults();updateProgress();
+}
+const foldDimensions=value=>value?.width&&value?.height?value.width+' × '+value.height:'';
+function foldMedia(label,thumbnail,detail){
+ return '<div class="foldMedia">'+(thumbnail?'<img class="foldThumb" src="'+esc(thumbnail)+'" draggable="false" alt="">':'')+
+  '<span>'+ (label?'<strong>'+esc(label)+'</strong>':'')+'<small>'+esc(detail)+'</small></span></div>';
+}
+function generatorPanelSummary(name){
+ const s=state.settings[page],input=state.inputs[page];
+ if(name==='Starting image'){
+  return foldMedia('',input.data,input.data?[foldDimensions(input),input.mask?'Mask applied':''].filter(Boolean).join(' · '):s.upload?'Saved on PC':'No starting image');
+ }
+ if(name==='First / last frame'){
+  const ext=s.extension,first=ext||input;
+  const last=input.finalFrame;
+  return '<div class="foldFrames">'+foldMedia(ext?'Source clip':'First frame',ext?media(ext.id,true):input.data,
+   (ext||input.data?foldDimensions(first):'')||(s.upload?'Saved on PC':'No image'))+
+   foldMedia('Last frame',last?.data,foldDimensions(last)||(s.finalFrame?'Saved on PC':last?.data?'Image attached':'No image'))+'</div>';
+ }
+ if(name==='Stable Character reference'){
+  const reference=input.characterReference;
+  return foldMedia('',videoReferenceImage(reference),foldDimensions(reference)||(s.characterReference?'Saved on PC':reference?.data?'Image attached':'No character image'));
+ }
+ if(name==='Canvas & model'){
+  let model=s.model?modelLabel('checkpoints',s.model):'No model selected';
+  if(page==='video'){
+   if(hasCharacterReference(s,input)&&s.model!==erosModel)model='MiniMax H3 · Ref2VA';
+   else model=catalog?.videoModels?.find(p=>p.model===s.model)?.label||(s.model===erosModel?'10Eros Max · Beta 7':model);
+  }
+  return '<strong>'+esc(foldDimensions(s))+'</strong><div class="foldModel">'+esc(model)+'</div>';
+ }
+ if(name==='LoRAs'){
+  if(page==='video'&&hasCharacterReference(s,input)&&s.model!==erosModel)return 'Stock Ref2VA uses its base weights.';
+  return s.loras.map(l=>'<div class="foldLora'+(l.enabled===false?' inactive':'')+'"><span>'+esc(modelLabel('loras',l.name))+
+   '</span><span>'+esc(l.strength)+'</span></div>').join('')||'No LoRAs';
+ }
+ if(name==='Positive prompt'||name==='Negative prompt'){
+  const prompt=s[name==='Positive prompt'?'positive':'negative'];
+  return '<p class="foldPrompt">'+esc(prompt?.trim()?prompt:'No prompt')+'</p>';
+ }
+ if(name==='Generation settings'){
+  return esc([s.steps+' steps',...(page==='image'?['CFG '+s.cfg,'Denoise '+s.denoise]:[]),'Seed '+s.seed].join(' · '));
+ }
+ if(name==='Latest result'){
+  const selected=$('#result .asset')?.dataset.id;
+  const result=library.find(item=>item.id===selected)||library.find(item=>item.kind===page&&!item.archived);
+  if(liveSelection?.kind===page&&liveJob(liveSelection.id)&&liveStatus(liveJob(liveSelection.id).status)){
+   return foldMedia('',frames.get(liveSelection.id)?.url,'Generation in progress');
+  }
+  const detail=result?.kind==='video'&&result.duration?'Video · '+duration(result.duration):result?.kind==='video'?'Video':'Image';
+  return result?foldMedia('',media(result.id,true),detail):'No results yet';
+ }
+ return '';
 }
 function imageSourceField(input){
  return `<section class="card">
@@ -233,8 +337,11 @@ function videoReferenceDimensions(value){
  return value?.width&&value?.height?'<div class="sourceDims"><strong>'+value.width+' × '+value.height+
   '</strong><small>'+aspect(value.width,value.height)+'</small></div>':'';
 }
+function videoReferenceImage(value){
+ return value?.data||(value?.job?'/source/'+encodeURIComponent(value.job)+'/characterReference-thumb':'');
+}
 function videoReferencePicker({value,saved,upload,clear,label,choose,compact=false}){
- const picture=value?.data||(value?.job?'/source/'+encodeURIComponent(value.job)+'/characterReference-thumb':'');
+ const picture=videoReferenceImage(value);
  const preview=picture?'<img src="'+esc(picture)+'" alt="'+esc(label)+'">':
   '<div><strong>＋</strong><span>'+(saved?'Saved on PC':choose)+'</span></div>';
  return '<div class="upload '+(compact?'videoFrameUpload':'characterReferenceUpload')+'">'+preview+
@@ -291,12 +398,23 @@ function wirePrompts(){
  bindQuickEdits();
  $$('[data-chat-prompt]').forEach(b=>b.onclick=()=>chatAboutPrompt(b.dataset.chatPrompt));
  $$('textarea[data-setting]').forEach(el=>el.oninput=()=>{state.settings[page][el.dataset.setting]=el.value;persist();});
- $$('[data-expand]').forEach(b=>b.onclick=()=>{let k=b.dataset.expand,kind=page;openModal(k==='positive'?'Positive prompt':'Negative prompt','<textarea id="fullPrompt"></textarea>','<button class="green" id="applyPrompt">Done</button>');$('#fullPrompt').value=state.settings[kind][k];$('#fullPrompt').oninput=()=>{state.settings[kind][k]=$('#fullPrompt').value;persist();};$('#applyPrompt').onclick=()=>{closeModal();renderGenerator();};});
+ $$('[data-expand]').forEach(b=>b.onclick=()=>openPrompt(b.dataset.expand));
  $$('[data-save-prompt]').forEach(b=>b.onclick=async()=>{let name=await askName('Save prompt');if(!name)return;state.prompts.push({name,text:state.settings[page][b.dataset.savePrompt]});persist('prompts');renderGenerator();});
  $$('[data-prompt-library]').forEach(el=>el.onchange=()=>{if(el.value==='')return;let key=el.dataset.promptLibrary;state.settings[page][key]=state.prompts[+el.value].text;$(`textarea[data-setting="${key}"]`).value=state.settings[page][key];sizePrompt($(`textarea[data-setting="${key}"]`),true);persist();});
  $$('[data-delete-prompt]').forEach(b=>b.onclick=()=>{let sel=$(`[data-prompt-library="${b.dataset.deletePrompt}"]`);if(sel.value==='')return toast('Choose a saved prompt first.');state.prompts.splice(+sel.value,1);persist('prompts');renderGenerator();});
 }
 const erosModel='10Eros_Max_h3_8stepTURBO_beta7_int8HQ.safetensors';
+function openPrompt(key){
+ const kind=page,settings=state.settings[kind];
+ openModal(key==='positive'?'Positive prompt':'Negative prompt','<textarea id="fullPrompt"></textarea>','<button class="green" id="applyPrompt">Done</button>');
+ const back=$('#modalClose'),editor=$('#fullPrompt');
+ back.setAttribute('aria-label','Back to generator');
+ back.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg>';
+ editor.value=settings[key]||'';
+ editor.oninput=()=>{settings[key]=editor.value;persist(kind);};
+ $('#applyPrompt').onclick=closeModal;
+ $('#modal').addEventListener('close',()=>{if(page===kind)renderGenerator();},{once:true});
+}
 function videoModelField(s){
  if(hasCharacterReference(s)){
   const reference=catalog?.characterVideo;
@@ -328,6 +446,7 @@ function bindVideoModelButtons(){
 function refreshVideoModelField(){
  const host=$('#videoModelControls');if(!host)return;
  host.innerHTML=videoModelField(state.settings.video);bindVideoModelButtons();
+ host.closest('section')?.refreshFoldSummary?.();
 }
 async function switchVideoModel(model){
  const s=state.settings.video,session=epoch,original=s.model;
@@ -532,7 +651,7 @@ function renderPresets(){let list=state.presets[page];$('#presetMenu').innerHTML
  $('#savePreset').onclick=async()=>{const kind=page;let name=await askName('Save settings preset');if(!name)return;list.push({name,settings:structuredClone(state.settings[kind]),input:structuredClone(state.inputs[kind])});presetName=name;persist();$('#presetMenu').hidden=true;render();};
 }
 function askName(title,value=''){return new Promise(resolve=>{openModal(title,'<label>Name</label><input id="newName" maxlength="100">','<button class="green" id="nameDone">Save</button>');$('#newName').value=value;$('#newName').focus();$('#nameDone').onclick=()=>{let n=$('#newName').value.trim();if(!n)return;closeModal();resolve(n);};$('#modalClose').onclick=()=>{closeModal();resolve(null);};});}
-function openModal(title,body,actions=''){if(typeof stopModelBrowser==='function')stopModelBrowser();$('#modalClose').textContent='←';$('#modalTitle').textContent=title;$('#modalBody').innerHTML=body;$('#modalActions').innerHTML=actions;$('#modalClose').onclick=closeModal;if(!$('#modal').open)$('#modal').showModal();}
+function openModal(title,body,actions=''){if(typeof stopModelBrowser==='function')stopModelBrowser();$('#modalClose').textContent='←';$('#modalClose').setAttribute('aria-label','Close');$('#modalTitle').textContent=title;$('#modalBody').innerHTML=body;$('#modalActions').innerHTML=actions;$('#modalClose').onclick=closeModal;if(!$('#modal').open)$('#modal').showModal();}
 function closeModal(){if(typeof stopModelBrowser==='function')stopModelBrowser();$('#modal').close();$('#modalBody').innerHTML='';maskSession=null;}
 let maskSession=null;
 async function openMask(){
@@ -571,7 +690,7 @@ async function resolvePendingSubmission(kind){
 }
 async function stopBatch(batch){try{await api('stop',{batch});toast('Stopping this batch');await poll();}catch(e){toast(e.message);}}
 async function generate(){
- if(!connected)return toast(window.Desktop?'Turn the server on in the left column first.':'Connect to your PC first.');if(submitting)return;
+ if(!connected)return toast(window.Desktop?'Turn the server on in the sidebar first.':'Connect to your PC first.');if(submitting)return;
  const kind=page,s=state.settings[kind],inp=structuredClone(state.inputs[kind]),snapshot=structuredClone(s),count=s.batch||1;
  snapshot.provenanceVersion=1;
  snapshot.steps=limit(Math.round(Number(snapshot.steps))||1,1,s.replayOf?Math.max(stepLimit(kind),s.steps):stepLimit(kind));
@@ -634,35 +753,36 @@ async function generate(){
 async function poll(){
  if(!connected||pollBusy||document.hidden)return;const id=epoch,view=page;pollBusy=true;
  const current=()=>id===epoch&&connected&&page===view;
+ const dashboard=dashboardVisible();
  let metricsError='';
- const metrics=(view==='bridge'||window.Desktop)?api('metrics').then(m=>{if(current())showMetrics(m);}).catch(e=>{metricsError='PC telemetry unavailable: '+e.message;}):null;
+ const metrics=dashboard?api('metrics').then(m=>{if(current())showMetrics(m);}).catch(e=>{metricsError='PC telemetry unavailable: '+e.message;}):null;
  try{
-  if(view!=='notepad'||window.Desktop){const [status,latest]=await Promise.all([view==='library'&&!window.Desktop?null:api('status'),window.Desktop?api('library'):null]);if(!current())return;
+  if(dashboard||['image','video'].includes(view)){const [status,latest]=await Promise.all([api('status'),window.Desktop?api('library'):null]);if(!current())return;
    if(status){
     const build=status.build||String(status.protocol);if(workerBuild&&workerBuild!==build){catalog=null;loadCatalog();}workerBuild=build;
     jobs=status.jobs;active=status.active;previewAvailable=status.preview;queueProtocol=status.protocol;imagePreviewProtocol=queueProtocol>=7;queueEtaSeconds=status.queueEtaSeconds??null;
-    if(view==='bridge'||window.Desktop)updateBridgeActivity();
+    if(dashboard)updateBridgeActivity();
     await refreshHistory();if(!current())return;
    }
    if(latest&&signature(latest)!==inventory&&(!shelfError||Date.now()>=nextSync))syncShelf(true);
-   if(view==='bridge'||window.Desktop)updateBridgeActivity();if($('#play'))updateProgress();
+   if(dashboard)updateBridgeActivity();if($('#play'))updateProgress();
   }
   if(current())pollNote='';
- }catch(e){if(current()){pollNote='Generation or library status unavailable: '+e.message;if(view==='bridge'||window.Desktop){queueProtocol=0;updateBridgeActivity(true);}}}
+ }catch(e){if(current()){pollNote='Generation or library status unavailable: '+e.message;if(dashboard){queueProtocol=0;updateBridgeActivity(true);}}}
  finally{await metrics;if(current()&&metricsError)pollNote=[pollNote,metricsError].filter(Boolean).join(' ');pollBusy=false;notice();}
 }
-function showMetrics(m){const gb=v=>(v/1073741824).toFixed(1);let vals=[[m.cpu==null?'—':m.cpu.toFixed(0)+'%',m.cpuWatts==null?'Power unavailable':m.cpuWatts.toFixed(1)+' W',m.cpu],[m.gpu==null?'—':m.gpu.toFixed(0)+'%',m.gpuWatts==null?'HWiNFO unavailable':m.gpuWatts.toFixed(0)+' W',m.gpu],[gb(m.ramUsed)+' GB','of '+gb(m.ramTotal)+' GB',m.ramUsed/m.ramTotal*100],[m.vramUsed==null?'—':gb(m.vramUsed)+' GB','of '+gb(m.vramTotal)+' GB',m.vramUsed/m.vramTotal*100],[gb(m.commitUsed)+' GB','of '+gb(m.commitTotal)+' GB committed',m.commitUsed/m.commitTotal*100]];vals.forEach((v,i)=>{if($('#m'+i)){$('#m'+i).textContent=v[0];$('#ms'+i).textContent=v[1];$('#mb'+i).style.width=Math.max(0,Math.min(100,v[2]||0))+'%';}});}
+function showMetrics(m){const gb=v=>(v/1073741824).toFixed(1);const vals=m?[[m.cpu==null?'—':m.cpu.toFixed(0)+'%',m.cpuWatts==null?'Power unavailable':m.cpuWatts.toFixed(1)+' W',m.cpu],[m.gpu==null?'—':m.gpu.toFixed(0)+'%',m.gpuWatts==null?'HWiNFO unavailable':m.gpuWatts.toFixed(0)+' W',m.gpu],[gb(m.ramUsed)+' GB','of '+gb(m.ramTotal)+' GB',m.ramUsed/m.ramTotal*100],[m.vramUsed==null?'—':gb(m.vramUsed)+' GB','of '+gb(m.vramTotal)+' GB',m.vramUsed/m.vramTotal*100],[gb(m.commitUsed)+' GB','of '+gb(m.commitTotal)+' GB committed',m.commitUsed/m.commitTotal*100]]:Array.from({length:5},()=>['—','Waiting for bridge',0]);vals.forEach((v,i)=>{if($('#m'+i)){$('#m'+i).textContent=v[0];$('#ms'+i).textContent=v[1];$('#mb'+i).style.width=Math.max(0,Math.min(100,v[2]||0))+'%';}});}
 function updateProgress(){if(!$('#play'))return;
  const {pending:pendingJobs,job:j,running,pct,label}=queueProgress();
  const mine=pendingJobs.find(job=>job.kind===page&&job.owner===info().device);
  $('#play').textContent=pendingJobs.length?'▶ Add to queue':'▶ Generate';$('#play').disabled=submitting;$('#batchButton').disabled=submitting;$('#stopBatch').hidden=!mine;$('#stopBatch').onclick=()=>mine&&stopBatch(mine.batch);
  $('#runSpinner').hidden=!submitting&&!j;$('#progressRow').hidden=!j;
- renderQueue();
+ renderQueue($('#generatorQueue'));
  if(j){
   $('#progressFill').style.width=pct+'%';
   $('#progressText').textContent=label;
   $('#jobMessage').textContent=(j.kind===page?'':j.kind+' · ')+(j.current_node||(running?'Preparing workflow':'Waiting in PC queue'));
-  const timer=document.createElement('span');timer.id=window.Desktop?'generatorTimer':'activeTimer';
+  const timer=document.createElement('span');timer.id='generatorTimer';
   timer.textContent=queueTiming();$('#jobMessage').append(' ',timer);
   const mini=$('#livePreview');
   if(imagePreviewProtocol){
@@ -691,6 +811,7 @@ function refreshCarouselSelection(){
 }
 function renderCarousel(){
  const carousel=$('#carousel');if(!carousel)return;
+ $('#latestPanel')?.refreshFoldSummary?.();
  const items=library.filter(x=>x.kind===page&&!x.archived).slice(0,20);
  if(!carousel.querySelector('.recentStrip'))carousel.innerHTML='<div class="recentStrip"></div>';
  const strip=carousel.querySelector('.recentStrip');

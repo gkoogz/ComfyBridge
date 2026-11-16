@@ -1,6 +1,6 @@
 # ComfyBridge
 
-**[Open the beta 69 release page](https://github.com/gkoogz/ComfyBridge/releases/tag/v0.1.0-beta.69)** · [Download the Android APK](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.69/ComfyBridge-0.1.0-beta.69.apk) · [Download Windows](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.69/ComfyBridge-Windows-0.1.0-beta.69.zip) · [All releases](https://github.com/gkoogz/ComfyBridge/releases)
+**[Open the beta 70 release page](https://github.com/gkoogz/ComfyBridge/releases/tag/v0.1.0-beta.70)** · [Download the Android APK](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.70/ComfyBridge-0.1.0-beta.70.apk) · [Download Windows](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.70/ComfyBridge-Windows-0.1.0-beta.70.zip) · [All releases](https://github.com/gkoogz/ComfyBridge/releases)
 
 <img src="artwork/comfybridge.png" width="128" alt="ComfyBridge white cube and play icon on black">
 
@@ -48,19 +48,21 @@ Run **Setup-Chat.ps1** in the Windows package once to install the pinned llama.c
 
 Chat starts its model process only for a message and releases it after the reply. Sending a message during a supported H3/Eros Euler video requests a checkpoint at the next sampling boundary. The bridge holds the remaining queue, saves the unfinished packed audio/video latent, cooperatively unloads Comfy models and execution caches, verifies VRAM release, and lets chat use the GPU. After the chat process exits, video reloads its unchanged workflow and continues at the saved step. Images, unsupported samplers and videos started before this update finish before handing off. A large video step can take minutes: pausing is not instant and does not recover an already-stuck step. New generations can join the held queue without interrupting chat. A loopback-only server with an ephemeral access key serves inference; phone requests use the existing encrypted, authenticated bridge. Prompts and replies are not sent to a cloud model. The latest conversation turns are used within the model's context budget; older turns remain visible in the active chat.
 
-**0.1.0-beta.69 is a personal-workflow beta**, adapted specifically to `Image gen.json` and `Video gen.json` in `E:\ComfyUI-Zluda\user\default\workflows`. It is not a general ComfyUI workflow importer. Models, LoRAs, workflow files, prompts, generated media, pairing credentials, and signing keys are not included in this repository or release. Beta 37 requires the updated Windows companion for local chat. Existing generation queues survive the tray update.
+**0.1.0-beta.70 is a personal-workflow beta**, adapted specifically to `Image gen.json` and `Video gen.json` in `E:\ComfyUI-Zluda\user\default\workflows`. It is not a general ComfyUI workflow importer. Models, LoRAs, workflow files, prompts, generated media, pairing credentials, and signing keys are not included in this repository or release. Beta 37 requires the updated Windows companion for local chat. Existing generation queues survive the tray update.
 
 The phone shows **PC connected** as soon as the bridge answers. Loading models and unavailable telemetry have their own messages. If the server or VPN drops, leave the phone app open: it retries automatically using the saved pairing. **Disconnect** or **Cancel reconnect** stops those retries.
 
 After a Windows update, the previous worker can finish its jobs and continue serving the library and model list. The tray replaces it when the bridge queue and transfers have drained. Other ComfyUI renders can stay active throughout; you do not have to disconnect your phones or pair them again.
 
-Generator progress bars show an approximate time remaining for the current job. The elapsed-time line also shows the total queue ETA. Estimates use completed jobs on this PC and live sampler timing, and show “estimating” when timing is unavailable. Bridge offers Skip, Stop batch and Stop all. Stop all cancels current ComfyBridge batches from both paired phones.
+Generator progress bars show an approximate time remaining for the current job. The elapsed-time line also shows the total queue ETA. Estimates use completed jobs on this PC and live sampler timing, and show “estimating” when timing is unavailable. The sidebar offers Skip, Stop batch and Stop all. Stop all cancels current ComfyBridge batches from both paired phones.
+
+In Beta 70, the Android sidebar opens with connection controls at the top and a vertical list of Browse, Image, Video, Library and Notepad at the bottom. Telemetry, backups, notifications and the queue are in the scrollable area between them. The sidebar and Windows tray show the installed app version. Browse is reserved for a future page. Collapsed generator panels show a read-only summary and open when tapped.
 
 Prompt fields start reduced when entering a generator, grow as text is typed or pasted, and have a caret below them to show all text or collapse. The manual resize handle remains available.
 
 ## Desktop studio
 
-The compact header has extra vertical space and borderless window controls. Click **↖** at the top left of the Windows tray panel to expand it into the desktop studio. The left column keeps server power, phone connection count, address and pairing code, machine telemetry, progress and the shared queue visible. The sidebar opens Image, Video, Library and Notepad. Desktop connects locally without pairing or routing through the VPN, and uses the same saved settings, presets and notes as your phones.
+The compact header has extra vertical space and borderless window controls. Click **↖** at the top left of the Windows tray panel to expand it into the desktop studio. The sidebar keeps server power, phone connection count, address and pairing code, machine telemetry, progress and the shared queue above the navigation buttons. Desktop connects locally without pairing or routing through the VPN, and uses the same saved settings, presets and notes as your phones.
 
 **↘** returns to the compact tray panel; **–** and **×** hide it to the tray. To exit, right-click the tray icon and choose **Close ComfyBridge**. Collapse or hide disposes the WebView2 browser; the compact tray remains lightweight and queued generations continue. The expanded window can be moved by dragging its title bar. Microsoft Edge WebView2 Runtime is required (normally included with Windows/Edge).
 

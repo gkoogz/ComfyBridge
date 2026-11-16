@@ -76,7 +76,7 @@ partial class Bridge {
             web.AddWebResourceRequestedFilter("*",CoreWebView2WebResourceContext.All);
             web.WebResourceRequested+=(s,e)=>DesktopResource(view,e);
             web.WebMessageReceived+=(s,e)=>DesktopMessage(view,e);
-            var cfg=DesktopJson().Serialize(new{device=DesktopDevice(),name="This PC",paired=true,host="This PC",fingerprint="desktop-local"});
+            var cfg=DesktopJson().Serialize(new{device=DesktopDevice(),name="This PC",paired=true,host="This PC",fingerprint="desktop-local",version=Application.ProductVersion});
             await web.AddScriptToExecuteOnDocumentCreatedAsync("window.Desktop=true;window.desktopConfiguration="+cfg+";");
             web.Navigate(DesktopOrigin+"/index.html");
         }catch(Exception ex){

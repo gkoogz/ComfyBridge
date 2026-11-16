@@ -12,12 +12,12 @@ const assert=require('node:assert/strict'),path=require('node:path');
    for(const accepted of [true,false]){
     await p.evaluate(kind=>{
      window.poll=window.heartbeat=window.syncSettings=async()=>{};window.persist=()=>{};
-     connected=true;queueProtocol=16;page=kind;jobs=[];active=null;
+     connected=true;queueProtocol=16;jobs=[];active=null;
      state.pendingByKind={};state.inputs[kind]={};
      state.settings[kind]={width:256,height:384,scale:0,steps:4,cfg:1,denoise:1,frames:22,fps:24,
       model:'test',positive:'',negative:'',loras:[],seed:'1',batch:1};
      window.api=()=>new Promise((resolve,reject)=>{window.accept=resolve;window.fail=reject;});
-     renderGenerator();
+     navigate(kind);
     },kind);
     await p.locator('#play').click();
     assert(await p.locator('#runSpinner').isVisible());

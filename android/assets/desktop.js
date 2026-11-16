@@ -21,15 +21,14 @@ if(window.Desktop){
 async function initDesktop(){
  if(!window.Desktop)return;
  const powerIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2v10M6.4 5.5a9 9 0 1 0 11.2 0"/></svg>';
- page=localStorage.getItem('desktopPage')||'image';if(!['image','video','library','notepad'].includes(page))page='image';
+ page=localStorage.getItem('desktopPage')||'image';if(!['browse','image','video','library','notepad'].includes(page))page='image';
  const title=document.createElement('div');title.id='desktopTitle';
  title.innerHTML='<strong>ComfyBridge <small>DESKTOP STUDIO</small></strong><div><button data-window="collapse" title="Collapse to tray panel" aria-label="Collapse to tray panel">↘</button><button data-window="hide" title="Hide to tray" aria-label="Hide to tray">–</button><button data-window="hide" class="desktopClose" title="Hide to tray" aria-label="Hide to tray">×</button></div>';
  document.body.prepend(title);
  title.onpointerdown=e=>{if(e.button===0&&!e.target.closest('button'))desktopCall('drag');};
  title.querySelectorAll('[data-window]').forEach(b=>b.onclick=async()=>{if(profileDirty)await flushProfile();desktopCall(b.dataset.window);});
- const left=document.createElement('aside');left.id='desktopBridge';
- left.innerHTML='<div class="desktopServer"><div class="row spread"><div><strong id="desktopServerState">Checking server…</strong><small id="desktopPhones"></small></div><div class="row desktopPowerRow"><button id="desktopCivitai" type="button" aria-label="Civitai preview settings" title="Civitai API key for listing previews">⚙</button><button id="desktopPower" aria-label="Toggle server power">⏻</button></div></div><label for="desktopAddress">PC address · enter on your phone</label><div class="row"><select id="desktopAddress"></select><button id="desktopCopy" title="Copy address">Copy</button><button id="desktopEdit" title="Edit remote address">✎</button></div><div class="row spread desktopPairRow"><label>Pairing code</label><strong id="desktopCode">—</strong><button id="desktopNewCode">New code</button></div><small id="desktopPairHint"></small><div id="desktopError" role="alert" hidden></div></div><div class="sectionline"><h2>Machine pulse</h2><span class="pill" id="liveLabel">LOCAL</span></div><div class="telemetry">'+['CPU','GPU','RAM','VRAM','SYSTEM COMMIT'].map((m,i)=>'<div class="metric" '+(i===4?'style="grid-column:1/-1"':'')+'><label>'+m+'</label><strong id="m'+i+'">—</strong><small id="ms'+i+'">Waiting for bridge</small><div class="meter"><i id="mb'+i+'"></i></div></div>').join('')+'</div><section id="bridgeActivity" aria-label="Generation progress"><div class="row spread"><strong>Generation</strong></div><div id="bridgeCommands"></div><div class="progress" role="progressbar" aria-label="Current generation" aria-valuemin="0" aria-valuemax="100"><i></i><span></span></div><div class="bridgeStage"><span id="bridgeStage"></span><span id="activeTimer"></span></div></section><div id="queueList"></div>';
- title.after(left);
+ const left=$('#drawerBridge');left.id='desktopBridge';
+ left.innerHTML='<div class="desktopServer"><div class="row spread"><div><strong id="desktopServerState">Checking server…</strong><small id="desktopPhones"></small></div><div class="row desktopPowerRow"><button id="desktopCivitai" type="button" aria-label="Civitai preview settings" title="Civitai API key for listing previews">⚙</button><button id="desktopPower" aria-label="Toggle server power">⏻</button></div></div><label for="desktopAddress">PC address · enter on your phone</label><div class="row"><select id="desktopAddress"></select><button id="desktopCopy" title="Copy address">Copy</button><button id="desktopEdit" title="Edit remote address">✎</button></div><div class="row spread desktopPairRow"><label>Pairing code</label><strong id="desktopCode">—</strong><button id="desktopNewCode">New code</button></div><small id="desktopPairHint"></small><div id="desktopError" role="alert" hidden></div></div>'+machinePulse('LOCAL')+bridgeActivityMarkup();
  const chatControls=document.createElement('div');chatControls.className='desktopChatControls';chatControls.innerHTML='<label for="desktopChatModel">Local chat model</label><select id="desktopChatModel" aria-label="Local chat model"></select><small id="desktopChatHint">Checking installed models…</small>';
  $('.desktopServer').append(chatControls);
  let chatLoading=false,chatModelChanged=false;
@@ -50,8 +49,7 @@ async function initDesktop(){
  };
  refreshChatModels();setInterval(refreshChatModels,5000);
  $('#desktopPower').innerHTML=powerIcon;
- $('#drawer').inert=false;$('#drawer').classList.add('open');$('[data-nav=bridge]').remove();
- $('.drawerfoot small').textContent='Made on this PC. Shared with your phones.';
+ $('#drawer').inert=false;$('#drawer').classList.add('open');
  let status,busy=false,refreshing=false,revision=0;
  const paint=s=>{
   status=s;$('#desktopServerState').textContent=s.online?'● Server on':'● Server off';$('#desktopServerState').className=s.online?'serverOnline':'serverOffline';
