@@ -132,6 +132,51 @@ class BrowseTests(unittest.TestCase):
         for bad in ['https://evil.test/a','http://image.civitai.com/a','https://image.civitai.com@evil.test/a','https://image.civitai.com:88/a']:self.assertFalse(cdn(bad))
         self.assertTrue(cdn('https://blobs-b2.civitai.com/file/blobs-managed-public/a.jpg'))
 
+    def test_feed_survives_restart_and_more_than_thirty_minutes(self):
+        self.b.status(active=False)
+        first=self.b.feed({'channel':'mix'})
+        cursor=first['nextCursor'];seen={i['id'] for i in first['items']}
+        with self.b.db() as db:
+            db.execute('UPDATE feed_sessions SET touched=?',(time.time()-2400,))
+        restarted=Browser(self.tmp.name,self.models,None,self.api)
+        second=restarted.feed({'channel':'mix','cursor':cursor})
+        self.assertFalse(second['recovered'])
+        self.assertEqual(second['nextCursor'],cursor)
+        self.assertFalse(seen.intersection(i['id'] for i in second['items']))
+        self.assertGreater(restarted.feeds[cursor]['turn'],0)
+        with self.b.db() as db:db.execute('UPDATE feed_sessions SET touched=?',(time.time()-7201,))
+        restarted.feeds.clear()
+        recovered=restarted.feed({'channel':'mix','cursor':cursor,'seen':list(seen)})
+        self.assertTrue(recovered['recovered'])
+        self.assertNotEqual(recovered['nextCursor'],cursor)
+        self.assertFalse(seen.intersection(i['id'] for i in recovered['items']))
+
+    def test_status_renews_only_active_account_cursors(self):
+        self.b.status(active=False)
+        cursor=self.b.feed({'channel':'mix'})['nextCursor']
+        with self.b.db() as db:db.execute('UPDATE feed_sessions SET touched=?',(time.time()-3600,))
+        self.b.status(active=False,cursors=[cursor],activity_age=10)
+        with self.b.db() as db:stamp=db.execute('SELECT touched FROM feed_sessions WHERE id=?',(cursor,)).fetchone()[0]
+        self.assertLess(time.time()-stamp,20)
+        self.b.status(active=False,cursors=[cursor],activity_age=7201)
+        with self.b.db() as db:self.assertEqual(stamp,db.execute('SELECT touched FROM feed_sessions WHERE id=?',(cursor,)).fetchone()[0])
+        self.models.key='account-b'
+        self.b.status(active=False,cursors=[cursor],activity_age=0)
+        with self.b.db() as db:self.assertEqual(stamp,db.execute('SELECT touched FROM feed_sessions WHERE id=?',(cursor,)).fetchone()[0])
+
+    def test_feed_social_flags_and_account_cursor_isolation(self):
+        status=self.b.status(active=False)
+        self.assertEqual(status['followingIds'],['7'])
+        items=self.b.feed({'channel':'collection:4'})['items']
+        self.assertTrue(all(i['following'] for i in items))
+        self.assertTrue(all(i['collections']==[{'collectionId':4}] for i in items))
+        first=self.b.feed({'channel':'mix'})
+        self.models.key='account-b'
+        restarted=Browser(self.tmp.name,self.models,None,self.api)
+        second=restarted.feed({'channel':'mix','cursor':first['nextCursor']})
+        self.assertEqual(second['account'],'2')
+        self.assertTrue(second['recovered'])
+
     def test_creator_timeout_persistent_idempotent_expires_and_exclusive_allowed(self):
         request=self.act(kind='timeout',creatorId=7,name='Potter')
         first=self.b.action(request)

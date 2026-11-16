@@ -162,6 +162,10 @@ public class MainActivity extends Activity {
  }
  String exportOperation="export";
  public class NativeApi {
+  @JavascriptInterface public void openProfile(String value){
+   if(!ProfileActivity.validProfile(value))return;
+   runOnUiThread(()->startActivity(new Intent(MainActivity.this,ProfileActivity.class).putExtra("url",value)));
+  }
   @JavascriptInterface public void openListing(String value){
    Uri uri=Uri.parse(value);if(!"https".equals(uri.getScheme())||!Arrays.asList("civitai.com","civitai.red","huggingface.co").contains(uri.getHost())||uri.getUserInfo()!=null||uri.getPort()!=-1)return;
    runOnUiThread(()->{try{startActivity(new Intent(Intent.ACTION_VIEW,uri));}catch(Exception ignored){}});

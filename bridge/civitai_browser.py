@@ -59,6 +59,7 @@ class Browser:
               CREATE TABLE IF NOT EXISTS media(account TEXT,id TEXT,payload TEXT,touched REAL,PRIMARY KEY(account,id));
               CREATE TABLE IF NOT EXISTS observations(account TEXT,source TEXT,image TEXT,creator TEXT,tags TEXT,score REAL,stamp TEXT,PRIMARY KEY(account,source,image));
               CREATE TABLE IF NOT EXISTS actions(account TEXT,id TEXT,payload TEXT,state TEXT,result TEXT,PRIMARY KEY(account,id));
+              CREATE TABLE IF NOT EXISTS feed_sessions(account TEXT,id TEXT,channel TEXT,payload TEXT,touched REAL,PRIMARY KEY(account,id));
             ''')
 
     @contextmanager
@@ -264,8 +265,21 @@ class Browser:
                     tags={r['id']:r['weight'] for r in rows if r['kind']=='tag' and not r['disabled'] and r['weight']>0},
                     names={r['id']:r['name'] for r in rows if r['kind']=='tag'})
 
-    def status(self, active=True):
+    def status(self, active=True, cursors=None, activity_age=7200):
         me, token = self.account(); account=me['id']
+        # Keep exactly the client's open feeds alive based on user activity,
+        # not on background polling. Never renew another account's cursors.
+        if isinstance(cursors,list) and isinstance(activity_age,(int,float)) and 0<=activity_age<7200:
+            stamp=time.time()-activity_age
+            ids=[x for x in cursors[:40] if isinstance(x,str) and re.fullmatch('[a-f0-9]{32}',x)]
+            with self.lock:
+                for key in ids:
+                    state=self.feeds.get(key)
+                    if state and state['account']==account:state['touched']=max(state['touched'],stamp)
+                with self.db() as db:
+                    for key in ids:
+                        db.execute('UPDATE feed_sessions SET touched=? WHERE account=? AND id=? AND touched<? AND touched>?',
+                            (stamp,account,key,stamp-30,time.time()-7200))
         collections = self.collections(account, token)
         # Establish relationships before serving the very first feed. The history
         # importer is asynchronous; otherwise a well-connected new account would
@@ -283,6 +297,7 @@ class Browser:
         with self.db() as db:
             count = db.execute('SELECT COUNT(DISTINCT image) FROM observations WHERE account=?', (account,)).fetchone()[0]
         return dict(account=account, username=me['username'], profile=self.user_url(me['username']), collections=collections,
+                    followingIds=[str(x) for x in self.setting(account,'follows',[])],
                     timeouts=self.timeouts(account), importState=state, learned=count, follows=len(self.setting(account, 'follows', [])))
 
     def import_loop(self, account, token):
@@ -329,15 +344,24 @@ class Browser:
     def feed(self, query):
         me, token=self.account(); account=me['id']; cursor=query.get('cursor',''); channel=query.get('channel','mix')
         with self.lock:
-            self.feeds={k:v for k,v in self.feeds.items() if time.time()-v['touched']<1800}
+            self.feeds={k:v for k,v in self.feeds.items() if time.time()-v['touched']<7200}
+            state=None
             if cursor:
                 state=self.feeds.get(cursor)
-                if not state or state['account']!=account or state['channel']!=channel:
-                    raise ValueError('This feed expired. Refresh Browse.')
-            else:
+                if not state:
+                    with self.db() as db:
+                        row=db.execute('SELECT payload FROM feed_sessions WHERE account=? AND id=? AND channel=? AND touched>?',
+                            (account,cursor,channel,time.time()-7200)).fetchone()
+                    if row:
+                        state=json.loads(row[0]);state['lock']=threading.Lock();self.feeds[cursor]=state
+                if state and (state['account']!=account or state['channel']!=channel):
+                    raise ValueError('This feed belongs to a different account or channel.')
+            recovered=bool(cursor and state is None)
+            if state is None:
                 cursor=uuid.uuid4().hex
                 loras=[i for i in self.models.snapshot()['items'] if i.get('kind')=='loras' and i.get('versionId') and not i.get('archived')]
-                state=dict(account=account,channel=channel,touched=time.time(),seen=[],sources={},loras=loras,turn=0,lora=0, lock=threading.Lock())
+                seen=[str(i) for i in query.get('seen',[])[-5000:] if str(i).isdigit()]
+                state=dict(account=account,channel=channel,touched=time.time(),seen=seen,sources={},loras=loras,turn=0,lora=0, lock=threading.Lock())
                 self.feeds[cursor]=state
         with state['lock']:
             state['touched']=time.time();out=[];weights=self.weights(account)
@@ -345,7 +369,8 @@ class Browser:
             weights['creators']={k:v for k,v in weights['creators'].items() if k not in muted}
             follows=[uid for uid in self.setting(account,'follows',[]) if str(uid) in weights['creators']]
             rich=bool(follows or weights['creators'] or weights['tags'])
-            for attempt in range(36 if channel=='mix' else 2):
+            following={str(x) for x in self.setting(account,'follows',[])}
+            for attempt in range(36 if channel=='mix' else (12 if recovered else 2)):
                 if len(out)>=12:break
                 if channel=='mix':
                     # Relationship sources dominate. LoRA samples occupy only one in
@@ -405,11 +430,17 @@ class Browser:
                     item=source['items'].pop(0)
                     if self.is_muted(item,muted):continue
                     if item['id'] in state['seen']:continue
-                    state['seen'].append(item['id']);out.append(dict(self.public(item),reason=reason))
+                    public=dict(self.public(item),reason=reason,following=str(item.get('creatorId')) in following)
+                    if channel.startswith('collection:'):public['collections']=[{'collectionId':int(channel.split(':')[1])}]
+                    state['seen'].append(item['id']);out.append(public)
                 state['empty']=state.get('empty',0)+1 if len(out)==before else 0
             state['seen']=state['seen'][-5000:]
             ended=channel!='mix' and all(s['done'] and not s['items'] for s in state['sources'].values())
-            return dict(account=account,items=out,nextCursor=None if ended else cursor)
+            with self.db() as db:
+                db.execute('DELETE FROM feed_sessions WHERE touched<?',(time.time()-7200,))
+                db.execute('INSERT OR REPLACE INTO feed_sessions VALUES(?,?,?,?,?)',
+                    (account,cursor,channel,json.dumps({k:v for k,v in state.items() if k!='lock'}),time.time()))
+            return dict(account=account,items=out,nextCursor=None if ended else cursor,recovered=recovered)
 
     def timeouts(self, account):
         return {k:v for k,v in self.setting(account,'creator-timeouts',{}).items() if v.get('until',0)>time.time()}

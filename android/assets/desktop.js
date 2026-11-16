@@ -14,6 +14,7 @@ if(window.Desktop){
   notificationRoute:()=>'',watchBatch:()=>{},haptic:()=>{},
   copyText:text=>desktopCall('copyText',{text}),
   openListing:url=>desktopCall('openListing',{url}),
+  openProfile:url=>desktopCall('openProfile',{url}),
   enableAlerts:()=>toast('Keep the desktop studio open to follow generation progress.')
  };
  document.documentElement.classList.add('desktop');

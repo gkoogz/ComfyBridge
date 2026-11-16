@@ -98,6 +98,7 @@ function drawer(open){
 function navigate(to){
  if(to==='bridge'){if(window.Desktop)$('#desktopPower').focus();else drawer(true);return;}
  if(window.Desktop)localStorage.setItem('desktopPage',to);
+ if(page==='browse'&&to!==page)CivitaiBrowser.suspend();
  if(page!==to){if(['image','video'].includes(to))promptExpanded={};leaveLivePreview();}
  if(viewerOpen())closeViewer(true);
  page=to;archived=false;presetName='';drawer(false);render();$('#workspace').scrollTop=0;

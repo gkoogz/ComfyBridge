@@ -165,3 +165,41 @@ including cache restoration with network deliberately held, 20+10 saved image
 files, detail request reuse, restarted-cursor recovery, touch pull refresh,
 automatic paging, timeout expiry/retry/account isolation. Physical phone touch
 behavior is not established by browser emulation.
+
+
+## Beta 80 session continuity and social state
+
+Feed cursors previously lived only in memory and expired after 30 minutes without
+paging. They now persist in account-scoped `feed_sessions` in SQLite, including
+upstream cursors, buffered items and seen IDs, and survive worker restarts.
+Foreground status supplies the open cursors and elapsed time since real user
+input. This renews only those account sessions, based on the last interaction;
+background polling alone does not extend their lifetime. Sessions expire after
+two hours. A missing cursor rebuilds safely with client seen IDs; older-worker
+expiry responses also trigger a single automatic fresh-cursor retry. Existing
+media and scroll position remain in place. Repeated empty pages/network failures
+remain bounded, with manual retry available.
+
+After two hours without user interaction, the client returns from a creator,
+tag or viewer to cached For you and refreshes it. Earlier returns, including returns from another root screen, retain the
+current page and scroll. Feed pagination error counters belong to each saved
+page rather than leaking between creator and mixed feeds.
+
+Status includes followed creator IDs. Follow/Following appears to the left of
+an artist feed title; successful changes update checks in retained feed pages.
+The artist name opens an isolated native website view on Android and Windows,
+with a top-left Back to ComfyBridge control. It has no Native bridge interface,
+API key, resource interception or certificate override. Website sign-in is
+separate from the PC API key. Android builds include `ProfileActivity`; Windows
+uses a distinct WebView2 data directory. Closing returns to the retained feed.
+
+Prefetched detail data updates the feed's bookmark fill. Collection saves update
+all visible/retained representations. Reaction counts render only when positive
+and immediately increment/decrement after confirmed writes. The refresh control
+rotates a fixed 24-pixel SVG about its 12,12 center instead of a text glyph.
+
+Verification: 155 backend tests pass. Tests cover persisted cursor recovery, 40-minute returns, expiry, account-scoped
+renewal, legacy expiry retry, one-hour UI preservation and two-hour UI reset,
+follow/profile controls, bookmark fill and zero-to-one reactions. Native Windows
+smoke checks verify the website return bar and isolation without visiting a live
+profile. No physical Android phone is connected for touch/profile validation.

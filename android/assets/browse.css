@@ -123,3 +123,18 @@ body[data-page=browse] #browseError:not(:empty),.preferenceError:not(:empty){mar
 #browsePull.refreshing{height:45px!important}
 #browsePull.refreshing .spinner{animation:spin 1s linear infinite}
 body[data-page=browse] #workspace{overscroll-behavior-y:contain}
+/* Fixed square viewBox: rotate the icon, never the font's off-center baseline. */
+#browseRefresh{display:grid;place-items:center}
+#browseRefresh[hidden]{display:none}
+#browseRefresh svg{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;transform-origin:12px 12px}
+#browseRefresh.refreshing{animation:none}
+#browseRefresh.refreshing svg{animation:spin 1s linear infinite}
+.feedFollowing{color:var(--mint);font-weight:700;font-size:14px;flex:none}
+.feedFollowing[hidden]{display:none}
+.feedCollect.bookmarked svg,.viewerCollect.bookmarked svg{fill:currentColor}
+.creatorFollow{flex:none;padding:5px 8px;min-height:34px;font-size:12px;white-space:nowrap}
+.creatorFollow.selected{color:var(--mint);border-color:var(--mint);background:#1d3b31}
+.subjectHeading .profileName{border:0;background:none;color:inherit;padding:0;font-size:inherit;font-weight:inherit;text-align:left;overflow-wrap:anywhere;line-height:1.2}
+.subjectHeading h2{min-width:0}
+.subjectHeading .subjectFilters{gap:0}
+.feedReactions small:empty,.civitaiReactions small:empty{display:none}

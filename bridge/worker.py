@@ -791,8 +791,9 @@ async def api(request):
         return web.json_response(MODELS.snapshot())
     if path == 'browse/preferences' and request.method == 'GET':
         return web.json_response(await asyncio.to_thread(CIVITAI_BROWSER.preferences))
-    if path == 'browse/status' and request.method == 'GET':
-        return web.json_response(await asyncio.to_thread(CIVITAI_BROWSER.status))
+    if path == 'browse/status' and request.method in ('GET','POST'):
+        data=await request.json() if request.method=='POST' else {}
+        return web.json_response(await asyncio.to_thread(CIVITAI_BROWSER.status,cursors=data.get('cursors'),activity_age=data.get('activityAge',7200)))
     if path == 'browse/feed' and request.method in ('GET', 'POST'):
         query = await request.json() if request.method == 'POST' else dict(request.query)
         return web.json_response(await asyncio.to_thread(CIVITAI_BROWSER.feed, query))
@@ -871,7 +872,7 @@ async def api(request):
                     j['etaSeconds']=None
                 else:
                     j['progress'],j['current_node']=TRACKER.sample()
-        return web.json_response(dict(protocol=20,build='0.1.0-beta.79',jobs=jobs, active=ACTIVE, preview=bool(PREVIEW), previewRevision=PREVIEW_REV,ownedComfy=bool(OWNED),queueEtaSeconds=total_eta))
+        return web.json_response(dict(protocol=20,build='0.1.0-beta.80',jobs=jobs, active=ACTIVE, preview=bool(PREVIEW), previewRevision=PREVIEW_REV,ownedComfy=bool(OWNED),queueEtaSeconds=total_eta))
     if path.startswith('preview/'):
         job=str(uuid.UUID(path[8:]))
         after=int(request.query.get('after','-1'))

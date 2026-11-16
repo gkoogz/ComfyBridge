@@ -11,6 +11,7 @@ async function setup(p,options={}){
     return {account,username:'Potter',collections:[{id:4,name:'Ceramics',count:30}],timeouts:{},learned:30,follows:1,importState:{complete:true}};
    }
    if(route==='browse/feed'){
+    if(apiOptions.expireNext&&body.cursor){apiOptions.expireNext=false;throw Error('HTTP 400 This feed expired. Refresh Browse.');}
     const start=Number(body.cursor||0),collection=body.channel!=='mix',total=collection?30:36;
     return {account,items:Array.from({length:Math.min(12,total-start)},(_,i)=>item(start+i+(collection?101:1))),nextCursor:start+12<total?String(start+12):null};
    }
@@ -73,6 +74,29 @@ async function setup(p,options={}){
  await setup(p,{account:'2'});await p.waitForSelector('.browseTile');
  await p.waitForFunction(()=>document.querySelector('.browseTile').browseItem.path.includes('/2/'));
  assert(await p.locator('.browseTile').evaluateAll(els=>els.every(el=>el.browseItem.path.includes('/2/'))));
+ // Old workers can still return expiry: recover without leaving the page stuck.
+ await p.locator('#workspace').evaluate(el=>el.scrollTop=0);
+ await p.evaluate(()=>{apiOptions.expireNext=true;document.querySelector('#browseMore').click();});
+ await p.waitForFunction(()=>!apiOptions.expireNext);
+ await p.waitForTimeout(150);
+ assert(!/feed expired/i.test(await p.locator('#browseError').textContent()));
+ await p.evaluate(()=>document.querySelector('#browseMore').click());
+ await p.waitForFunction(()=>document.querySelectorAll('.browseTile').length>=24);
+ // Resuming before two hours preserves the exact current artist page and position.
+ await p.locator('.feedAuthor').first().click();await p.waitForSelector('.subjectFilters');
+ await p.locator('#workspace').evaluate(el=>el.scrollTop=100);
+ await p.evaluate(()=>{navigate('image');navigate('browse');});
+ await p.waitForFunction(()=>document.querySelector('#workspace').scrollTop===100);
+ assert.equal(await p.locator('.subjectFilters').count(),1,'Returning from another root screen retains the artist feed');
+ await p.evaluate(()=>{window.realNow=Date.now;Date.now=()=>realNow()+3600000;document.dispatchEvent(new Event('visibilitychange'));});
+ await p.waitForTimeout(100);assert.equal(await p.locator('.subjectFilters').count(),1);
+ assert.equal(await p.locator('#workspace').evaluate(el=>el.scrollTop),100);
+ // More than two hours without interaction returns to cached Browse and refreshes.
+ await p.evaluate(()=>{Date.now=()=>realNow()+7201000;document.dispatchEvent(new Event('visibilitychange'));});
+ await p.waitForSelector('#browseCarousel');
+ await p.waitForFunction(()=>document.querySelector('#workspace').scrollTop===0);
+ assert.equal(await p.locator('.subjectFilters').count(),0);
+ await p.evaluate(()=>Date.now=realNow);
  assert.deepEqual(errors,[]);
  console.log('Browse cache: 20+10 files, startup without network, prefetched details, cursor recovery, automatic paging, pull refresh, timeout and account isolation passed.');
  }finally{await browser.close();}
