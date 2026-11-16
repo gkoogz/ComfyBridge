@@ -36,10 +36,25 @@ class PacingTests(unittest.TestCase):
         self.assertEqual(self.g.until,self.clock.now+5)
     def test_maintenance_yields_to_browsing_but_due_writeback_uses_normal_budget(self):
         self.g.acquire();self.clock.now+=1
+        self.g.acquire(background=True,quiet=True)
+        self.assertTrue(self.g.has_headroom(),'Light browsing must not require silence')
+        for _ in range(4):self.g.acquire()
+        self.assertFalse(self.g.has_headroom())
         with self.assertRaises(Deferred):self.g.acquire(background=True,quiet=True)
         self.g.acquire(writeback=True)
         self.assertLess(self.g.quiet_for(),1)
         self.clock.now+=61;self.g.acquire(background=True,quiet=True)
+
+    def test_headroom_minute_background_and_cooldown_limits(self):
+        now=self.clock.now
+        self.g.recent.extend([now-20]*36)
+        self.assertFalse(self.g.has_headroom(),'Minute pressure applies without a recent burst')
+        self.clock.now+=41;self.assertTrue(self.g.has_headroom())
+        self.g.background.extend([self.clock.now-20]*12)
+        self.assertFalse(self.g.has_headroom(),'Reserve background space for immediate media')
+        self.clock.now+=41;self.assertTrue(self.g.has_headroom())
+        self.g.failed(429,'120');self.assertFalse(self.g.has_headroom())
+        with self.assertRaises(Deferred):self.g.acquire(writeback=True)
 
     def test_cdn_media_does_not_consume_api_budget(self):
         with patch('civitai_requests.governor',self.g):

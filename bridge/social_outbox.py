@@ -110,9 +110,9 @@ class SocialOutbox:
         if not self.b.models.token():return False
         try:
             me,_=self.b.account(cached=True)
-            # Remain awake for normal five-minute delivery; failures may sleep and
+            # Remain awake beyond normal ten-minute delivery; failures may sleep and
             # resume on next launch, rather than pinning a worker indefinitely.
-            return any(self.clock()-r['firstAt']<600 for r in self.rows(me['id'],True))
+            return any(self.clock()-r['firstAt']<1200 for r in self.rows(me['id'],True))
         except (ValueError,OSError):return False
 
     def current(self,account,row,mark=False):
@@ -162,6 +162,9 @@ class SocialOutbox:
                 if not now or now['revision']!=row['revision'] or now['state']=='synced':continue
                 attempts=now.get('attempts',0)+1
                 delay=max(getattr(error,'retry_after',0),min(300,5*2**min(attempts,6)))
+                deadline=now['firstAt']+600
+                if isinstance(error,Deferred) and error.reason in ('browsing_priority','background_limit') and self.clock()<deadline:
+                    delay=min(delay,deadline-self.clock())
                 now.update(state='retrying',attempts=attempts,retryAt=self.clock()+delay,error='Waiting to sync with Civitai; your choice is saved.')
                 self.save(db,account,now)
 
@@ -171,11 +174,11 @@ class SocialOutbox:
             me,token=self.b.account(cached=True);account=me['id'];now=self.clock()
             rows=sorted([r for r in self.rows(account,True) if r['retryAt']<=now],key=lambda r:r['firstAt'])
             if not rows:return
-            urgent=now-rows[0]['firstAt']>=300
-            if not urgent and governor.quiet_for()<60:return
+            urgent=now-rows[0]['firstAt']>=600
+            if not urgent and not governor.has_headroom():return
             # Batch reads and collection additions; pacing and server cooldowns
             # still apply at the deadline. No unsafe concurrent toggle burst.
-            with background_work(writeback=True,urgent=urgent):
+            with background_work(quiet=not urgent,writeback=True,urgent=urgent):
                 self.send(account,token,rows[:200],urgent)
         finally:self.flush_lock.release()
 
@@ -183,7 +186,7 @@ class SocialOutbox:
         b=self.b
         def permitted(group):
             b.assert_account(account,token)
-            if not urgent and governor.last_foreground and self.clock()-governor.last_foreground<60:return []
+            if not urgent and not governor.has_headroom():return []
             return [r for r in group if self.current(account,r)]
         # Reactions share one fresh status lookup per 100 images, followed by
         # single toggles only where remote state differs from desired final state.

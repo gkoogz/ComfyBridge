@@ -858,7 +858,7 @@ const CivitaiBrowser=(()=>{
   if(status?.account===account){const ids=new Set((status.followingIds||[]).map(String));for(const r of socialRows())if(r.kind==='follow')r.selected?ids.add(String(r.creatorId)):ids.delete(String(r.creatorId));status.followingIds=[...ids];status.follows=ids.size;}
   paintSocial();
   let el=$('#browseSync');if(!el&&$('#browseError')){el=document.createElement('p');el.id='browseSync';el.className='muted';el.setAttribute('role','status');$('#browseError').after(el);}
-  if(el){const rows=socialRows(),failed=rows.some(r=>r.error||Date.now()/1000-r.firstAt>300);el.hidden=!rows.length;el.textContent=rows.length?rows.length+' change'+(rows.length===1?'':'s')+(failed?' saved · waiting to retry sync':' saved · sync within 5 minutes'):'';}
+  if(el){const rows=socialRows(),failed=rows.some(r=>r.error||Date.now()/1000-r.firstAt>600);el.hidden=!rows.length;el.textContent=rows.length?rows.length+' change'+(rows.length===1?'':'s')+(failed?' saved · waiting to retry sync':' saved · sync within 10 minutes'):'';}
  }
  function socialSoon(delay=100){clearTimeout(socialTimer);socialTimer=setTimeout(pumpSocial,delay);}
  function queueSocial(data){

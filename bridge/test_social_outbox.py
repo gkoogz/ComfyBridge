@@ -2,6 +2,7 @@ import tempfile,time,unittest,uuid
 from unittest.mock import patch
 from civitai_browser import Browser
 from test_civitai_browser import Models,API,image
+from civitai_requests import Deferred
 
 class Remote(API):
     def __init__(self):super().__init__();self.values={};self.memberships={};self.lost=False;self.during=None;self.offline=False;self.partial=False
@@ -27,9 +28,8 @@ class Remote(API):
         return super().__call__(token,route,value,write,rest)
 
 class Quiet:
-    last_foreground=0
-    idle=60
-    def quiet_for(self):return self.idle
+    spare=True
+    def has_headroom(self):return self.spare
 
 class SocialTests(unittest.TestCase):
     def setUp(self):
@@ -47,17 +47,24 @@ class SocialTests(unittest.TestCase):
         self.assertIn('Heart',self.b.stored('1',1)['reactions'])
         self.b.remember('1',image());self.assertIn('Heart',self.b.stored('1',1)['reactions'])
         self.assertEqual(self.b.social.snapshot()['pending'],1)
-    def test_quiet_minute_or_five_minute_deadline_and_edits_do_not_extend(self):
-        self.queue();self.quiet.idle=59;self.b.social.flush();self.assertFalse(self.sends('reaction.toggle'))
-        self.now+=290;self.queue(selected=False);self.now+=10;self.quiet.idle=0;self.b.social.flush()
+    def test_spare_capacity_or_ten_minute_deadline_and_edits_do_not_extend(self):
+        self.queue();self.quiet.spare=False;self.b.social.flush();self.assertFalse(self.sends('reaction.toggle'))
+        self.now+=590;self.queue(selected=False);self.now+=9;self.b.social.flush();self.assertEqual(self.b.social.snapshot()['pending'],1)
+        self.now+=1;self.b.social.flush()
         self.assertFalse(self.sends('reaction.toggle'),'Final false already matches remote, no toggle needed')
         self.assertEqual(self.b.social.snapshot()['pending'],0)
-        self.queue();self.quiet.idle=60;self.b.social.flush();self.assertEqual(len(self.sends('reaction.toggle')),1)
+        self.queue();self.quiet.spare=True;self.b.social.flush();self.assertEqual(len(self.sends('reaction.toggle')),1)
     def test_restart_lost_response_reconciles_without_double_toggle(self):
         self.queue();self.api.lost=True;self.b.social.flush();self.assertEqual(self.b.social.snapshot()['pending'],1)
         self.assertEqual(len(self.sends('reaction.toggle')),1)
         self.b=Browser(self.tmp.name,Models(),None,self.api);self.b.social.clock=lambda:self.now;self.now+=60
         self.b.social.flush();self.assertEqual(len(self.sends('reaction.toggle')),1);self.assertEqual(self.b.social.snapshot()['pending'],0)
+    def test_headroom_deferral_cannot_push_retry_past_deadline(self):
+        self.queue();self.now+=590
+        self.b.social.failed('1',self.b.social.rows('1',True),Deferred(60,'browsing_priority'))
+        self.assertEqual(self.b.social.rows('1',True)[0]['retryAt'],10600)
+        self.quiet.spare=False;self.now+=10;self.b.social.flush()
+        self.assertEqual(self.b.social.snapshot()['pending'],0)
     def test_receipts_and_out_of_order_local_retries_cannot_restore_old_choice(self):
         a=self.queue();self.queue(selected=False);self.b.social.enqueue(a)
         old=dict(a,requestId=str(uuid.uuid4()));reply=self.b.social.enqueue(old);self.assertTrue(reply['superseded'])

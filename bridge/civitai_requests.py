@@ -33,13 +33,25 @@ class Governor:
                 self.until=max(self.until,float(saved.get('until',0)))
             except (OSError,ValueError,TypeError):pass
 
+    def spare_delay(self, now):
+        # Local conservative budgets, not an assertion of Civitai's quota.
+        # Leave 40% of minute capacity for browsing and notice short bursts too.
+        delay=max(0,self.until-now)
+        for queue,window,limit in ((self.recent,60,36),(self.recent,10,6),(self.background,60,12)):
+            recent=[t for t in queue if t>now-window]
+            if len(recent)>=limit:delay=max(delay,recent[-limit]+window-now)
+        return delay
+
+    def has_headroom(self):
+        with self.lock:return self.spare_delay(self.clock())<=0
+
     def acquire(self, background=False, quiet=False, writeback=False):
         with self.lock:
             now=self.clock()
             for queue in (self.recent,self.background):
                 while queue and queue[0]<=now-60:queue.popleft()
             delays=[(max(0,self.until-now),'cooldown')]
-            if quiet and self.last_foreground:delays.append((max(0,self.last_foreground+60-now),'browsing_priority'))
+            if quiet:delays.append((self.spare_delay(now),'browsing_priority'))
             if len(self.recent)>=60:delays.append((self.recent[0]+60-now,'total_limit'))
             if background and len(self.background)>=20:delays.append((self.background[0]+60-now,'background_limit'))
             delay,reason=max(delays,key=lambda x:x[0])

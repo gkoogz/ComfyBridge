@@ -685,3 +685,27 @@ exercises immediate visual feedback, reload persistence, lost bridge replies and
 confirmation on phone/desktop layouts using neutral fixtures. Android compilation
 checks the native persistence bridge; browser fixtures are not physical-phone or
 actual-power-loss verification. Tests do not mutate the live Civitai account.
+
+
+## Beta 94: headroom scheduling and ten-minute target
+
+This supersedes Beta 93's quiet-minute rule. Opportunistic social writes,
+history imports and reserve-bank refill use the shared governor's available
+capacity, not time since the last foreground request. Before each API call,
+headroom requires fewer than 36 requests in 60 seconds, fewer than six in ten
+seconds, fewer than 12 background requests in 60 seconds, and no server cooldown.
+The existing local hard limits (60 total and 20 background calls per minute) and
+request spacing remain. These conservative local budgets are not a statement
+of Civitai's actual quota. CDN downloads do not count as API requests.
+
+A pending choice becomes normal-priority work after 600 seconds from its initial
+queued timestamp; subsequent edits do not reset that clock. This bypasses only
+the spare-capacity gate/background quota, never the total cap or cooldown.
+Each call checks capacity again so a batch yields if browsing grows busier.
+The worker stays awake up to 20 minutes for pending delivery; persistent failures
+may then sleep and retry on launch. Device and PC persistence are unchanged.
+The client now says ten minutes and shows retry state after that target.
+
+Tests cover light ongoing traffic admitting writes, burst/minute/background
+pressure yielding, urgent work respecting server cooldown, and the 599/600-second
+boundary with repeated edits preserving the deadline.
