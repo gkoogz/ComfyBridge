@@ -14,7 +14,7 @@ import uuid
 WEEK = 7 * 86400
 CONFIG = 'api-debug-session.json'
 BANDS = (100, 500, 1000, 3000, 10000, 30000, float('inf'))
-ROUTES = frozenset('me image.getInfinite image.getGenerationData image.getResources user.getFollowingUsers user.getCreator tag.getVotableTags collection.getUserCollectionItemsByItem collection.getAllUser user.getBookmarkCollections collection.getEntryCount collection.upsert user.toggleFollow reaction.getMyImageReactions reaction.toggle collection.saveItem tag.addTagVotes'.split())
+ROUTES = frozenset('me image.getInfinite image.getGenerationData image.getResources user.getFollowingUsers user.getCreator tag.getVotableTags collection.getUserCollectionItemsByItem collection.getAllUser collection.getInfinite user.getBookmarkCollections collection.getEntryCount collection.upsert user.toggleFollow reaction.getMyImageReactions reaction.toggle collection.saveItem tag.addTagVotes'.split())
 OPERATIONS = ROUTES | frozenset(('rest.images','rest.models','rest.model-versions','rest.other','feed.mix','feed.tags','feed.tag','feed.creator','feed.collection','feed.reactions','feed.other','detail.open','detail.prefetch','other'))
 KINDS = frozenset(('network','cache','budget','feed','detail'))
 OUTCOMES = frozenset(('ok','hit','miss','refresh','error','timeout','http_error','protocol_error','deferred','limited','cooldown','total_limit','background_limit'))

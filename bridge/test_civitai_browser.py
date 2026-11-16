@@ -16,7 +16,7 @@ class Models:
 
 def image(i=1,creator=7,tags=None):
     return dict(id=i,url='06c1e11a-6a5b-465c-b014-2e22104488f6',width=400,height=800,type='image',
-        user={'id':creator,'username':'Potter','image':'06c1e11a-6a5b-465c-b014-2e22104488f6'},
+        user={'id':creator,'username':'Potter' if creator==7 else 'Creator '+str(creator),'image':'06c1e11a-6a5b-465c-b014-2e22104488f6'},
         tags=tags or [{'id':12,'name':'ceramics'}],reactions=[{'reaction':'Like'}],meta={'prompt':'A ceramic vase.'})
 
 
@@ -26,6 +26,7 @@ class API:
         self.calls.append((route,value,write))
         if route=='me':return dict(id=1 if token=='account-a' else 2,username='Example')
         if route=='collection.getAllUser':return [dict(id=4,name='Ceramics',type='Image',isOwner=True),dict(id=5,name='Models',type='Model',isOwner=True),dict(id=6,name='Someone else',type='Image',isOwner=False)]
+        if route=='collection.getInfinite':return {'items':[]}
         if route=='user.getBookmarkCollections':return [{'id':4,'type':'Image'}]
         if route=='collection.getEntryCount':return {'ACCEPTED':2}
         if route=='user.getFollowingUsers':return self.followed
@@ -333,7 +334,7 @@ class BrowseTests(unittest.TestCase):
     def test_seen_posts_survive_refresh_restart_and_are_account_scoped(self):
         original=self.b.transport
         def request(token,route,value,write,rest):
-            if route=='image.getInfinite':return {'items':[image(i) for i in range(1,41)]}
+            if route=='image.getInfinite':return {'items':[image(i,creator=20+i%20) for i in range(1,41)]}
             return original(token,route,value,write,rest)
         self.b.transport=request
         first=self.b.feed({'channel':'mix'});a={i['id'] for i in first['items']}

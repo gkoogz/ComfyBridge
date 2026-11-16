@@ -80,9 +80,11 @@ const CivitaiBrowser=(()=>{
     const decoded=new Image();decoded.src=url;await decoded.decode();
     if(ticket!==session||view.kind!=='mix'||viewer||!farBelow(el))break;
     const index=feed.findIndex(i=>i.id===el.browseItem.id);if(index<0)continue;
+    const neighbors=feed.slice(Math.max(0,index-9),index).concat(feed.slice(index+1,index+10));
+    if(neighbors.some(i=>artistKeys(i).some(k=>artistKeys(item).includes(k))))continue;
     feed[index]=item;viewedTiles.unobserve(el);nearDetails.unobserve(el);el.replaceWith(tile(item));stale.splice(stale.indexOf(el),1);unused.splice(unused.indexOf(item),1);queueDetail(item,true);
    }
-   if(ticket===session&&view.kind==='mix'){feed.push(...unused);paintFeed(unused);saveSnapshot();warm();}
+   if(ticket===session&&view.kind==='mix'){const spaced=spacedArtists(unused,feed);feed.push(...spaced);paintFeed(spaced);saveSnapshot();warm();}
   }catch{/* Keep the cached image if replacement cannot be fully prepared. */}finally{replacingCache=false;}
  }
  let lastActivity=0,lastActivitySaved=0,suspended=null,pendingCreator=null;
@@ -104,6 +106,7 @@ const CivitaiBrowser=(()=>{
    $$('.browseTile',root).forEach(el=>{
     const item=el.browseItem;
     $('.feedFollowing',el).hidden=!following(item);
+    const via=$('.viaFollowing',el);if(via)via.hidden=!following({creatorId:item.chosenBy?.via?.id});
     $('.feedCollect',el).classList.toggle('bookmarked',membershipIds(item.collections).length>0);
     $$('[data-feed-react]',el).forEach(b=>{b.innerHTML=reactionLabel(item,b.dataset.feedReact);b.setAttribute('aria-pressed',String((item.reactions||[]).includes(b.dataset.feedReact)));});
    });
@@ -113,6 +116,8 @@ const CivitaiBrowser=(()=>{
   }
   if(viewer){
    const host=viewer.el,item=viewer.item;
+   $$('[data-follow-creator]',host).forEach(b=>{const selected=following({creatorId:b.dataset.followCreator});b.textContent=selected?'Following ✓':'Follow';b.classList.toggle('selected',selected);b.setAttribute('aria-pressed',String(selected));});
+   const via=$('.viaFollowing',host);if(via)via.hidden=!following({creatorId:item.chosenBy?.via?.id});
    $('.viewerCollect',host)?.classList.toggle('bookmarked',membershipIds(item.collections).length>0);
    $$('[data-civi-react]',host).forEach(b=>{b.innerHTML=reactionLabel(item,b.dataset.civiReact);b.setAttribute('aria-pressed',String((item.reactions||[]).includes(b.dataset.civiReact)));b.classList.toggle('selected',(item.reactions||[]).includes(b.dataset.civiReact));});
   }
@@ -184,6 +189,16 @@ const CivitaiBrowser=(()=>{
  const retries=new Set();
  function savedJSON(key){try{return JSON.parse(localStorage.getItem(key)||'null');}catch{return null;}}
  function uniqueItems(items){const ids=new Set();return items.filter(i=>i?.id&&!ids.has(i.id)&&ids.add(i.id));}
+ function artistKeys(i){return [i.creatorId&&String(i.creatorId),i.credit&&'name:'+i.credit.trim().toLocaleLowerCase()].filter(Boolean);}
+ function spacedArtists(items,before=[]){
+  const out=[],pending=[...items],recent=before.slice(-9).map(artistKeys);
+  while(pending.length){
+   const index=pending.findIndex(i=>!recent.some(keys=>artistKeys(i).some(k=>keys.includes(k))));
+   if(index<0)break;
+   const item=pending.splice(index,1)[0];out.push(item);recent.push(artistKeys(item));if(recent.length>9)recent.shift();
+  }
+  return out;
+ }
  function compactItem(item){
   const copy={...item};for(const key of ['prompt','negativePrompt','resources','parameters','detailVersion','generationDataAvailable','restoredFeed','cachedFallback'])delete copy[key];return copy;
  }
@@ -230,7 +245,7 @@ const CivitaiBrowser=(()=>{
    const savedFeed=[...(stash?.feed||[]),...(data.feed||[])];
    const candidates=uniqueItems(savedFeed.length?savedFeed:recovered).filter(i=>!isMuted(i)&&!isBanned(i));
    const unseen=candidates.filter(i=>!seenPosts.has(i.id));
-   feed=(unseen.length?unseen:candidates).slice(0,savedFeed.length?10:100).map(i=>({...i,restoredFeed:true,cachedFallback:!unseen.length}));for(const entry of data.details||[])if(entry[1]?.result?.item?.detailVersion===2)details.set(...entry);
+   feed=spacedArtists(unseen.length?unseen:candidates).slice(0,savedFeed.length?10:100).map(i=>({...i,restoredFeed:true,cachedFallback:!unseen.length}));for(const entry of data.details||[])if(entry[1]?.result?.item?.detailVersion===2)details.set(...entry);
   }catch{/* A damaged snapshot is replaced after the next successful fetch. */}
  }
  function isBanned(item){
@@ -504,6 +519,9 @@ const CivitaiBrowser=(()=>{
     '<div class="feedReactions">'+Object.entries(emoji).map(([key,value])=>button(reactionLabel(item,key),'data-feed-react="'+key+'" aria-label="'+key+'" aria-pressed="'+(item.reactions||[]).includes(key)+'"')).join('')+'</div>'+
     button('<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h12v18l-6-4-6 4z"/></svg>','class="feedCollect '+(membershipIds(item.collections).length?'bookmarked':'')+'" aria-label="Add to collection"');
    el.append(caption);
+   if(item.chosenBy?.kind==='curation'){
+    const via=document.createElement('div');via.className='feedDiscovery';via.innerHTML=discoveryFollowHTML(item)+discoveryHTML(item);caption.append(via);wireDiscovery(via,item);
+   }
    $('.feedAuthor',caption).onclick=async()=>{
     try{
      if(!item.creatorId){const detail=await api('browse/detail/'+item.id);Object.assign(item,detail.item);}
@@ -686,7 +704,8 @@ const CivitaiBrowser=(()=>{
   if(busy||feedEnded||!available()||!$('#browseMore'))return;busy=true;const ticket=session;$('#browseMore').innerHTML='<i class="spinner"></i> Finding inspiration…';
   try{const r=await feedPage(view.kind==='mix'?'mix':view.kind+':'+view.id+':'+view.filter,cursor,replace?[]:feed.map(i=>i.id),replace);if(ticket!==session)return;
    if(r.account!==account){reset();render();return;}
-   const added=r.items.filter(i=>!isBanned(i)&&!(view.kind==='mix'&&(isMuted(i)||seenPosts.has(i.id)))&&(replace||!feed.some(x=>x.id===i.id)));
+   let added=r.items.filter(i=>!isBanned(i)&&!(view.kind==='mix'&&(isMuted(i)||seenPosts.has(i.id)))&&(replace||!feed.some(x=>x.id===i.id)));
+   if(view.kind==='mix')added=spacedArtists(added,replace?[]:feed);
    if(replace&&added.length){await imageBlob(path(added[0].path));if(ticket!==session)return;feed=[];$('#browseFeed').replaceChildren();}
    feed.push(...added);cursor=r.nextCursor||'';feedEnded=!r.nextCursor;paintFeed(added);saveSnapshot();warm();savedNotice();
    feedWaitUntil=r.limited?Date.now()+1000*Math.max(2,r.retryAfter||0):0;
@@ -736,9 +755,9 @@ const CivitaiBrowser=(()=>{
    catch(error){form.querySelector('p').textContent=error.message;}finally{b.disabled=false;}
   };
  }
- function resourcesHTML(resources){return '<ul class="modelPreviewResources civitaiResources">'+[...resources].sort((a,b)=>Number(/checkpoint/i.test(b.type))-Number(/checkpoint/i.test(a.type))).map(r=>{
+ function resourcesHTML(resources,chosen={}){return '<ul class="modelPreviewResources civitaiResources">'+[...resources].sort((a,b)=>Number(/checkpoint/i.test(b.type))-Number(/checkpoint/i.test(a.type))).map(r=>{
   const isLora=/lora|locon|lycoris/i.test(r.type),url=r.modelId?'https://civitai.com/models/'+r.modelId+(r.versionId?'?modelVersionId='+r.versionId:''):'';
-  return '<li><div class="civitaiResourceRow">'+(url?button(esc(r.name||r.type),'class="resourceName" data-civi-link="'+esc(url)+'"'):'<strong class="resourceName">'+esc(r.name||r.type)+'</strong>')+
+  return '<li><div class="civitaiResourceRow">'+(url?button(esc(r.name||r.type),'class="resourceName '+(chosen.kind==='lora'&&String(chosen.id)===String(r.versionId)?'chosenSource':'')+'" data-civi-link="'+esc(url)+'"'):'<strong class="resourceName">'+esc(r.name||r.type)+'</strong>')+
    (isLora&&r.versionId?button('＋','class="resourceDownload" data-resource-download="'+esc(r.versionId)+'" data-civi-download="'+esc(r.versionId)+'" aria-label="Download LoRA"'):'')+
    '<span class="resourceType">'+esc(r.type)+'</span></div>'+(r.version?'<small>'+esc(r.version)+'</small>':'')+((r.weight!==''&&r.weight!=null)?'<small>Strength '+esc(r.weight)+'</small>':'')+'<div data-download-status="'+esc(r.versionId)+'"></div></li>';
 
@@ -766,9 +785,27 @@ const CivitaiBrowser=(()=>{
    }catch(e){dest.textContent=e.message;b.disabled=false;}
   });update();
  }
+ function discoveryHTML(item){
+  const source=item.chosenBy||{};
+  if(source.kind==='lora'){
+   const url=source.modelId?'https://civitai.red/models/'+source.modelId+'?modelVersionId='+source.id:'https://civitai.red/models?modelVersionId='+source.id;
+   return '<div class="discoverySource">'+button('From '+esc(source.name||'LoRA preview'),'class="chosenSource sourceLora" data-civi-link="'+esc(url)+'" title="Discovered in this LoRA listing; this does not imply the image used it"')+'</div>';
+  }
+  if(source.kind!=='curation'||!source.via)return '';
+  const via=source.via;
+  return '<span class="discoveryVia" title="From public collection: '+esc(source.collectionName||'')+'"><span>via</span>'+button(esc(via.name),'class="viaCreator chosenSource" data-via-creator="'+esc(via.id)+'"')+'<span class="viaFollowing" aria-label="Following curator" '+(following({creatorId:via.id})?'':'hidden')+'>✓</span></span>';
+ }
+ function discoveryFollowHTML(item){
+  return item.chosenBy?.kind==='curation'&&item.creatorId?button(following(item)?'Following ✓':'Follow','class="discoveryFollow '+(following(item)?'selected':'')+'" data-follow-creator="'+esc(item.creatorId)+'" aria-pressed="'+following(item)+'"'):'';
+ }
+ function wireDiscovery(host,item){
+  $$('[data-via-creator]',host).forEach(b=>b.onclick=()=>showCreatorFeed({creatorId:b.dataset.viaCreator,credit:item.chosenBy.via.name}));
+  $$('[data-follow-creator]',host).forEach(b=>b.onclick=()=>changeFollow(b,b.dataset.followCreator));
+  $$('.sourceLora',host).forEach(b=>b.onclick=()=>openModelSource(b.dataset.civiLink));
+ }
  function socialHTML(item,collections){
   const followed=following(item);
-  return '<div class="civitaiAuthor">'+(item.avatarPath?'<img src="'+esc(path(item.avatarPath))+'" alt="">':'<span class="avatarPlaceholder">'+esc((item.credit||'?')[0])+'</span>')+button(esc(item.credit||'Unknown creator'),'class="creatorName '+(item.chosenBy?.kind==='creator'&&String(item.chosenBy.id)===String(item.creatorId)?'chosenSource':'')+'" data-civi-link="https://civitai.red/user/'+esc(encodeURIComponent(item.credit||''))+'"')+(item.creatorId?button('Feed','data-creator-feed class="creatorFeed"'):'')+button('↗','data-creator-profile class="creatorProfile" aria-label="Open creator profile"')+'</div><div class="civitaiReactions">'+Object.entries(emoji).map(([key,value])=>button(reactionLabel(item,key),'data-civi-react="'+key+'" aria-label="'+key+'" aria-pressed="'+(item.reactions||[]).includes(key)+'" class="'+((item.reactions||[]).includes(key)?'selected':'')+'"')).join('')+button(ribbonIcon,'class="viewerCollect '+(membershipIds(item.collections).length?'bookmarked':'')+'" aria-label="Add to collection"')+'</div><p class="civitaiActionError warning" role="status"></p>';
+  return '<div class="civitaiAuthor">'+(item.avatarPath?'<img src="'+esc(path(item.avatarPath))+'" alt="">':'<span class="avatarPlaceholder">'+esc((item.credit||'?')[0])+'</span>')+button(esc(item.credit||'Unknown creator'),'class="creatorName '+(item.chosenBy?.kind==='creator'&&String(item.chosenBy.id)===String(item.creatorId)?'chosenSource':'')+'" data-civi-link="https://civitai.red/user/'+esc(encodeURIComponent(item.credit||''))+'"')+(item.creatorId?button('Feed','data-creator-feed class="creatorFeed"'):'')+button('↗','data-creator-profile class="creatorProfile" aria-label="Open creator profile"')+discoveryFollowHTML(item)+'</div>'+discoveryHTML(item)+'<div class="civitaiReactions">'+Object.entries(emoji).map(([key,value])=>button(reactionLabel(item,key),'data-civi-react="'+key+'" aria-label="'+key+'" aria-pressed="'+(item.reactions||[]).includes(key)+'" class="'+((item.reactions||[]).includes(key)?'selected':'')+'"')).join('')+button(ribbonIcon,'class="viewerCollect '+(membershipIds(item.collections).length?'bookmarked':'')+'" aria-label="Add to collection"')+'</div><p class="civitaiActionError warning" role="status"></p>';
 
  }
  function membershipIds(raw){
@@ -783,6 +820,7 @@ const CivitaiBrowser=(()=>{
  }
  function openPendingCreator(){if(pendingCreator){const item=pendingCreator;pendingCreator=null;openSubject(item.subjectKind||'creator',item.creatorId,item.credit);}}
  function wireSocial(host,item,collections){
+  wireDiscovery(host,item);
   hydrate(host);$$('[data-civi-link]',host).forEach(b=>b.onclick=()=>openModelSource(b.dataset.civiLink));
   $('[data-creator-feed]',host)?.addEventListener('click',()=>showCreatorFeed(item));
   $('[data-creator-profile]',host)?.addEventListener('click',()=>profile(item.credit));
@@ -856,7 +894,7 @@ const CivitaiBrowser=(()=>{
    paintPrompt(item.generationDataAvailable||item.detailVersion===2?'ready':'failed');
    target.innerHTML=socialHTML(item,result.collections);wireSocial(target,item,result.collections);
    const parameters=$('.modelPreviewParameters',host);if(parameters)parameters.innerHTML=Object.entries(item.parameters||{}).map(([k,val])=>'<dt>'+esc(k)+'</dt><dd>'+esc(val)+'</dd>').join('');
-   const resourceHost=$('.civitaiResourceHost',host);if(resourceHost){resourceHost.innerHTML=resourcesHTML(item.resources);wireResources(resourceHost);}
+   const resourceHost=$('.civitaiResourceHost',host);if(resourceHost){resourceHost.innerHTML=resourcesHTML(item.resources,item.chosenBy);wireResources(resourceHost);}
    let tags=$('.civitaiTagHost',host);if(!tags){tags=document.createElement('section');tags.className='civitaiTagHost';$('.modelPreviewDetails',host)?.append(tags);}
    paintTags(tags,item);
   }catch(e){if(target.isConnected){paintPrompt('failed');$('.civitaiActionError',target).textContent=e.message;}}
@@ -971,7 +1009,7 @@ const CivitaiBrowser=(()=>{
   const cached=details.get(detailKey(item.id));if(cached)Object.assign(item,cached.result.item);
   close();const el=document.createElement('section');el.className='civitaiViewer';el.setAttribute('role','dialog');el.setAttribute('aria-modal','true');el.setAttribute('aria-label','Civitai media details');
   const v={el,item,list};viewer=v;document.body.append(el);document.body.classList.add('civitaiViewerOpen');
-  el.innerHTML='<div class="civitaiViewerHead">'+button('×','class="civitaiClose" aria-label="Close media"')+'</div><div class="civitaiViewerScroll modelPreviewViewer"><div class="modelPreviewHero">'+imageHTML(item,true)+'<div class="modelPreviewNavigation">'+button('‹','data-prev aria-label="Previous media"')+button('›','data-next aria-label="Next media"')+'</div></div><div class="modelPreviewDetails"><div class="civitaiSocial">'+socialHTML(item,status?.collections||[])+'</div>'+promptHTML(item)+'<h2>Resources</h2><div class="civitaiResourceHost">'+resourcesHTML(item.resources||[])+'</div><dl class="modelPreviewParameters">'+Object.entries(item.parameters||{}).map(([k,val])=>'<dt>'+esc(k)+'</dt><dd>'+esc(val)+'</dd>').join('')+'</dl><div class="civitaiTagHost"></div>'+button('Open on Civitai ↗','data-origin')+'</div></div>';
+  el.innerHTML='<div class="civitaiViewerHead">'+button('×','class="civitaiClose" aria-label="Close media"')+'</div><div class="civitaiViewerScroll modelPreviewViewer"><div class="modelPreviewHero">'+imageHTML(item,true)+'<div class="modelPreviewNavigation">'+button('‹','data-prev aria-label="Previous media"')+button('›','data-next aria-label="Next media"')+'</div></div><div class="modelPreviewDetails"><div class="civitaiSocial">'+socialHTML(item,status?.collections||[])+'</div>'+promptHTML(item)+'<h2>Resources</h2><div class="civitaiResourceHost">'+resourcesHTML(item.resources||[],item.chosenBy)+'</div><dl class="modelPreviewParameters">'+Object.entries(item.parameters||{}).map(([k,val])=>'<dt>'+esc(k)+'</dt><dd>'+esc(val)+'</dd>').join('')+'</dl><div class="civitaiTagHost"></div>'+button('Open on Civitai ↗','data-origin')+'</div></div>';
   $('.civitaiClose',el).onclick=close;$('.civitaiClose',el).focus();$('[data-origin]',el).onclick=()=>openModelSource(item.imageUrl);
   wirePromptCopies(el,item);
   const position=list.findIndex(i=>i.id===item.id);$('[data-prev]',el).disabled=position<=0;$('[data-next]',el).disabled=position>=list.length-1;

@@ -112,3 +112,13 @@ physical-phone touch test or GPU generation was performed for this catalogue
 change.
 
 Installed Windows Beta 59 responded successfully to authenticated ping, status and model-library requests. The live catalogue retained 102 entries. All 225 jobs, 188 media records, profiles, workspace records, provenance and ratings matched the pre-install snapshot exactly; pairing credentials, model selection and signing-key hashes were unchanged.
+
+## Beta 90 discovery diversity
+
+187 backend tests passed. New neutral regressions cover tag-heavy selection under a dominant-artist fixture, spacing across requests/refresh/restart, retained throttled candidates, explicit artist feeds, public collection ownership and visibility checks, cached directory lookups, request limits, optional endpoint failure and account isolation. Artist identity uses both ID and normalized name.
+
+Shared browser tests passed at phone and desktop widths: feed-discovery, media-tag-weights, browse-startup, browse-cache, viewer-loading, feed-seen, feed-preferences, browse-swipe, browse, desktop and bridge-dashboard. Native Test-Panel and Test-Desktop checks passed. Fixture creators were diversified where old fixtures assumed every feed image had the same author; timeout checks still verify the chosen artist disappears.
+
+Read-only live Civitai checks confirmed public image collection discovery and a collection media page. Seven sampled followed creators exposed no public image collections, so no claim is made that those creators contribute this source. Public collection discovery is not an export of personal likes or private bookmarks.
+
+Signed Android and Windows builds completed. Beta 90 was installed while the bridge had no active jobs; all 273 stored job IDs and statuses were unchanged after installation. Consistent SQLite and app backups are in the private migration folder. Installed source/assets and APK assets match the checkout. Installed status, preferences and seen-history APIs responded. ComfyUI's queue endpoint was unavailable during the preflight; no ComfyUI process was stopped. The diagnostic session's expiry was preserved. No physical phone touch test was performed.

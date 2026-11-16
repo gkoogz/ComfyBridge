@@ -183,3 +183,10 @@ body[data-page=browse] #workspace{overscroll-behavior-y:contain}
 #weightSearch{width:100%;min-height:40px;padding:9px 12px;font-size:14px}
 
 .browseBackLayer{position:fixed;z-index:35;overflow:hidden;background:var(--bg);pointer-events:none;box-shadow:8px 0 24px #0005;will-change:transform;overflow-anchor:none}
+
+/* Recommendation provenance stays separate from generation resources. */
+.sourceLora.chosenSource,.resourceName.chosenSource,.viaCreator.chosenSource{color:#ffdb73;border:1px solid #b89a3d;background:#4b3d183d;border-radius:7px;padding:5px 8px}
+.discoverySource{margin:6px 0}.discoveryVia{display:inline-flex;align-items:center;gap:5px;flex-wrap:wrap;font-size:12px}
+.viaFollowing{color:var(--mint);font-weight:700}.discoveryFollow{padding:4px 8px;min-height:30px;font-size:12px;white-space:nowrap}
+.feedDiscovery{display:flex;flex-basis:100%;align-items:center;gap:6px}.browseCaption .feedDiscovery button{min-height:28px;font-size:12px}
+.civitaiSocial>.discoveryVia{margin:5px 0 8px}

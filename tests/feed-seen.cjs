@@ -15,7 +15,7 @@ const assert=require('node:assert/strict'),path=require('node:path');
  await p.goto('https://bridge.test');await p.waitForSelector('#connect');
  await p.evaluate(()=>{
   heartbeat=poll=syncSettings=()=>{};connected=true;window.seenCalls=[];window.generation=0;window.holdRefresh=false;window.failSeen=false;
-  window.post=id=>({id:String(id),type:'image',credit:'Potter',creatorId:'7',width:300,height:600,path:`model-preview/browse/1/${id}/thumb`,fullPath:`model-preview/browse/1/${id}/full`,detailVersion:2,generationDataAvailable:true,prompt:'A ceramic vase.',resources:[],tags:[],stats:{},reactions:[]});
+  window.post=id=>({id:String(id),type:'image',credit:'Potter '+id,creatorId:String(Number(id)+20),width:300,height:600,path:`model-preview/browse/1/${id}/thumb`,fullPath:`model-preview/browse/1/${id}/full`,detailVersion:2,generationDataAvailable:true,prompt:'A ceramic vase.',resources:[],tags:[],stats:{},reactions:[]});
   const status={account:'1',username:'Potter',collections:[],followingIds:[],bans:[],importState:{complete:true}};
   localStorage.setItem('comfybridge-browse-v2:seen-fixture',JSON.stringify({account:'1',status,channel:'reactions',exposureVersion:1,strip:[],feed:Array.from({length:10},(_,i)=>post(i+1)),details:[]}));
   api=async(route,body)=>{

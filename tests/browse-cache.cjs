@@ -5,7 +5,7 @@ async function setup(p,options={}){
   heartbeat=poll=syncSettings=()=>{};connected=true;window.calls=[];window.apiOptions=options;
   api=async(route,body)=>{
    calls.push({route,body});const account=apiOptions.account||'1';
-   const item=n=>({detailVersion:2,generationDataAvailable:true,id:String(n),type:'image',credit:'Potter',creatorId:'7',path:`model-preview/browse/${account}/${n}/thumb`,fullPath:`model-preview/browse/${account}/${n}/full`,width:300,height:600,prompt:'A ceramic vase '+n,negativePrompt:'blur',resources:[],tags:[],reactions:[],stats:{},parameters:{}});
+   const item=n=>({detailVersion:2,generationDataAvailable:true,id:String(n),type:'image',credit:n===1?'Potter':'Potter '+n,creatorId:n===1?'7':String(n+20),path:`model-preview/browse/${account}/${n}/thumb`,fullPath:`model-preview/browse/${account}/${n}/full`,width:300,height:600,prompt:'A ceramic vase '+n,negativePrompt:'blur',resources:[],tags:[],reactions:[],stats:{},parameters:{}});
    if(route==='browse/status'){
     if(apiOptions.holdStatus)await new Promise(resolve=>window.releaseStatus=resolve);
     return {account,username:'Potter',collections:[{id:4,name:'Ceramics',count:30}],timeouts:{},learned:30,follows:1,importState:{complete:true}};
@@ -16,7 +16,7 @@ async function setup(p,options={}){
     return {account,items:Array.from({length:Math.min(12,total-start)},(_,i)=>item(start+i+(collection?101:1))),nextCursor:start+12<total?String(start+12):null};
    }
    if(route.startsWith('browse/detail/')){await new Promise(r=>setTimeout(r,15));return {account,item:{...item(Number(route.split('/').pop())),socialComplete:!body?.prefetch},collections:[]};}
-   if(route==='browse/action'&&body.kind==='timeout')return {ok:true,creatorId:'7',until:Date.now()/1000+7200};
+   if(route==='browse/action'&&body.kind==='timeout')return {ok:true,creatorId:body.creatorId,until:Date.now()/1000+7200};
    return {};
   };navigate('browse');
  },options);
@@ -77,8 +77,9 @@ async function setup(p,options={}){
  await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
  await p.waitForFunction(n=>calls.filter(c=>c.route==='browse/status').length>n,count);
  await p.waitForTimeout(600);assert.equal(await p.locator('.civitaiViewer').count(),0);
+ const silenced=await p.locator('.browseTile').first().evaluate(el=>el.browseItem.creatorId);
  await p.locator('.feedTimeout').first().click();
- await p.waitForFunction(()=>document.querySelectorAll('.browseTile').length===0);
+ await p.waitForFunction(uid=>[...document.querySelectorAll('.browseTile')].every(el=>el.browseItem.creatorId!==uid),silenced);
  assert.match(await p.locator('#toast').textContent(),/2 hours/);
  assert.equal(Object.keys(await p.evaluate(()=>JSON.parse(localStorage.getItem('comfybridge-browse-v2:test-PC')).muted)).length,1);
  // A different account must not retain cached media or prefetched details.

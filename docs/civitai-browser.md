@@ -10,13 +10,43 @@ by Civitai account ID. Paired devices share the PC's current Civitai account.
 
 The largest owned, non-archived Image collection is selected first. The dropdown
 also offers other owned media collections and reacted media. New collections
-are private. The feed favors followed creators' latest media and weighted
-creators/tags learned from your existing reactions and collections. Local LoRA
-samples are filler: normally one in ten source slots when relationship data
-exists, and more when personal sources are missing or exhausted. This is a
-source-selection target, not a strict per-page quota: duplicates are skipped.
+are private. Since Beta 90, seven of ten source slots target weighted tag pairs,
+one targets a followed creator's public image collection, one targets weighted
+creators, and one is LoRA filler. An unavailable collection slot falls back to
+tags. Accounts with too few positive tags use available personal sources and
+LoRA examples instead. These are source-selection targets, not per-page quotas:
+duplicates, bans, nonmatching tag intersections and recent artists are skipped.
 LoRA examples cycle through installed, non-archived LoRAs before returning for
 the next example, reusing existing preview-cache keys when available.
+
+For You keeps each artist at least ten posts apart across every source. The
+last nine artist identities persist per account across pages, refreshes and
+bridge restarts. Both creator IDs and normalized names cover older cached LoRA
+metadata without IDs. Throttled candidates stay buffered for later; the feed
+never relaxes spacing just to fill a page. Startup cache ordering, appends and
+offscreen replacements also enforce spacing. Explicit artist/tag feeds and
+collection carousels are unaffected.
+
+`chosenBy` is contextual recommendation provenance, separate from generation
+resources. LoRA-sourced posts identify the source listing in yellow, even when
+that LoRA is absent from the actual generation resources. Public-collection
+posts carry the collection ID/name and its owner's ID/name; the UI shows a
+via-curator link, following check and a follow control for the actual artist.
+This never claims the collection owner personally liked or uploaded the post.
+
+Public collection discovery uses Civitai's website endpoint
+[`collection.getInfinite`](https://github.com/civitai/civitai/blob/main/src/server/routers/collection.router.ts)
+with `userId`, `types: [Image]`, `privacy: [Public]` and limit 20, then the existing
+`image.getInfinite(collectionId)` media route. Returned owner, type and public
+visibility are checked again locally. Private bookmarks and someone else's
+personal reaction history are not imported. The existing foreground-leased
+importer checks at most one followed creator's directory per minute, caches
+even empty results for a day, and stops when Browse is inactive. No directory
+lookup blocks a feed response. Directory pages also use the shared persistent
+API cache and background rate budget; media still has the three-read feed cap.
+Unfollowed creators cease to contribute immediately. Collection discovery is
+optional: transient failures retain normal browsing and back off. These are
+website tRPC interfaces, not a guaranteed stable public developer API.
 
 Learning is incremental and resumable. Opening Browse renews a 45-second import
 lease every 15 seconds while visible. Historical reactions and all accessible

@@ -10,7 +10,7 @@ const assert=require('node:assert/strict'),path=require('node:path');
  await p.evaluate(()=>{
   heartbeat=poll=syncSettings=()=>{};connected=true;window.calls=[];window.tagWeights={12:3,13:10,14:0};window.weightStamp=100;
   const weights=()=>({tagWeights:structuredClone(tagWeights),tagWeightsAt:weightStamp});
-  const item=n=>({id:String(n),credit:'Potter',creatorId:'7',type:'image',width:300,height:600,tags:[{id:12,name:'Ceramics',score:500},{id:13,name:'Blue',score:1},{id:14,name:'Glaze',score:10000}],tagsKnown:true,reactions:[],stats:{},path:`model-preview/browse/1/${n}/thumb`,fullPath:`model-preview/browse/1/${n}/full`,resources:[],parameters:{},detailVersion:2,generationDataAvailable:true,prompt:'A blue ceramic vase.'});
+  const item=n=>({id:String(n),credit:Number(n)===2?'Potter':'Ceramicist',creatorId:Number(n)===2?'7':'8',type:'image',width:300,height:600,tags:[{id:12,name:'Ceramics',score:500},{id:13,name:'Blue',score:1},{id:14,name:'Glaze',score:10000}],tagsKnown:true,reactions:[],stats:{},path:`model-preview/browse/1/${n}/thumb`,fullPath:`model-preview/browse/1/${n}/full`,resources:[],parameters:{},detailVersion:2,generationDataAvailable:true,prompt:'A blue ceramic vase.'});
   api=async(route,body)=>{
    calls.push({route,body});
    if(route==='browse/status')return {account:'1',username:'Example',collections:[{id:4,name:'Pottery',count:1}],followingIds:[],bans:[],learned:1,follows:0,importState:{complete:true},...weights()};

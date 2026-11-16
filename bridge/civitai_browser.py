@@ -105,7 +105,7 @@ class Browser:
         ttl={'image.getInfinite':120,'image.getGenerationData':7*86400,'image.getResources':86400,
              'user.getFollowingUsers':600,'user.getCreator':86400,'tag.getVotableTags':3600,
              'collection.getUserCollectionItemsByItem':300,'collection.getAllUser':600,
-             'user.getBookmarkCollections':600,'collection.getEntryCount':600}.get(route,0)
+             'user.getBookmarkCollections':600,'collection.getEntryCount':600,'collection.getInfinite':86400}.get(route,0)
         if write or not ttl:return self.raw_call(token,route,value,write,rest)
         diagnostic=api_debug.recorder.begin()
         identity=hashlib.sha256(token.encode()).hexdigest();key=json.dumps(value,sort_keys=True,separators=(',',':'))
@@ -293,6 +293,51 @@ class Browser:
             db.execute('INSERT OR REPLACE INTO observations VALUES(?,?,?,?,?,?,?)',
                        (account, source, str(item['id']), item.get('creatorId', ''), tags, score, stamp))
 
+    def public_curations(self, account, token, follows, refresh=True):
+        """One directory page at most per minute, never a crawl of every follow.
+
+        Only public Image collections owned by a currently followed creator qualify.
+        Collection ownership does not imply that the owner personally liked a post.
+        The directory refresh runs in the existing foreground-leased importer;
+        the feed itself only reads the cached directory.
+        """
+        directory=self.setting(account,'public-curations',{})
+        people=directory.setdefault('people',{})
+        follows={str(uid) for uid in follows}
+        people={uid:p for uid,p in people.items() if uid in follows}
+        directory['people']=people
+        now=time.time();reads=0
+        eligible=[uid for uid in follows if now-people.get(uid,{}).get('checked',0)>=86400]
+        if refresh and eligible and now-directory.get('lastLookup',0)>=60:
+            uid=min(eligible,key=lambda k:(people.get(k,{}).get('checked',0),int(k)))
+            directory['lastLookup']=now
+            # Save the attempt as well, so a failing optional endpoint cannot spin.
+            self.save(account,'public-curations',directory)
+            reads=1
+            try:
+                with background_work():
+                    raw=self.call(token,'collection.getInfinite',dict(userId=int(uid),types=['Image'],privacy=['Public'],limit=20,browsingLevel=31))
+                entries=[]
+                for c in raw.get('items',[]):
+                    owner=c.get('user') or {}
+                    if c.get('read')!='Public' or c.get('type')!='Image' or str(c.get('userId'))!=uid:continue
+                    if not c.get('id') or not owner.get('username') or c.get('archivedAt'):continue
+                    entries.append(dict(id=ident(c['id']),name=str(c.get('name','Collection')),
+                                        ownerId=uid,ownerName=str(owner['username'])))
+                people[uid]=dict(checked=now,items=entries)
+            except ValueError:
+                # Optional discovery must not block the user's normal feed. Retry
+                # later, but stop using stale permissions after a failed refresh.
+                people[uid]=dict(checked=now-86400+3600,items=[])
+            self.save(account,'public-curations',directory)
+        items=[c for p in people.values() if now-p.get('checked',0)<86400 for c in p.get('items',[])]
+        return items,reads
+
+    @staticmethod
+    def artist_keys(item):
+        return ([str(item['creatorId'])] if item.get('creatorId') else [])+(
+            ['name:'+item['credit'].strip().casefold()] if item.get('credit','').strip() else ['unknown'])
+
     def learned_weights(self, account):
         creators, tags, names = {}, {}, {}
         follows = self.setting(account, 'follows', [])
@@ -413,6 +458,9 @@ class Browser:
 
     def _import_loop(self, account, token):
         try:
+            if self.leases.get(account,0)>time.monotonic() and self.models.token()==token:
+                try:self.public_curations(account,token,self.setting(account,'follows',[]))
+                except (Deferred,ValueError):pass
             state = self.setting(account, 'import', {})
             if state.get('complete') and time.time()-state.get('finished', 0)<86400: return
             if not state.get('sources') or state.get('complete'):
@@ -524,26 +572,42 @@ class Browser:
             follows=[uid for uid in self.setting(account,'follows',[]) if str(uid) in weights['creators']]
             rich=bool(follows or weights['creators'] or len(weights['tags'])>=2)
             following={str(x) for x in self.setting(account,'follows',[])}
+            recent=self.setting(account,'mix-artists',[])[-9:] if channel=='mix' else []
+            curations=[]
+            if channel=='mix' and follows:
+                curations,_=self.public_curations(account,token,follows,refresh=False)
             for attempt in range(36 if channel=='mix' else (12 if recovered else 2)):
                 if len(out)>=12:break
                 chosen={};required_tags=[]
                 if channel=='mix':
-                    # Relationship sources dominate. LoRA samples occupy only one in
-                    # ten slots once preferences exist, or fill empty source pages.
+                    # Seven tag discovery slots, one public collection, one creator,
+                    # one LoRA filler. Missing curations fall back to tags. Artist
+                    # spacing applies to every source, across requests and restarts.
                     slot=state['turn']%10;state['turn']+=1
-                    if (slot==9 or not rich or state.get('empty',0)>=3) and state['loras']:
+                    blocked={k for keys in recent for k in keys}
+                    eligible={uid:w for uid,w in weights['creators'].items() if uid not in blocked}
+                    if (slot==9 or not rich) and state['loras']:
                         item=state['loras'][state['lora']%len(state['loras'])];state['lora']+=1
                         key='lora:'+str(item['versionId']);filters={'modelVersionId':int(item['versionId']),'sort':'Most Reactions'};reason='From '+item['title']
-                    elif slot in (0,2,4,6) and follows:
-                        uid=random.choices(follows, weights=[weights['creators'][str(u)] for u in follows])[0]
-                        key='creator:'+str(uid);filters={'userId':int(uid),'sort':'Newest'};reason='Creators you follow'
-                        chosen=dict(kind='creator',id=str(uid))
-                    elif (slot in (1,3,5) or len(weights['tags'])<2) and weights['creators']:
-                        uid=random.choices(list(weights['creators']),weights=list(weights['creators'].values()))[0]
+                        chosen=dict(kind='lora',id=str(item['versionId']),name=item['title'],modelId=item.get('modelId'))
+                    elif slot==7 and curations:
+                        collection=random.choice(curations)
+                        key='curation:'+str(collection['id']);filters={'collectionId':collection['id'],'sort':'Newest'}
+                        reason='From a public collection by '+collection['ownerName']
+                        chosen=dict(kind='curation',collectionId=collection['id'],collectionName=collection['name'],
+                                    via=dict(id=collection['ownerId'],name=collection['ownerName']))
+                    elif (slot==8 or len(weights['tags'])<2) and eligible:
+                        uid=random.choices(list(eligible),weights=list(eligible.values()))[0]
                         key='creator:'+uid;filters={'userId':int(uid),'sort':'Newest'};reason='A creator you enjoy'
                         chosen=dict(kind='creator',id=str(uid))
                     elif len(weights['tags'])>=2:
                         required_tags=self.roll_tag_pair(weights['tags'])
+                        # Once the network budget is used, draw from saved tag pages
+                        # instead of stranding their candidates behind new random pairs.
+                        buffered=[k.split(':',1)[1].split(',') for k,s in state['sources'].items()
+                                  if k.startswith('tags:') and s['items'] and all(t in weights['tags'] for t in k.split(':',1)[1].split(','))]
+                        if reads>=3 and buffered:
+                            required_tags=random.choices(buffered,weights=[sum(weights['tags'][t] for t in pair) for pair in buffered])[0]
                         key='tags:'+','.join(required_tags);filters={'tags':list(map(int,required_tags)),'sort':'Newest'}
                         reason='Because you enjoy '+' + '.join(weights['names'][t] for t in required_tags)
                         chosen=dict(kind='tags',ids=required_tags)
@@ -615,7 +679,9 @@ class Browser:
                             limited=True;retry_after=error.retry_after;break
                 take=1 if channel=='mix' else 12
                 before=len(out)
-                while source['items'] and len(out)-before<take and len(out)<12:
+                remaining=len(source['items'])
+                while remaining and source['items'] and len(out)-before<take and len(out)<12:
+                    remaining-=1
                     item=source['items'].pop(0)
                     scanned+=1
                     if self.is_muted(item,muted):continue
@@ -623,6 +689,12 @@ class Browser:
                     if item['id'] in excluded:continue
                     if required_tags and not self.matches_tags(item,required_tags):continue
                     if self.is_banned(item,bans):continue
+                    if channel=='mix':
+                        keys=self.artist_keys(item)
+                        if any(set(keys).intersection(previous) for previous in recent):
+                            source['items'].append(item)
+                            continue
+                        recent=(recent+[keys])[-9:]
                     public=dict(self.public(item),reason=reason,chosenBy=chosen,following=str(item.get('creatorId')) in following)
                     if channel.startswith('collection:'):public['collections']=[{'collectionId':int(channel.split(':')[1])}]
                     state['seen'].append(item['id']);out.append(public)
@@ -631,6 +703,7 @@ class Browser:
             ended=channel!='mix' and all(s['done'] and not s['items'] for s in state['sources'].values())
             with self.db() as db:
                 if channel=='mix':
+                    db.execute('INSERT OR REPLACE INTO settings VALUES(?,?,?)',(account,'mix-artists',json.dumps(recent)))
                     db.executemany('INSERT INTO feed_exposure(account,image,served) VALUES(?,?,?) ON CONFLICT(account,image) DO UPDATE SET served=excluded.served',[(account,i['id'],time.time()) for i in out])
                     progress=dict(at=time.time(),muted=sorted(muted),**{k:state[k] for k in ('sources','turn','lora')})
                     db.execute('INSERT OR REPLACE INTO settings VALUES(?,?,?)',(account,'mix-progress',json.dumps(progress)))

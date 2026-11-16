@@ -10,7 +10,7 @@ const assert=require('node:assert/strict'),path=require('node:path');
  await p.goto('https://bridge.test');await p.waitForSelector('#connect');
  await p.evaluate(async()=>{
   heartbeat=poll=syncSettings=()=>{};connected=false;window.calls=[];window.failReads=true;
-  window.post=id=>({id:String(id),type:'image',credit:'Potter',creatorId:'7',width:300,height:600,path:`model-preview/browse/1/${id}/thumb`,fullPath:`model-preview/browse/1/${id}/full`,tagsKnown:true,tags:[],stats:{},reactions:[]});
+  window.post=id=>({id:String(id),type:'image',credit:'Potter '+id,creatorId:String(Number(id)+20),width:300,height:600,path:`model-preview/browse/1/${id}/thumb`,fullPath:`model-preview/browse/1/${id}/full`,tagsKnown:true,tags:[],stats:{},reactions:[]});
   const feed=Array.from({length:10},(_,i)=>post(i+1)),strip=Array.from({length:20},(_,i)=>post(i+101));
   window.savedStatus={account:'1',username:'Potter',collections:[{id:4,name:'Pottery',count:89}],followingIds:[],bans:[],importState:{complete:true}};
   const cache=await caches.open('comfybridge-browse-v1');
