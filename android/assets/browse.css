@@ -141,7 +141,7 @@ body[data-page=browse] #workspace{overscroll-behavior-y:contain}
 /* The real social rows peek into the viewport, then scroll with the details. */
 .civitaiViewer .modelPreviewHero{height:calc(100dvh - var(--status-inset,0px));display:block}
 .civitaiViewer .modelPreviewHero img,.civitaiViewer .modelPreviewHero video{display:block;width:100%;object-fit:contain}
-.civitaiViewer .modelPreviewHero.isVideo{touch-action:pan-y pinch-zoom}
+.civitaiViewer .modelPreviewHero.isVideo{touch-action:pinch-zoom}
 .civitaiViewerScroll{overflow-anchor:none}
 .civitaiViewerHead{transition:transform .18s ease,opacity .18s ease}
 .civitaiViewer.mediaOnly .civitaiViewerHead{transform:translateY(-80px);opacity:0;pointer-events:none}
@@ -190,3 +190,17 @@ body[data-page=browse] #workspace{overscroll-behavior-y:contain}
 .viaFollowing{color:var(--mint);font-weight:700}.discoveryFollow{padding:4px 8px;min-height:30px;font-size:12px;white-space:nowrap}
 .feedDiscovery{display:flex;flex-basis:100%;align-items:center;gap:6px}.browseCaption .feedDiscovery button{min-height:28px;font-size:12px}
 .civitaiSocial>.discoveryVia{margin:5px 0 8px}
+
+/* Feed cards occupy space only once their preview has decoded. */
+.civitaiBrowse{position:relative}
+.browseTile.cardPending{display:none}
+.browseTile{z-index:1}
+.browseTile.cardArriving{animation:feedCardArrive 180ms ease-out both;transform-origin:50% 20%}
+@keyframes feedCardArrive{0%{opacity:0;transform:translateY(6px) scale(.995)}65%{opacity:1}100%{opacity:1;transform:none}}
+#browseMore.browsePuller,.browsePuller.pullGhost{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;width:100%;height:160px;margin:0;padding:24px;border:0;background:none;color:var(--muted);font-size:13px;box-sizing:border-box}
+#browseMore[hidden]{display:none}
+.browsePuller .spinner{width:24px;height:24px;flex:none}
+.browsePuller.pullGhost{position:absolute;left:0;z-index:0;pointer-events:none}
+#browseMore.pullCovered{opacity:0}
+.browsePuller.pullFailed .spinner{display:none}
+@media(prefers-reduced-motion:reduce){.browseTile.cardArriving{animation:none}}

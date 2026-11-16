@@ -709,3 +709,28 @@ The client now says ten minutes and shows retry state after that target.
 Tests cover light ongoing traffic admitting writes, burst/minute/background
 pressure yielding, urgent work respecting server cooldown, and the 599/600-second
 boundary with repeated edits preserving the deadline.
+
+
+## Beta 95: ready-card arrivals and video tossing
+
+Feed pagination now starts 1.5 workspace viewport heights before the sentinel,
+using the same threshold in IntersectionObserver and scroll checks; resizing
+rebuilds the observer. The batch size remains 12. Pending decoded-image cards
+block additional page draws to avoid draining the bank into hidden DOM content.
+
+Feed articles remain display:none until imageBlob plus image.decode succeeds.
+Cards reveal in feed order with no pending layout height or exposed controls.
+The 180ms entry animates translateY(6px), scale(.995) and a fast opacity fade;
+reduced-motion disables it. The borderless 160px Pulling.. sentinel leaves a
+noninteractive absolute copy at its old position behind the arriving card,
+while the actual sentinel moves to the new bottom. Failed cards remain hidden
+and can be retried from the footer. Carousel preview handling is unchanged.
+
+Video hero pointer gestures now share image toss/scroll logic. Pointer starts
+inside the bottom 64px of the video element bypass capture for native playback
+controls; all other media surface supports tossing. Upward drags still scroll
+details; held/directional tosses retain the existing threshold and snapback.
+`tests/feed-arrival.cjs` covers decode gating/order, absent pending layout,
+spinner cover, responsive prefetch distance, native-control exclusion, mouse
+scroll/toss and mobile touch-emulated dismissal. Physical Android remains a
+separate verification gate.
