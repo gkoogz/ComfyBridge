@@ -133,7 +133,7 @@ class FeedBank:
             query=dict(channel='mix',cursor=state.get('cursor',''),seen=[i['id'] for i in state['items']])
         # Deliberately outside bank.lock: consumers can take ready posts during
         # an upstream timeout. The selector's existing 3-read budget still applies.
-        with background_work(),self.b.mix_lock:
+        with background_work(quiet=len(state['items'])>=25),self.b.mix_lock:
             result=self.b._feed(query,planning=True,artist_tail=tail)
         if self.b.models.token()!=token:return 0
         with self.lock:

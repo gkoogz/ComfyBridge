@@ -192,7 +192,9 @@ public class MainActivity extends Activity {
  }
  String exportOperation="export";
  public class NativeApi {
-  @JavascriptInterface public void openProfile(String value){
+  @JavascriptInterface public String loadSocialQueue(String scope){return getSharedPreferences("social-outbox",MODE_PRIVATE).getString(scope,"");}
+ @JavascriptInterface public boolean saveSocialQueue(String scope,String value){if(scope==null||scope.length()>512||value==null||value.length()>1048576)return false;return getSharedPreferences("social-outbox",MODE_PRIVATE).edit().putString(scope,value).commit();}
+ @JavascriptInterface public void openProfile(String value){
    openListing(value);
   }
   @JavascriptInterface public void openListing(String value){

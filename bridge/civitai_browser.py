@@ -22,6 +22,7 @@ from civitai_requests import before, governor, Deferred, background_work
 from civitai_requests import context as request_context
 import api_debug
 from feed_bank import FeedBank
+from social_outbox import SocialOutbox
 
 REACTIONS = ('Like', 'Heart', 'Laugh', 'Cry')
 CDN = 'https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/'
@@ -82,6 +83,7 @@ class Browser:
                 db.executemany('INSERT INTO feed_exposure(account,image,served) VALUES(?,?,?) ON CONFLICT(account,image) DO UPDATE SET served=MAX(served,excluded.served)',
                     [(row['account'],str(i),row['touched']) for i in payload.get('seen',[]) if str(i).isdigit()])
         self.bank=FeedBank(self)
+        self.social=SocialOutbox(self)
 
     @contextmanager
     def db(self):
@@ -96,7 +98,9 @@ class Browser:
     def setting(self, account, key, default=None):
         with self.db() as db:
             row = db.execute('SELECT value FROM settings WHERE account=? AND key=?', (account, key)).fetchone()
-        return json.loads(row[0]) if row else default
+        value=json.loads(row[0]) if row else default
+        if key=='follows' and value is not None and hasattr(self,'social'):return self.social.follows(account,value)
+        return value
 
     def save(self, account, key, value):
         with self.db() as db:
@@ -267,7 +271,7 @@ class Browser:
             if not item['avatarPath'] and previous.get('avatarPath'):
                 item['avatarPath']=previous['avatarPath'];item['_urls']['avatar']=previous['_urls']['avatar']
             db.execute('INSERT OR REPLACE INTO media VALUES(?,?,?,?)', (account, image_id, json.dumps(item), time.time()))
-        return item
+        return self.social.overlay(account,item)
 
     @staticmethod
     def public(item):
@@ -278,7 +282,7 @@ class Browser:
     def stored(self, account, image_id):
         with self.db() as db:
             row = db.execute('SELECT payload FROM media WHERE account=? AND id=?', (account, str(ident(image_id)))).fetchone()
-        return json.loads(row[0]) if row else None
+        return self.social.overlay(account,json.loads(row[0])) if row else None
 
     def images(self, account, token, filters, limit=20, meta=True):
         raw = self.call(token, 'image.getInfinite', {'limit':limit, 'browsingLevel':31, 'withMeta':meta, 'withTags':True, 'include':['tagIds','profilePictures'], **filters})
@@ -321,9 +325,13 @@ class Browser:
                 members=self.call(token,'collection.getUserCollectionItemsByItem',{'imageId':iid})
                 item.update(collections=members,collectionsChecked=time.time())
                 with self.db() as db:db.execute('UPDATE media SET payload=? WHERE account=? AND id=?',(json.dumps(item),account,str(iid)))
-            return dict(account=account,collections=item['collections'])
+            return dict(account=account,collections=self.social.overlay(account,item).get('collections',[]))
 
     def observe(self, account, source, item, score, stamp):
+        for r in self.social.rows(account,True):
+            if r['imageId']!=str(item['id']):continue
+            if source=='reactions' and r['kind']=='reaction':score=len(self.social.overlay(account,item).get('reactions',[]))
+            elif source=='collection:'+r['collectionId'] and r['kind']=='collect':score=int(r['selected'])
         tags = json.dumps({str(t['id']):t['name'] for t in item.get('tags', [])})
         with self.db() as db:
             db.execute('INSERT OR REPLACE INTO observations VALUES(?,?,?,?,?,?,?)',
@@ -490,7 +498,7 @@ class Browser:
                     timeouts=self.timeouts(account), bans=self.bans(account), importState=state, learned=count, follows=len(self.setting(account, 'follows', [])),**self.tag_weight_snapshot(account))
 
     def import_loop(self, account, token):
-        with background_work():self._import_loop(account,token)
+        with background_work(quiet=True):self._import_loop(account,token)
 
     def _import_loop(self, account, token):
         try:
@@ -515,7 +523,7 @@ class Browser:
                 filters['sort']='Newest'
                 if state.get('cursor') is not None: filters['cursor']=state['cursor']
                 state['label']='Learning from your reactions' if source=='reactions' else 'Learning from your collections'
-                with background_work():items, cursor=self.images(account, token, filters, 200, meta=False)
+                with background_work(quiet=True):items, cursor=self.images(account, token, filters, 200, meta=False)
                 for item in items:
                     score=max(1,len([r for r in item['reactions'] if r in REACTIONS])) if source=='reactions' else 1
                     self.observe(account, source, item, score, state['stamp'])
@@ -828,7 +836,7 @@ class Browser:
         item['socialComplete']=not prefetch
         with self.db() as db:db.execute('UPDATE media SET payload=? WHERE account=? AND id=?',(json.dumps(item),account,image_id))
         snapshot=self.tag_weight_snapshot(account)
-        public=self.public(item)
+        public=self.public(self.social.overlay(account,item))
         public['tags']=[dict(id=t['id'],name=t.get('name',''),weight=snapshot['tagWeights'].get(str(t['id']),0)) for t in item['tags']]
         public['tags'].sort(key=lambda t:(-t['weight'],t['name'].casefold()))
         return dict(account=account,item=public,collections=self.setting(account,'collections',{}).get('items',[]),**snapshot)

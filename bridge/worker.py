@@ -652,7 +652,7 @@ async def idle_watch():
             # Only the process tree launched by this worker is ours to stop.
             subprocess.run(['taskkill', '/PID', str(OWNED.pid), '/T', '/F'],
                            creationflags=subprocess.CREATE_NO_WINDOW, capture_output=True)
-        if MODEL_DOWNLOADS.busy():continue
+        if MODEL_DOWNLOADS.busy() or CIVITAI_BROWSER.social.busy():continue
         os._exit(0)
 
 
@@ -809,6 +809,16 @@ async def api(request):
     if path.startswith('browse/detail/') and request.method in ('GET','POST'):
         data=await request.json() if request.method=='POST' else {}
         return web.json_response(await asyncio.to_thread(CIVITAI_BROWSER.detail, path.split('/')[-1], data.get('prefetch') is True))
+    if path == 'browse/social' and request.method == 'GET':
+        return web.json_response(await asyncio.to_thread(CIVITAI_BROWSER.social.snapshot))
+    if path == 'browse/social' and request.method == 'POST':
+        data=await request.json();actions=data.get('actions',[])
+        if not isinstance(actions,list) or len(actions)>100 or any(not isinstance(a,dict) for a in actions):raise ValueError('Send at most 100 queued changes')
+        results=[]
+        for action in actions:
+            try:results.append(await asyncio.to_thread(CIVITAI_BROWSER.social.enqueue,action))
+            except ValueError as error:results.append(dict(requestId=action.get('requestId'),error=str(error)))
+        return web.json_response(dict(results=results))
     if path == 'browse/action' and request.method == 'POST':
         return web.json_response(await asyncio.to_thread(CIVITAI_BROWSER.action, await request.json()))
     if path.startswith('model-preview/browse/') and request.method == 'GET':
@@ -882,7 +892,7 @@ async def api(request):
                     j['etaSeconds']=None
                 else:
                     j['progress'],j['current_node']=TRACKER.sample()
-        return web.json_response(dict(protocol=20,build='0.1.0-beta.92',jobs=jobs, active=ACTIVE, preview=bool(PREVIEW), previewRevision=PREVIEW_REV,ownedComfy=bool(OWNED),queueEtaSeconds=total_eta))
+        return web.json_response(dict(protocol=20,build='0.1.0-beta.93',jobs=jobs, active=ACTIVE, preview=bool(PREVIEW), previewRevision=PREVIEW_REV,ownedComfy=bool(OWNED),queueEtaSeconds=total_eta))
     if path.startswith('preview/'):
         job=str(uuid.UUID(path[8:]))
         after=int(request.query.get('after','-1'))
@@ -1081,6 +1091,7 @@ async def start(app):
     await asyncio.to_thread(MODEL_DOWNLOADS.recover)
     app['tasks'] = [asyncio.create_task(f()) for f in (run_jobs, websocket, idle_watch, model_watch)]
     app['tasks'].append(asyncio.create_task(asyncio.to_thread(CIVITAI_BROWSER.bank.bootstrap)))
+    CIVITAI_BROWSER.social.start()
 
 
 async def model_watch():
@@ -1095,6 +1106,7 @@ async def model_watch():
 
 async def cleanup(app):
     CIVITAI_BROWSER.bank.leases.clear()
+    CIVITAI_BROWSER.social.stop.set();CIVITAI_BROWSER.social.wake.set()
     for task in app['tasks']:
         task.cancel()
     await SESSION.close()

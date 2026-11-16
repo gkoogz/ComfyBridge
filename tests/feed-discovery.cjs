@@ -28,7 +28,7 @@ const assert=require('node:assert/strict'),path=require('node:path');
  assert(await p.locator('.feedDiscovery .viaFollowing').isVisible());
  await p.locator('.feedDiscovery .discoveryFollow').click();
  assert.equal(await p.locator('.feedDiscovery .discoveryFollow').textContent(),'Following ✓');
- assert(await p.evaluate(()=>calls.some(c=>c.route==='browse/action'&&c.body.creatorId==='22'&&c.body.selected===true)));
+ assert(await p.evaluate(()=>Object.keys(localStorage).filter(k=>k.includes(':social:')).flatMap(k=>Object.values(JSON.parse(localStorage[k]))).some(r=>r.payload?.creatorId==='22'&&r.payload.selected===true)));
  await p.locator('.browseTile .browseMedia').first().click();await p.waitForSelector('.sourceLora.chosenSource');
  assert.equal(await p.locator('.sourceLora').textContent(),'From Ceramic glaze');
  assert.equal(await p.locator('.sourceLora').evaluate(e=>getComputedStyle(e).color),'rgb(255, 219, 115)');

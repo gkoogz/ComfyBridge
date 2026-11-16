@@ -22,6 +22,7 @@ class Governor:
         self.lock=threading.Lock();self.recent=deque();self.background=deque()
         self.next=0;self.until=0;self.failures=0
         self.state_path=None
+        self.last_foreground=0
 
     def configure(self, path):
         with self.lock:
@@ -32,12 +33,13 @@ class Governor:
                 self.until=max(self.until,float(saved.get('until',0)))
             except (OSError,ValueError,TypeError):pass
 
-    def acquire(self, background=False):
+    def acquire(self, background=False, quiet=False, writeback=False):
         with self.lock:
             now=self.clock()
             for queue in (self.recent,self.background):
                 while queue and queue[0]<=now-60:queue.popleft()
             delays=[(max(0,self.until-now),'cooldown')]
+            if quiet and self.last_foreground:delays.append((max(0,self.last_foreground+60-now),'browsing_priority'))
             if len(self.recent)>=60:delays.append((self.recent[0]+60-now,'total_limit'))
             if background and len(self.background)>=20:delays.append((self.background[0]+60-now,'background_limit'))
             delay,reason=max(delays,key=lambda x:x[0])
@@ -45,6 +47,10 @@ class Governor:
             self.sleep(max(0,self.next-now))
             now=self.clock();self.next=now+.6;self.recent.append(now)
             if background:self.background.append(now)
+            elif not writeback:self.last_foreground=now
+
+    def quiet_for(self):
+        with self.lock:return self.clock()-(self.recent[-1] if self.recent else 0)
 
     def failed(self, code, retry_after=None):
         if code not in (429,500,502,503,504):return
@@ -71,12 +77,14 @@ governor=Governor()
 context=threading.local()
 
 @contextmanager
-def background_work():
-    old=getattr(context,'background',False);context.background=True
+def background_work(quiet=False, writeback=False, urgent=False):
+    old={k:getattr(context,k,False) for k in ('background','quiet','writeback')}
+    context.background=not urgent;context.quiet=quiet;context.writeback=writeback
     try:yield
-    finally:context.background=old
+    finally:
+        for k,v in old.items():setattr(context,k,v)
 
 def before(url):
     parsed=urllib.parse.urlparse(url)
     if parsed.hostname in ('civitai.com','civitai.red') and parsed.path.startswith('/api/'):
-        governor.acquire(getattr(context,'background',False))
+        governor.acquire(getattr(context,'background',False),getattr(context,'quiet',False),getattr(context,'writeback',False))

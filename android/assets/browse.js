@@ -108,7 +108,7 @@ const CivitaiBrowser=(()=>{
  const copyIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 8h12v13H8zM16 8V3H3v13h5"/></svg>';
  const caretIcon=down=>'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="'+(down?'M5 8l7 7 7-7':'M5 16l7-7 7 7')+'"/></svg>';
  const refreshIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.343-5.657M18 2v5h-5"/></svg>';
- function following(item){return status?.followingIds?status.followingIds.includes(String(item.creatorId)):!!item.following;}
+ function following(item){const pending=socialRows().find(r=>r.kind==='follow'&&String(r.creatorId)===String(item.creatorId));if(pending)return pending.selected;return status?.followingIds?status.followingIds.includes(String(item.creatorId)):!!item.following;}
  function reactionLabel(item,key){const count=reactionCount(item,key);return '<span class="reactionEmoji">'+emoji[key]+'</span>'+(count>0?'<small>'+count+'</small>':'');}
  function allItems(){return [...feed,...strip,...history.flatMap(h=>h.feed),...[...details.values()].map(d=>d.result.item),...(viewer?[viewer.item]:[])];}
  function paintSocial(){
@@ -333,7 +333,7 @@ const CivitaiBrowser=(()=>{
     // A read begun before a confirmed write must not put old social state back.
     for(const field of ['reactions','stats','collections','following'])if(field in item)result.item[field]=item[field];
    }
-   acceptTagWeights(result);
+   result.item=overlaySocial(result.item);acceptTagWeights(result);
    details.delete(key);details.set(key,{result,at:Date.now()});
    while(details.size>100)details.delete(details.keys().next().value);
    updateItemSocial(item,result.item);return result;
@@ -376,6 +376,7 @@ const CivitaiBrowser=(()=>{
   const pending=[...items];await Promise.all([0,1].map(async()=>{while(pending.length&&backgroundAllowed())await worker(pending.shift());}));
  }
  function launchWarm(delay=1000){
+  socialSoon();
   clearTimeout(launchTimer);launchTimer=setTimeout(async()=>{
    if(!connected||document.hidden)return;
    if(syncing||filling||originalTransfers.size||launchRunning){launchWarm(3000);return;}
@@ -528,7 +529,7 @@ const CivitaiBrowser=(()=>{
   if(account===s.account&&followTicket!==followRevision&&status?.followingIds){s.followingIds=status.followingIds;s.follows=status.follows;}
   if(account&&account!==s.account){reset();details.clear();detailQueue=[];muted={};close();$('#browseFeed')?.replaceChildren();$('#browseCarousel')?.replaceChildren();}
   if(account===s.account&&banTicket!==banRevision)s.bans=status?.bans||[];
-  account=s.account;loadSeen();status=s;acceptTagWeights(s);$('#browseHello').textContent='Hello '+s.username;
+  account=s.account;loadSeen();status=s;paintSocialQueue();socialSoon();acceptTagWeights(s);$('#browseHello').textContent='Hello '+s.username;
   muted=s.timeouts||muted;
   if(!channel||(channel!=='reactions'&&!s.collections.some(c=>'collection:'+c.id===channel)))channel=s.collections.length?'collection:'+s.collections[0].id:'reactions';
   if(view.kind==='mix'){feed=feed.filter(i=>!isMuted(i));$$('.browseTile').forEach(el=>{if(isMuted(el.browseItem||{}))el.remove();});}
@@ -557,7 +558,7 @@ const CivitaiBrowser=(()=>{
    const readyFeed=feed.filter(i=>readyImages.has(path(i.path)));feed=(readyFeed.length?readyFeed:feed).slice(0,10);
    saveStash();
    $('#browseConnected').hidden=false;$('#browseHello').textContent='Hello '+status.username;
-   paintCollections();paintFeed(feed);paintStrip(strip);
+   paintCollections();paintFeed(feed.map(overlaySocial));paintStrip(strip.map(overlaySocial));paintSocialQueue();socialSoon();
   }
   if(!connected){savedNotice(feed.length||strip.length?'Showing saved items while connecting…':'Connecting to Browse…');schedule();return;}
   await resumeOnline();if(ticket!==session)return;
@@ -577,7 +578,7 @@ const CivitaiBrowser=(()=>{
   suspended={scope:scope(),scroll:$('#workspace').scrollTop,nodes:[...$('#main').childNodes]};
   observer?.disconnect();clearTimeout(timer);clearTimeout(warmTimer);clearTimeout(retryTimer);for(const c of mediaControllers.values())c.abort();session++;busy=false;stripBusy=false;
  }
- function tile(item,small=false){registerMedia([item]);
+ function tile(item,small=false){Object.assign(item,overlaySocial(item));registerMedia([item]);
   const el=document.createElement('article');
   el.className=small?'browseThumb':'browseTile';el.browseItem=item;nearDetails.observe(el);
   if(!small&&view.kind==='mix'){if(item.restoredFeed)el.dataset.restored='true';viewedTiles.observe(el);}
@@ -768,7 +769,7 @@ const CivitaiBrowser=(()=>{
     if(!popup.isConnected||account!==boundAccount)return;
     if(result.account!==boundAccount)throw Error('Civitai account changed. Reopen this menu.');
     // This lookup only changes memberships, never reactions or other social state.
-    updateItemSocial(item,{collections:result.collections});
+    updateItemSocial(item,overlaySocial({...item,collections:result.collections}));
     if(Array.isArray(item.collections))return refresh();
    }
   }
@@ -782,7 +783,7 @@ const CivitaiBrowser=(()=>{
   if(busy||feedEnded||!available()||!$('#browseMore'))return;busy=true;const ticket=session;$('#browseMore').innerHTML='<i class="spinner"></i> Finding inspiration…';
   try{const r=await feedPage(view.kind==='mix'?'mix':view.kind+':'+view.id+':'+view.filter,cursor,replace?[]:feed.map(i=>i.id),replace);if(ticket!==session)return;
    if(r.account!==account){reset();render();return;}
-   let added=r.items.filter(i=>!isBanned(i)&&!(view.kind==='mix'&&(isMuted(i)||seenPosts.has(i.id)))&&(replace||!feed.some(x=>x.id===i.id)));
+   let added=r.items.map(overlaySocial).filter(i=>!isBanned(i)&&!(view.kind==='mix'&&(isMuted(i)||seenPosts.has(i.id)))&&(replace||!feed.some(x=>x.id===i.id)));
    if(view.kind==='mix')added=spacedArtists(added,replace?[]:feed);
    if(replace&&added.length){await imageBlob(path(added[0].path));if(ticket!==session)return;feed=[];$('#browseFeed').replaceChildren();}
    feed.push(...added);cursor=r.nextCursor||'';feedEnded=!r.nextCursor;paintFeed(added);saveSnapshot();warm();savedNotice();
@@ -810,7 +811,7 @@ const CivitaiBrowser=(()=>{
   if(stripBusy||!available()||(!replace&&!stripResume&&strip.length&&!stripCursor))return;stripBusy=true;const chosen=channel,ticket=session;
   try{const r=await feedPage(chosen,stripCursor,replace?[]:strip.map(i=>i.id));if(chosen!==channel||ticket!==session)return;
    if(r.account!==account){reset();render();return;}
-   const added=r.items.filter(i=>!isBanned(i)&&(replace||!strip.some(x=>x.id===i.id)));
+   const added=r.items.map(overlaySocial).filter(i=>!isBanned(i)&&(replace||!strip.some(x=>x.id===i.id)));
    if(replace&&added.length){await imageBlob(path(added[0].path));if(chosen!==channel||ticket!==session)return;strip=[];$('#browseCarousel').replaceChildren();}
    strip.push(...added);stripCursor=r.nextCursor||'';stripResume=stripResume&&!added.length&&!!stripCursor;paintStrip(added);paintCollections();saveSnapshot();warm();
    if(r.retryAfter)queueRetry('strip',r.retryAfter);
@@ -818,9 +819,94 @@ const CivitaiBrowser=(()=>{
   }catch(e){if(ticket===session)handleReadError(e,'strip');}
   finally{if(chosen===channel&&ticket===session){stripBusy=false;if((strip.length<20||stripResume)&&stripCursor&&!retries.has('strip'))setTimeout(()=>loadStrip(),0);}}
  }
+ // Durable local handoff plus the PC's account-wide desired-state outbox.
+ let socialTimer,socialPumping=false,remoteSocial=[],remoteSocialAccount='';const socialLocalCache=new Map();
+ function socialKey(a=account){return scope()+':social:'+a;}
+ function socialLocal(a=account){
+  const key=socialKey(a);try{if(!socialLocalCache.has(key))socialLocalCache.set(key,window.Native?.loadSocialQueue?.(key)||localStorage.getItem(key)||'{}');return JSON.parse(socialLocalCache.get(key));}catch{return {};}
+ }
+ function saveSocial(rows,a=account){
+  const key=socialKey(a),value=JSON.stringify(rows);let saved=false;
+  if(socialLocalCache.get(key)===value)return;
+  try{localStorage.setItem(key,value);saved=true;}catch{}
+  if(window.Native?.saveSocialQueue){if(!Native.saveSocialQueue(key,value))throw Error('Could not save your change on this device.');saved=true;}
+  if(!saved)throw Error('Device storage is full. Your change could not be saved.');socialLocalCache.set(key,value);
+ }
+ function socialChoiceKey(p){return p.kind==='follow'?'follow:'+p.creatorId:p.kind==='reaction'?'reaction:'+p.imageId+':'+p.reaction:'collect:'+p.imageId+':'+p.collectionId;}
+ function socialRows(){
+  const rows=new Map((remoteSocialAccount===account?remoteSocial:[]).filter(r=>r.state!=='synced').map(r=>[r.key,r]));
+  for(const [key,value] of Object.entries(socialLocal()))rows.set(key,{...value.payload,key,error:value.error||''});
+  return [...rows.values()];
+ }
+ function overlaySocial(item){
+  const out={...item},reactions=[...(item.reactions||[])],members=[...(item.collections||[])],stats={...(item.stats||{})};
+  for(const row of socialRows()){
+   if(row.kind==='follow'&&String(row.creatorId)===String(item.creatorId))out.following=row.selected;
+   if(String(row.imageId)!==String(item.id))continue;
+   if(row.kind==='reaction'){
+    const before=reactions.includes(row.reaction),idx=reactions.indexOf(row.reaction);if(idx>=0)reactions.splice(idx,1);if(row.selected)reactions.push(row.reaction);
+    const key=row.reaction.toLowerCase()+'CountAllTime';stats[key]=Math.max(0,reactionCount({...item,stats},row.reaction)+Number(row.selected)-Number(before));out.reactions=reactions;out.stats=stats;
+   }
+   if(row.kind==='collect'){
+    const idx=members.findIndex(c=>String(c.collectionId)===String(row.collectionId));if(idx>=0)members.splice(idx,1);if(row.selected)members.push({collectionId:row.collectionId});out.collections=members;
+   }
+  }
+  return out;
+ }
+ function paintSocialQueue(){
+  for(const item of allItems())Object.assign(item,overlaySocial(item));
+  if(status?.account===account){const ids=new Set((status.followingIds||[]).map(String));for(const r of socialRows())if(r.kind==='follow')r.selected?ids.add(String(r.creatorId)):ids.delete(String(r.creatorId));status.followingIds=[...ids];status.follows=ids.size;}
+  paintSocial();
+  let el=$('#browseSync');if(!el&&$('#browseError')){el=document.createElement('p');el.id='browseSync';el.className='muted';el.setAttribute('role','status');$('#browseError').after(el);}
+  if(el){const rows=socialRows(),failed=rows.some(r=>r.error||Date.now()/1000-r.firstAt>300);el.hidden=!rows.length;el.textContent=rows.length?rows.length+' change'+(rows.length===1?'':'s')+(failed?' saved · waiting to retry sync':' saved · sync within 5 minutes'):'';}
+ }
+ function socialSoon(delay=100){clearTimeout(socialTimer);socialTimer=setTimeout(pumpSocial,delay);}
+ function queueSocial(data){
+  const a=data.account||account;if(!a||a!==account)throw Error('Open Browse to confirm your account first.');
+  const rows=socialLocal(a),key=socialChoiceKey(data),old=rows[key];
+  const clientKey=scope()+':social-client';let client;
+  try{client=JSON.parse(window.Native?.loadSocialQueue?.(clientKey)||localStorage.getItem(clientKey)||'null');}catch{}
+  client=client||{id:crypto.randomUUID(),seq:0};client.seq++;
+  const clientValue=JSON.stringify(client);let clientSaved=false;
+  try{localStorage.setItem(clientKey,clientValue);clientSaved=true;}catch{}
+  if(window.Native?.saveSocialQueue){clientSaved=Native.saveSocialQueue(clientKey,clientValue);}
+  if(!clientSaved)throw Error('Could not save your change on this device.');
+  const payload={...data,account:a,clientId:client.id,clientSeq:client.seq,requestId:crypto.randomUUID(),firstAt:old?.payload.firstAt||Date.now()/1000};
+  rows[key]={payload};saveSocial(rows,a);socialSoon();
+  const item=allItems().find(i=>String(i.id)===String(data.imageId))||{id:data.imageId};
+  const result=overlaySocial(item);
+  // Handlers paint immediately in this same microtask, without a bridge roundtrip.
+  queueMicrotask(paintSocialQueue);
+  return {ok:true,queued:true,selected:data.selected,reactions:result.reactions||[],collections:result.collections||[]};
+ }
+ async function pumpSocial(){
+  if(socialPumping)return;
+  if(!connected||document.hidden){socialSoon(5000);return;}
+  socialPumping=true;
+  try{
+   const state=await api('browse/social');if(!state.account||!Array.isArray(state.items))return;
+   const a=state.account,rows=socialLocal(a),remote=new Map(state.items.map(r=>[r.key,r]));
+   for(const [key,entry] of Object.entries(rows))if(entry.ack){const r=remote.get(key);if(!r||(r.revision>=entry.ack&&(r.state==='synced'||r.requestId!==entry.payload.requestId)))delete rows[key];}
+   saveSocial(rows,a);
+   const sending=Object.values(rows).filter(r=>!r.ack&&Date.now()>=(r.retryAt||0)).slice(0,100);
+   if(sending.length){
+    const reply=await api('browse/social',{actions:sending.map(r=>r.payload)}),latest=socialLocal(a);
+    for(const result of reply.results||[]){
+     const entry=Object.values(latest).find(r=>r.payload.requestId===result.requestId);if(!entry)continue;
+     if(result.error){entry.error=result.error;entry.retryAt=Date.now()+60000;}
+     else if(result.superseded)delete latest[socialChoiceKey(entry.payload)];
+     else{entry.ack=result.revision;entry.error='';}
+    }
+    saveSocial(latest,a);
+   }
+   if(account===a){remoteSocial=state.items;remoteSocialAccount=a;paintSocialQueue();saveSnapshot();}
+  }catch{/* Local choices survive disconnects and are retried when foreground again. */}
+  finally{socialPumping=false;socialSoon(5000);}
+ }
  async function action(data){
   const key=detailKey(data.imageId);if(data.imageId)socialRevisions.set(key,(socialRevisions.get(key)||0)+1);if(data.kind==='follow')followRevision++;if(data.kind==='preference')banRevision++;
   try{
+   if(['reaction','collect','follow'].includes(data.kind)){const result=queueSocial({account,...data});if(data.imageId)details.delete(key);else details.clear();return result;}
    const result=await api('browse/action',{account,...data,requestId:crypto.randomUUID()});
    if(data.imageId)details.delete(key);else if(data.kind==='follow')details.clear();saveSnapshot();return result;
   }finally{if(data.imageId)socialRevisions.set(key,(socialRevisions.get(key)||0)+1);if(data.kind==='follow')followRevision++;if(data.kind==='preference')banRevision++;}

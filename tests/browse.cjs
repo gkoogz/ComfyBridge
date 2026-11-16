@@ -131,7 +131,7 @@ const assert=require('node:assert/strict'),path=require('node:path');
   assert.equal(await p.locator('.civitaiResourceHost .resourceType').first().textContent(),'Checkpoint');
   assert.equal(await p.locator('.civitaiViewerHead strong').count(),0);
   await p.locator('[data-vote="5"]').click();assert(await p.locator('[data-vote="5"]').evaluate(el=>el.classList.contains('selected')));
-  const action=await p.evaluate(()=>calls.find(c=>c.body?.kind==='reaction'));assert.equal(action.body.account,'1');assert.match(action.body.requestId,/^[a-f0-9-]{36}$/);
+  const action=await p.evaluate(()=>Object.keys(localStorage).filter(k=>k.includes(':social:')).flatMap(k=>Object.values(JSON.parse(localStorage[k]))).find(r=>r.payload?.kind==='reaction').payload);assert.equal(action.account,'1');assert.match(action.requestId,/^[a-f0-9-]{36}$/);
   await p.locator('.civitaiViewerScroll').evaluate(el=>el.scrollTop=0);
   await p.waitForTimeout(50);
   assert(await p.locator('.civitaiViewer').evaluate(el=>el.classList.contains('mediaOnly')));

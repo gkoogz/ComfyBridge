@@ -34,6 +34,13 @@ class PacingTests(unittest.TestCase):
         self.assertGreaterEqual(self.g.until,self.clock.now+179)
         self.clock.now+=181;self.g.acquire();self.g.succeeded();self.g.failed(429)
         self.assertEqual(self.g.until,self.clock.now+5)
+    def test_maintenance_yields_to_browsing_but_due_writeback_uses_normal_budget(self):
+        self.g.acquire();self.clock.now+=1
+        with self.assertRaises(Deferred):self.g.acquire(background=True,quiet=True)
+        self.g.acquire(writeback=True)
+        self.assertLess(self.g.quiet_for(),1)
+        self.clock.now+=61;self.g.acquire(background=True,quiet=True)
+
     def test_cdn_media_does_not_consume_api_budget(self):
         with patch('civitai_requests.governor',self.g):
             before('https://image.civitai.com/example')
@@ -74,6 +81,7 @@ def test_concurrent_cache_miss_is_coalesced_and_writes_are_fresh(self):
     self.b.action(self.act(kind='follow',creatorId=8,selected=True))
     self.assertIn(8,self.b.call('account-a','user.getFollowingUsers'))
     self.b.remember('1',image());self.b.detail(1)
+    self.b.collections('1','account-a')
     self.b.action(self.act(kind='collect',imageId=1,collectionId=4,selected=True))
     self.assertEqual(self.b.detail(1)['item']['collections'],[{'collectionId':4}])
     self.models.key='account-b';self.b.detail(1)

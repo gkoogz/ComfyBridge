@@ -641,3 +641,47 @@ and individual `reaction.toggle` operations. A future five-minute outbox should
 persist desired final state, coalesce repeat changes, bulk collection additions,
 pace remaining operations, and reconcile ambiguous toggle results before retrying.
 A single HTTP batch is not a promise of a single rate-limit operation.
+
+## Beta 93: durable social write queue
+
+Reactions, collection membership and follows update the shared UI immediately.
+The client first persists desired state in localStorage and, on Android, a
+synchronous SharedPreferences commit. It hands actions to `browse/social` in
+batches of up to 100. The PC commits them to `social_outbox` in browser.sqlite,
+with account-scoped receipt IDs and per-client sequence numbers. A lost reply
+can safely be retried using the original request ID. Device state is retained
+until acknowledged and remotely settled. Changing a choice replaces its pending
+intent without extending the original five-minute deadline.
+
+`bridge/social_outbox.py` sends after 60 seconds of upstream API quiet, or gives
+work normal foreground quota at five minutes. This is a delivery-attempt target,
+not a promise that an unavailable/rate-limited server has accepted the change.
+Rate caps and Retry-After remain authoritative. Temporary failures back off and
+retain intent. The UI distinguishes saved pending changes from completed sync.
+The worker remains awake for normal delivery; persistent failure may sleep after
+ten minutes and resumes on app launch. A device disconnected from the PC retains
+its own queue until foreground reconnection.
+
+Reactions share fresh status reads (up to 100 image IDs), then toggle only if the
+remote state differs. Follows share one fresh following read. This reconciliation
+prevents a lost toggle acknowledgement from causing an accidental reversal.
+Collection additions use bulkSaveItems, grouped by collection (maximum 100), with
+ambiguous/partial counts verified before settling. Collection removals group by
+image. A revision check prevents an older completion clearing newer intent.
+There is no general upstream bulk mutation for reactions/follows; transport
+batching does not exempt individual operations from rate limits.
+
+History imports/public-curation maintenance and bank replenishment beyond the
+immediate 25 yield for 60 seconds after foreground API activity. Visible requests
+and immediate buffered media retain priority. Known collection directories retain
+the one-hour refresh policy. Creation of a new collection stays immediate because
+its ID is needed for subsequent membership actions. Local feed weights, bans,
+seen history and muting need no upstream write and remain immediate.
+
+Verification: `bridge/test_social_outbox.py` exercises restart/lost-reply recovery,
+coalescing, sequence/receipt replay, edits during delivery, account separation,
+partial bulk results, grouped writes and offline backoff. `tests/social-queue.cjs`
+exercises immediate visual feedback, reload persistence, lost bridge replies and
+confirmation on phone/desktop layouts using neutral fixtures. Android compilation
+checks the native persistence bridge; browser fixtures are not physical-phone or
+actual-power-loss verification. Tests do not mutate the live Civitai account.
