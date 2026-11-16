@@ -1,6 +1,6 @@
 # ComfyBridge
 
-**[Open the beta 90 release page](https://github.com/gkoogz/ComfyBridge/releases/tag/v0.1.0-beta.90)** · [Download the Android APK](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.90/ComfyBridge-0.1.0-beta.90.apk) · [Download Windows](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.90/ComfyBridge-Windows-0.1.0-beta.90.zip) · [All releases](https://github.com/gkoogz/ComfyBridge/releases)
+**[Open the beta 91 release page](https://github.com/gkoogz/ComfyBridge/releases/tag/v0.1.0-beta.91)** · [Download the Android APK](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.91/ComfyBridge-0.1.0-beta.91.apk) · [Download Windows](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.91/ComfyBridge-Windows-0.1.0-beta.91.zip) · [All releases](https://github.com/gkoogz/ComfyBridge/releases)
 
 <img src="artwork/comfybridge.png" width="128" alt="ComfyBridge white cube and play icon on black">
 
@@ -9,6 +9,8 @@ An Android remote for an existing Windows ComfyUI installation. The phone edits 
 **Local project:** this PC's canonical checkout is `E:\ComfyBridge`. Source, builds, installed app data, local LLMs and archived work are consolidated there. See [the local folder map](docs/local-layout.md) for private-data exclusions, compatibility links and external ComfyUI dependencies. Run `Start-ComfyBridge.ps1` to open the installed PC panel.
 
 **Working on the project:** agents and contributors should start with [AGENTS.md](AGENTS.md) for the code map, build/test commands, live queue preservation and delivery instructions.
+
+**Beta 91** prepares a durable 200-post For You bank and the next 25 full-size media in advance. Refills begin at 150 remaining, place fresh recommendations ahead of the older reserve, and preserve the prepared 25. Android warms its cache on launch after library sync, using the CDN directly with PC fallback. Artist/tag feeds warm only their next 12 media.
 
 **Beta 90** gives tag discovery seven of ten source slots and keeps each artist at least ten For You posts apart. Yellow source labels identify LoRA previews; public collections from followed creators add attributed discovery with a Follow button for new artists. Directory checks run incrementally in the background and share the existing API limits.
 

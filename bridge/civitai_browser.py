@@ -21,6 +21,7 @@ from model_library import CivitaiRedirect, request_for
 from civitai_requests import before, governor, Deferred, background_work
 from civitai_requests import context as request_context
 import api_debug
+from feed_bank import FeedBank
 
 REACTIONS = ('Like', 'Heart', 'Laugh', 'Cry')
 CDN = 'https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/'
@@ -61,6 +62,7 @@ class Browser:
         self.running = set()
         self.feeds = {}
         self.next_request = 0
+        self.media_locks=[threading.Lock() for _ in range(64)]
         with self.db() as db:
             db.executescript('''
               CREATE TABLE IF NOT EXISTS settings(account TEXT,key TEXT,value TEXT,PRIMARY KEY(account,key));
@@ -75,8 +77,10 @@ class Browser:
             # Upgrade existing sessions as recently offered, not proven viewed.
             for row in db.execute("SELECT account,payload,touched FROM feed_sessions WHERE channel='mix'").fetchall():
                 payload=json.loads(row['payload'])
+                if payload.get('planning'):continue
                 db.executemany('INSERT INTO feed_exposure(account,image,served) VALUES(?,?,?) ON CONFLICT(account,image) DO UPDATE SET served=MAX(served,excluded.served)',
                     [(row['account'],str(i),row['touched']) for i in payload.get('seen',[]) if str(i).isdigit()])
+        self.bank=FeedBank(self)
 
     @contextmanager
     def db(self):
@@ -188,16 +192,20 @@ class Browser:
             if measurement and isinstance(data,dict) and isinstance(data.get('items'),list):measurement['items']=len(data['items'])
             return data
 
-    def account(self):
+    def account(self, cached=False):
         token = self.models.token()
         if not token:
             self.identity = None
             raise ValueError('Add your Civitai API key in the Windows bridge gear to connect Browse.')
         digest = hashlib.sha256(token.encode()).hexdigest()
+        if cached:
+            identity=self.identity if self.identity and self.identity['digest']==digest else self.setting('','identity:'+digest)
+            if identity and identity.get('digest')==digest:return dict(identity),token
         with self.lock:
             if not self.identity or self.identity['digest'] != digest or time.time() - self.identity['checked'] > 300:
                 me = self.call(token, 'me', rest=True)
                 self.identity = dict(id=str(ident(me['id'])), username=str(me['username']), digest=digest, checked=time.time())
+                self.save('','identity:'+digest,self.identity)
             return dict(self.identity), token
 
     def assert_account(self, account, token):
@@ -243,6 +251,7 @@ class Browser:
                     imageUrl='https://civitai.red/images/'+image_id, resources=resources, tags=tags, tagsKnown=isinstance(raw.get('tags'),list) or isinstance(raw.get('tagIds'),list), reactions=reactions,
                     stats=raw.get('stats') or {}, parameters={k:meta[k] for k in ('seed','steps','cfgScale','sampler','Size','Model','Clip skip') if k in meta},
                     _urls=dict(thumb=thumb, full=original, avatar=cdn(avatar, 'width=96')))
+        item['mediaUrls']={k:v for k,v in item['_urls'].items() if k in ('thumb','full') and v}
         with self.db() as db:
             # Feed/import responses are deliberately lighter than generation data.
             # Never let them erase details already fetched for this account.
@@ -259,7 +268,9 @@ class Browser:
 
     @staticmethod
     def public(item):
-        return {k:v for k,v in item.items() if not k.startswith('_')}
+        result={k:v for k,v in item.items() if not k.startswith('_')}
+        if item.get('_urls'):result['mediaUrls']={k:v for k,v in item['_urls'].items() if k in ('thumb','full') and cdn(v)}
+        return result
 
     def stored(self, account, image_id):
         with self.db() as db:
@@ -520,7 +531,9 @@ class Browser:
     def feed(self, query):
         diagnostic=api_debug.recorder.begin();result=None
         try:
-            if query.get('channel','mix')=='mix':
+            if query.get('channel','mix')=='mix' and query.get('bank') is True:
+                result=self.bank.take(query)
+            elif query.get('channel','mix')=='mix':
                 # Concurrent phones must not receive the same newly reserved posts.
                 with self.mix_lock:result=self._feed(query)
             else:result=self._feed(query)
@@ -532,7 +545,7 @@ class Browser:
                     'error' if result is None else 'limited' if r.get('limited') else 'ok',
                     items=len(r.get('items',[])),reads=r.get('sourceReads',0),scanned=r.get('scanned',0),filtered=r.get('filtered',0))
 
-    def _feed(self, query):
+    def _feed(self, query, planning=False, artist_tail=None):
         me, token=self.account(); account=me['id']; cursor=query.get('cursor',''); channel=query.get('channel','mix')
         with self.lock:
             self.feeds={k:v for k,v in self.feeds.items() if time.time()-v['touched']<7200}
@@ -552,7 +565,7 @@ class Browser:
                 cursor=uuid.uuid4().hex
                 loras=[i for i in self.models.snapshot()['items'] if i.get('kind')=='loras' and i.get('versionId') and not i.get('archived')]
                 seen=[str(i) for i in query.get('seen',[])[-5000:] if str(i).isdigit()]
-                state=dict(account=account,channel=channel,touched=time.time(),seen=seen,sources={},loras=loras,turn=0,lora=0, lock=threading.Lock())
+                state=dict(account=account,channel=channel,planning=planning,touched=time.time(),seen=seen,sources={},loras=loras,turn=0,lora=0, lock=threading.Lock())
                 if channel=='mix' and not query.get('refresh'):
                     progress=self.setting(account,'mix-progress',{})
                     if time.time()-progress.get('at',0)<1800 and progress.get('muted',[])==sorted(self.timeouts(account)):
@@ -572,7 +585,7 @@ class Browser:
             follows=[uid for uid in self.setting(account,'follows',[]) if str(uid) in weights['creators']]
             rich=bool(follows or weights['creators'] or len(weights['tags'])>=2)
             following={str(x) for x in self.setting(account,'follows',[])}
-            recent=self.setting(account,'mix-artists',[])[-9:] if channel=='mix' else []
+            recent=(artist_tail if artist_tail is not None else self.setting(account,'mix-artists',[]))[-9:] if channel=='mix' else []
             curations=[]
             if channel=='mix' and follows:
                 curations,_=self.public_curations(account,token,follows,refresh=False)
@@ -703,8 +716,9 @@ class Browser:
             ended=channel!='mix' and all(s['done'] and not s['items'] for s in state['sources'].values())
             with self.db() as db:
                 if channel=='mix':
-                    db.execute('INSERT OR REPLACE INTO settings VALUES(?,?,?)',(account,'mix-artists',json.dumps(recent)))
-                    db.executemany('INSERT INTO feed_exposure(account,image,served) VALUES(?,?,?) ON CONFLICT(account,image) DO UPDATE SET served=excluded.served',[(account,i['id'],time.time()) for i in out])
+                    if not planning:
+                        db.execute('INSERT OR REPLACE INTO settings VALUES(?,?,?)',(account,'mix-artists',json.dumps(recent)))
+                        db.executemany('INSERT INTO feed_exposure(account,image,served) VALUES(?,?,?) ON CONFLICT(account,image) DO UPDATE SET served=excluded.served',[(account,i['id'],time.time()) for i in out])
                     progress=dict(at=time.time(),muted=sorted(muted),**{k:state[k] for k in ('sources','turn','lora')})
                     db.execute('INSERT OR REPLACE INTO settings VALUES(?,?,?)',(account,'mix-progress',json.dumps(progress)))
                 db.execute('DELETE FROM feed_sessions WHERE touched<?',(time.time()-7200,))
@@ -910,17 +924,21 @@ class Browser:
                 db.execute('UPDATE actions SET state=?,result=? WHERE account=? AND id=?',('done',json.dumps(result),account,request_id))
             return result
 
+    @staticmethod
+    def media_key(account,url,size):
+        return hashlib.sha256((account+'|'+url+('|original-size-v2' if size=='full' else '')).encode()).hexdigest()
+
     def media_file(self, account, image_id, size):
-        me,token=self.account()
+        me,token=self.account(cached=True)
         if account!=me['id'] or size not in ('thumb','full','avatar'):raise FileNotFoundError()
         item=self.stored(account,image_id)
         url=(item or {}).get('_urls',{}).get(size,'')
         if not url:raise FileNotFoundError('Media unavailable')
-        key=hashlib.sha256((account+'|'+url).encode()).hexdigest()
+        key=self.media_key(account,url,size)
         folder=self.data/'media';folder.mkdir(exist_ok=True)
         is_video=size=='full' and item['type']=='video'
         path=folder/(key+('.mp4' if is_video else '.jpg'))
-        with self.media_lock:
+        with self.media_locks[int(key,16)%64]:
             if path.is_file():path.touch();return path
             temp=path.with_suffix('.tmp');converted=path.with_suffix('.converted.tmp')
             try:
@@ -940,12 +958,18 @@ class Browser:
                 if is_video:temp.replace(path)
                 else:
                     with Image.open(temp) as im:
-                        im.thumbnail((2048,2048) if size=='full' else (640,640));im.convert('RGB').save(converted,'JPEG',quality=90)
+                        if size!='full':im.thumbnail((640,640))
+                        im.convert('RGB').save(converted,'JPEG',quality=90)
                     converted.replace(path)
-                files=sorted(folder.glob('*.*'),key=lambda f:f.stat().st_mtime,reverse=True);total=0
-                for f in files:
-                    total+=f.stat().st_size
-                    if total>1024*1024*1024 and f!=path and f.suffix!='.tmp':f.unlink(missing_ok=True)
+                with self.media_lock:
+                    # Other lanes rename their temporary files outside this lock.
+                    # Enumerate only committed media when trimming the shared cache.
+                    files=sorted((f for f in folder.glob('*.*') if f.suffix in ('.jpg','.mp4')),key=lambda f:f.stat().st_mtime,reverse=True);total=0
+                    for f in files:
+                        try:
+                            total+=f.stat().st_size
+                            if total>2*1024*1024*1024 and f!=path and f.suffix!='.tmp' and f.stem not in self.bank.protected_keys:f.unlink(missing_ok=True)
+                        except OSError:pass
                 return path
             finally:
                 temp.unlink(missing_ok=True);converted.unlink(missing_ok=True)

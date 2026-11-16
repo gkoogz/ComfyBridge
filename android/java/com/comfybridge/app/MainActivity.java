@@ -45,9 +45,35 @@ public class MainActivity extends Activity {
  private final java.util.concurrent.atomic.AtomicLong prefetchEpoch=new java.util.concurrent.atomic.AtomicLong();
  private volatile HttpURLConnection prefetchConnection;
  private volatile HttpURLConnection listingPreviewConnection;
+ private final Set<HttpURLConnection> browseConnections=Collections.newSetFromMap(new ConcurrentHashMap<HttpURLConnection,Boolean>());
+ private final Map<String,String> browseMediaURLs=new ConcurrentHashMap<>();
+ private String browseMediaScope="";
+ private static boolean safeBrowseCDN(URL url){
+  return url.getProtocol().equals("https")&&url.getUserInfo()==null&&(url.getPort()==-1||url.getPort()==443)&&
+   Arrays.asList("image.civitai.com","image.civitai.red","imagecache.civitai.com","blobs-b2.civitai.com","blobs.civitai.com").contains(url.getHost().toLowerCase(Locale.ROOT));
+ }
+ private HttpURLConnection directBrowseConnection(String path,String range){
+  String value=browseMediaURLs.get(path);if(value==null)return null;
+  HttpURLConnection c=null;
+  try{
+   URL url=new URL(value);
+   for(int hop=0;hop<4;hop++){
+    if(!foreground||!safeBrowseCDN(url))return null;
+    c=(HttpURLConnection)url.openConnection();c.setInstanceFollowRedirects(false);c.setConnectTimeout(10000);c.setReadTimeout(20000);
+    c.setRequestProperty("User-Agent","ComfyBridge-Browse/1.0");if(range!=null)c.setRequestProperty("Range",range);
+    browseConnections.add(c);int code=c.getResponseCode();
+    if(code>=200&&code<300)return c;
+    String next=c.getHeaderField("Location");browseConnections.remove(c);c.disconnect();c=null;
+    if(code<300||code>=400||next==null)return null;
+    url=new URL(url,next);
+   }
+  }catch(Exception ignored){if(c!=null){browseConnections.remove(c);c.disconnect();}}
+  return null;
+ }
  private void stopListingPreviews(){
   HttpURLConnection c=listingPreviewConnection;listingPreviewConnection=null;
   if(c!=null)new Thread(()->c.disconnect(),"Stop listing preview").start();
+  for(HttpURLConnection active:browseConnections)new Thread(()->active.disconnect(),"Stop Browse media").start();browseConnections.clear();
   runOnUiThread(()->{if(web!=null)web.evaluateJavascript("if(window.ModelPreviews)ModelPreviews.pause();",null);});
  }
  private void stopPrefetch(){
@@ -97,14 +123,18 @@ public class MainActivity extends Activity {
       boolean listingPreview=path.startsWith("/model-preview/");
       if(listingPreview&&!foreground)return response(503,"Paused","text/plain",new byte[0]);
       String query=uri.getEncodedQuery();
-      HttpURLConnection c=connection((path.startsWith("/source/")?"api/studio/source-file/"+path.substring(8):"api"+path)+(query==null?"":"?"+query),"GET");String range=r.getRequestHeaders().get("Range");if(range!=null)c.setRequestProperty("Range",range);
+      String range=r.getRequestHeaders().get("Range");
+      HttpURLConnection direct=path.startsWith("/model-preview/browse/")?directBrowseConnection(path,range):null;
+      final HttpURLConnection c=direct!=null?direct:connection((path.startsWith("/source/")?"api/studio/source-file/"+path.substring(8):"api"+path)+(query==null?"":"?"+query),"GET");
+      if(direct==null&&range!=null)c.setRequestProperty("Range",range);
+      if(listingPreview)browseConnections.add(c);
       if(listingPreview){listingPreviewConnection=c;if(!foreground){stopListingPreviews();return response(503,"Paused","text/plain",new byte[0]);}}
       int code=c.getResponseCode();Map<String,String> headers=new HashMap<>();
       for(String h:new String[]{"Content-Length","Content-Range","Accept-Ranges","Cache-Control","X-Preview-Revision"})if(c.getHeaderField(h)!=null)headers.put(h,c.getHeaderField(h));
       String mime=c.getContentType();if(mime==null)mime="application/octet-stream";mime=mime.split(";")[0];
       InputStream stream=code>=400?c.getErrorStream():c.getInputStream();if(stream==null)stream=new ByteArrayInputStream(new byte[0]);
       final InputStream input=stream;
-      return new WebResourceResponse(mime,null,code,c.getResponseMessage()==null?"Response":c.getResponseMessage(),headers,new FilterInputStream(input){@Override public void close()throws IOException{try{super.close();}finally{c.disconnect();if(listingPreviewConnection==c)listingPreviewConnection=null;}}});
+      return new WebResourceResponse(mime,null,code,c.getResponseMessage()==null?"Response":c.getResponseMessage(),headers,new FilterInputStream(input){@Override public void close()throws IOException{try{super.close();}finally{c.disconnect();browseConnections.remove(c);if(listingPreviewConnection==c)listingPreviewConnection=null;}}});
      }
      if(path.equals("/"))path="/index.html";
      if(!Arrays.asList("/index.html","/style.css","/app.js","/profile.js","/gallery.js","/gallery.css","/studio.css","/studio.js","/notepad.js","/live-image.js","/generator-controls.js","/generator.css","/desktop.js","/desktop.css","/provenance.js","/chat.js","/quick-edit.js","/chat-format.js","/chat.css","/provenance.css","/model-cache.js","/model-browser.js","/model-browser.css","/browse.js","/browse.css").contains(path))return response(404,"Not Found","text/plain",new byte[0]);
@@ -180,6 +210,18 @@ public class MainActivity extends Activity {
    if(enabled&&foreground)prefetchAllowed=true;else if(prefetchAllowed||prefetchConnection!=null)stopPrefetch();
   }
   @JavascriptInterface public boolean listingPreviewsAllowed(){return foreground;}
+  @JavascriptInterface public synchronized void registerBrowseMedia(String scope,String value){
+   try{
+    String identity=prefs.getString("fingerprint","")+":"+scope;
+    if(!identity.equals(browseMediaScope)){browseMediaURLs.clear();browseMediaScope=identity;}
+    JSONObject urls=new JSONObject(value);Iterator<String> keys=urls.keys();
+    while(keys.hasNext()){
+     String path=keys.next(),target=urls.getString(path);
+     if(path.matches("/model-preview/browse/[1-9][0-9]*/[1-9][0-9]*/(thumb|full)")&&safeBrowseCDN(new URL(target)))browseMediaURLs.put(path,target);
+    }
+    if(browseMediaURLs.size()>2000)browseMediaURLs.clear();
+   }catch(Exception ignored){}
+  }
   @JavascriptInterface public boolean pickedVideo(){
    Uri uri=pickedUri;
    String type=uri==null?null:getContentResolver().getType(uri);

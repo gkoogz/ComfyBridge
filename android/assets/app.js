@@ -18,21 +18,21 @@ function updateItem(j){setShelf(library.filter(x=>x.id!==j.id).concat(j));}
 const originalTransfers=new Map();
 function fetchOriginal(id,prefetch=false){
  const key=epoch+':'+id;
- if(!originalTransfers.has(key)){ModelPreviews.pause();originalTransfers.set(key,local(prefetch?'prefetch':'fetch',{id}).finally(()=>{originalTransfers.delete(key);ModelPreviews.wake();}));}
+ if(!originalTransfers.has(key)){ModelPreviews.pause();CivitaiBrowser.pauseMedia();originalTransfers.set(key,local(prefetch?'prefetch':'fetch',{id}).finally(()=>{originalTransfers.delete(key);ModelPreviews.wake();CivitaiBrowser.launchWarm();}));}
  return originalTransfers.get(key);
 }
 async function syncShelf(force=false){
  if(!connected||syncing||(!force&&Date.now()<nextSync))return;
- const session=epoch;syncing=true;ModelPreviews.pause();nextSync=Date.now()+300000;
+ const session=epoch;syncing=true;ModelPreviews.pause();CivitaiBrowser.pauseMedia();nextSync=Date.now()+300000;
  try{const index=await api('media-index');if(epoch!==session||!connected)return;
   if(index.items.some(j=>!('rating' in j))){const ratings=await api('studio/ratings');if(epoch!==session||!connected)return;index.items.forEach(j=>j.rating=ratings[j.id]||0);}
   const rows=await local('sync',index);if(epoch!==session)return;
   inventory=signature(index.items);shelfError='';setShelf(rows);ModelPreviews.synced();fillShelf();
  }catch(e){if(epoch===session){shelfError=(window.Desktop?'Could not read the PC library: ':'Could not check phone copies: ')+e.message+(e.message.includes('404')?' Update the Windows bridge to beta 4.':'');nextSync=Date.now()+30000;showShelf();}}
- finally{syncing=false;ModelPreviews.wake();}
+ finally{syncing=false;ModelPreviews.wake();CivitaiBrowser.launchWarm();}
 }
 const prefetchRetry=new Map();let inventoryProbe=false,nextInventoryProbe=0,prefetchAfter=0;
-function prefetchVisibility(){window.Native?.prefetchEnabled?.(connected&&!document.hidden);if(document.hidden||!connected)ModelPreviews.pause();else ModelPreviews.wake();}
+function prefetchVisibility(){window.Native?.prefetchEnabled?.(connected&&!document.hidden);if(document.hidden||!connected){ModelPreviews.pause();CivitaiBrowser.pauseMedia();}else {ModelPreviews.wake();CivitaiBrowser.launchWarm();}}
 document.addEventListener('visibilitychange',()=>{prefetchVisibility();if(!document.hidden){nextInventoryProbe=0;fillShelf();}});
 async function checkNewMedia(){
  if(window.Desktop||!connected||document.hidden||inventoryProbe||Date.now()<nextInventoryProbe)return;

@@ -4,13 +4,13 @@ const assert=require('node:assert/strict'),path=require('node:path');
  const p=await browser.newPage({viewport:{width,height:900},hasTouch:width<500}),errors=[];
  p.on('pageerror',e=>errors.push(e.message));
  await p.route('https://bridge.test/**',r=>r.fulfill({path:path.join(__dirname,'../android/assets',new URL(r.request().url()).pathname.slice(1)||'index.html')}));
- await p.route('**/model-preview/**',r=>r.fulfill({contentType:'image/svg+xml',body:'<svg xmlns="http://www.w3.org/2000/svg" width="300" height="600"><rect width="300" height="600" fill="#527c78"/></svg>'}));
+ await p.route('**/model-preview/**',r=>r.fulfill({contentType:'image/svg+xml',body:'<svg xmlns="http://www.w3.org/2000/svg" width="'+(r.request().url().endsWith('/full')?600:300)+'" height="'+(r.request().url().endsWith('/full')?1200:600)+'"><rect width="100%" height="100%" fill="#527c78"/></svg>'}));
  await p.addInitScript(()=>{
   window.Native={configuration:()=>JSON.stringify({paired:false,fingerprint:'loading-test'}),notificationRoute:()=>''};
   const decode=HTMLImageElement.prototype.decode;
   HTMLImageElement.prototype.decode=async function(){
    await decode.call(this);
-   if(this.src.endsWith('/full')&&window.holdDecode)await new Promise(resolve=>window.releaseDecode=resolve);
+   if(this.naturalWidth===600&&window.holdDecode)await new Promise(resolve=>{window.fullURL=this.src;window.releaseDecode=resolve;});
   };
  });
  await p.goto('https://bridge.test');p.setDefaultTimeout(10000);await p.waitForSelector('#connect');
@@ -34,7 +34,7 @@ const assert=require('node:assert/strict'),path=require('node:path');
   window.srcChanges=[];new MutationObserver(records=>records.forEach(r=>srcChanges.push(originalImage.getAttribute('src')))).observe(originalImage,{attributes:true,attributeFilter:['src']});
  });
  assert(!(await p.locator('.modelPreviewHero img').getAttribute('src')).endsWith('/full'),'Keep preview until full image is decoded');
- await p.evaluate(()=>releaseDecode());await p.waitForFunction(()=>originalImage.src.endsWith('/full'));
+ await p.evaluate(()=>releaseDecode());await p.waitForFunction(()=>originalImage.src===window.fullURL);
  // A late metadata response must not reset a position set by scrolling or accessibility.
  await p.locator('.civitaiViewerScroll').evaluate(el=>el.scrollTop=60);
  await p.waitForTimeout(60);

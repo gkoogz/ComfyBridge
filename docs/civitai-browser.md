@@ -560,3 +560,55 @@ failed refresh, and recovery from the independent stash after deleting the main
 snapshot. Existing seen-feed, preferences/ban, cache, navigation and viewer tests
 cover the preserved behavior. Backend tests cover 503 classification and partial
 feed/cursor preservation. No physical-phone observation is implied by these tests.
+
+## Beta 91: durable recommendation bank and full-media window
+
+For You has one SQLite-backed bank per Civitai account, shared by devices. The
+existing selector runs ahead with the same background API governor and three-read
+pass budget. The target is 200 eligible metadata records. Delivery takes 12 at a
+time without waiting for upstream selection; at 150 remaining or fewer a refill
+continues toward 200. Fresh selections are inserted before the older reserve,
+behind the protected next 25. Preferences, bans, creator timeouts, seen history,
+AND tag matches and one-artist-per-ten spacing are rechecked before delivery.
+
+Each bank entry receives a persisted random expiry 7-14 days ahead. Expiry removes
+it from the reserve and the planner's exclusion list, not into viewed history.
+Planning itself never records a served/viewed exposure. Taking a page atomically
+commits its reservation and optional request receipt; peeking does not consume it.
+Startup migration excludes planning sessions from historical served records.
+
+The PC starts a bounded refill and prepares the next 25 thumbnails and full media
+at worker startup. Activity renews a ten-minute refill lease; completion leaves no
+idle selector timer. Transfers use two workers. Full images retain source pixel
+dimensions (the PC fallback may JPEG-encode); videos retain their original file.
+The existing 32 MiB image and 256 MiB video download limits still apply. The PC's
+2 GiB cache budget is soft: the current prepared window is protected from eviction.
+
+Android begins warming its next 25 on app launch, after library sync/transfers.
+It first checks persistent device CacheStorage, then prefers direct HTTPS Civitai
+CDN access with a PC fallback if opening the CDN request fails. Only allowlisted
+CDN hosts/redirects are accepted; no bridge token or Civitai API key is sent to the
+CDN. This avoids relaying each phone download through the PC's upstream connection.
+The PC cache remains useful to desktop playback and as fallback; PC and phone can
+each fetch a copy, but the phone does not deliberately fetch both routes. Existing
+cached media is reused, including video playback and seeking through blob URLs.
+Android transfer activity stops while hidden, and library work preempts warming.
+
+The phone protects its upcoming full-media window and existing startup stash;
+older unprotected media is evicted at 240 entries or a soft 2 GiB budget. A single
+full-media response is capped at 256 MiB. OS cache eviction, initial installation,
+large files, or upstream outages can still leave a window partially prepared.
+There is no promise that a cold 200-post fill or 25 large videos is instantaneous.
+
+Artist/tag subfeeds warm only their next 12 media, with ordinary page lookahead;
+they never create another 200-post bank. The collection/startup thumbnail stash
+and metadata detail prefetch remain in place. Older apps may use the compatible
+legacy feed endpoint; both sides must be updated for the new bank/window behavior.
+
+Verification: `bridge/test_feed_bank.py` covers persistence, atomic consumption,
+account isolation, nonblocking reads during selection, eligibility, fresh ordering,
+expiry without viewed marks, and PC warming exactly 25 originals. The neutral
+`tests/browse-bank.cjs` checks phone and desktop launch warming, library priority,
+25 originals, CDN mapping, cached video seeking without another transfer, and
+12-original subfeed warming. Native CDN/fallback code is compiled and inspected;
+browser tests do not substitute for physical-phone network verification.

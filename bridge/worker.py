@@ -800,6 +800,8 @@ async def api(request):
     if path == 'browse/feed' and request.method in ('GET', 'POST'):
         query = await request.json() if request.method == 'POST' else dict(request.query)
         return web.json_response(await asyncio.to_thread(CIVITAI_BROWSER.feed, query))
+    if path == 'browse/bank' and request.method == 'POST':
+        return web.json_response(await asyncio.to_thread(CIVITAI_BROWSER.bank.peek, await request.json()))
     if path == 'browse/seen' and request.method == 'POST':
         return web.json_response(await asyncio.to_thread(CIVITAI_BROWSER.exposure, await request.json()))
     if path.startswith('browse/detail/') and request.method in ('GET','POST'):
@@ -878,7 +880,7 @@ async def api(request):
                     j['etaSeconds']=None
                 else:
                     j['progress'],j['current_node']=TRACKER.sample()
-        return web.json_response(dict(protocol=20,build='0.1.0-beta.90',jobs=jobs, active=ACTIVE, preview=bool(PREVIEW), previewRevision=PREVIEW_REV,ownedComfy=bool(OWNED),queueEtaSeconds=total_eta))
+        return web.json_response(dict(protocol=20,build='0.1.0-beta.91',jobs=jobs, active=ACTIVE, preview=bool(PREVIEW), previewRevision=PREVIEW_REV,ownedComfy=bool(OWNED),queueEtaSeconds=total_eta))
     if path.startswith('preview/'):
         job=str(uuid.UUID(path[8:]))
         after=int(request.query.get('after','-1'))
@@ -1076,6 +1078,7 @@ async def start(app):
     SESSION = aiohttp.ClientSession()
     await asyncio.to_thread(MODEL_DOWNLOADS.recover)
     app['tasks'] = [asyncio.create_task(f()) for f in (run_jobs, websocket, idle_watch, model_watch)]
+    app['tasks'].append(asyncio.create_task(asyncio.to_thread(CIVITAI_BROWSER.bank.bootstrap)))
 
 
 async def model_watch():
@@ -1089,6 +1092,7 @@ async def model_watch():
 
 
 async def cleanup(app):
+    CIVITAI_BROWSER.bank.leases.clear()
     for task in app['tasks']:
         task.cancel()
     await SESSION.close()
