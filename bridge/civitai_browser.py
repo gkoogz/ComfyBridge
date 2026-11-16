@@ -283,7 +283,7 @@ class Browser:
         with self.db() as db:
             count = db.execute('SELECT COUNT(DISTINCT image) FROM observations WHERE account=?', (account,)).fetchone()[0]
         return dict(account=account, username=me['username'], profile=self.user_url(me['username']), collections=collections,
-                    importState=state, learned=count, follows=len(self.setting(account, 'follows', [])))
+                    timeouts=self.timeouts(account), importState=state, learned=count, follows=len(self.setting(account, 'follows', [])))
 
     def import_loop(self, account, token):
         try:
@@ -341,6 +341,8 @@ class Browser:
                 self.feeds[cursor]=state
         with state['lock']:
             state['touched']=time.time();out=[];weights=self.weights(account)
+            muted=self.timeouts(account) if channel=='mix' else {}
+            weights['creators']={k:v for k,v in weights['creators'].items() if k not in muted}
             follows=[uid for uid in self.setting(account,'follows',[]) if str(uid) in weights['creators']]
             rich=bool(follows or weights['creators'] or weights['tags'])
             for attempt in range(36 if channel=='mix' else 2):
@@ -401,12 +403,21 @@ class Browser:
                 for _ in range(take):
                     if not source['items']:break
                     item=source['items'].pop(0)
+                    if self.is_muted(item,muted):continue
                     if item['id'] in state['seen']:continue
                     state['seen'].append(item['id']);out.append(dict(self.public(item),reason=reason))
                 state['empty']=state.get('empty',0)+1 if len(out)==before else 0
             state['seen']=state['seen'][-5000:]
             ended=channel!='mix' and all(s['done'] and not s['items'] for s in state['sources'].values())
             return dict(account=account,items=out,nextCursor=None if ended else cursor)
+
+    def timeouts(self, account):
+        return {k:v for k,v in self.setting(account,'creator-timeouts',{}).items() if v.get('until',0)>time.time()}
+
+    @staticmethod
+    def is_muted(item, muted):
+        return str(item.get('creatorId','')) in muted or any(
+            v.get('name') and v['name'].casefold()==item.get('credit','').casefold() for v in muted.values())
 
     def detail(self, image_id):
         me, token=self.account();account=me['id'];image_id=str(ident(image_id))
@@ -442,7 +453,16 @@ class Browser:
                     if kind=='create':raise ValueError('Collection creation was already attempted. Refresh your collections before trying again.')
                 else:db.execute('INSERT INTO actions VALUES(?,?,?,?,?)',(account,request_id,body,'started',''))
             self.assert_account(account,token)
-            if kind=='preference':
+            if kind=='timeout':
+                uid=str(ident(payload.get('creatorId')))
+                muted=self.timeouts(account)
+                muted[uid]=dict(until=time.time()+7200,name=str(payload.get('name',''))[:200])
+                result=dict(ok=True,creatorId=uid,**muted[uid])
+                with self.db() as db:
+                    db.execute('INSERT OR REPLACE INTO settings VALUES(?,?,?)',(account,'creator-timeouts',json.dumps(muted)))
+                    db.execute('UPDATE actions SET state=?,result=? WHERE account=? AND id=?',('done',json.dumps(result),account,request_id))
+                return result
+            elif kind=='preference':
                 subject = payload.get('subject')
                 item_id = str(ident(payload.get('id')))
                 row = next((r for r in self.preference_rows(account) if r['kind']==subject and r['id']==item_id), None)

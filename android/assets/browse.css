@@ -98,3 +98,28 @@ body[data-page=browse] #browseError:not(:empty),.preferenceError:not(:empty){mar
 .civitaiViewer.tossing .civitaiViewerHead{opacity:0}
 @media(max-width:370px){.feedAuthor{max-width:31%;font-size:12px}.feedReactions button{font-size:14px;padding:2px 3px}.civitaiReactions{gap:5px}.civitaiReactions button{padding:5px 7px}}
 .civitaiResources .resourceDownload{width:36px;height:36px;min-height:36px}
+/* Persistent Browse: compact collection switches and stable media geometry. */
+#browseRefresh{flex:none;width:34px;height:36px;min-height:36px;padding:0;border:0;background:none;font-size:25px;line-height:1}
+#browseRefresh.refreshing{animation:spin 1s linear infinite}
+#browseHello{max-width:38%;font-size:11px}
+.browseCollectionHeading{display:flex;align-items:center;gap:5px;margin:0;padding:0 8px;min-height:36px}
+#browseSources,#browseCollections{position:relative;flex:0 1 auto;min-width:0}
+#browseSources{flex-shrink:0}
+#browseSources summary,#browseCollections summary{display:flex;justify-content:flex-start;align-items:center;gap:3px;padding:6px 0;min-height:36px;background:none;border:0;border-radius:0;font-size:12px;font-weight:500;list-style:none;cursor:pointer}
+#browseSources summary::-webkit-details-marker{display:none}
+.browseCollectionHeading u{text-underline-offset:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.browseCollectionHeading summary svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:2;flex:none}
+#browseItemCount{margin-left:auto;white-space:nowrap;font-size:11px;color:var(--muted);flex:none}
+.browseMenu,#browseCollectionMenu{position:absolute;top:100%;left:0;right:auto;min-width:180px;max-width:75vw;max-height:45vh;overflow:auto;z-index:25;padding:5px;border:1px solid var(--line);border-radius:10px;background:var(--panel);box-shadow:0 10px 30px #0008}
+.browseMenu button{display:block;width:100%;text-align:left;border:0;padding:9px;border-radius:7px;background:transparent;font-size:13px}
+.browseThumb img{height:168px;width:auto;object-fit:contain}
+.browseTile img{display:block;object-fit:contain;background:var(--panel)}
+.browseCaption .feedTimeout{flex:none;width:26px;height:30px;min-height:30px;padding:4px}
+.feedTimeout svg{width:18px;height:20px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.browseCaption{gap:4px}.feedAuthor{flex:0 1 auto;min-width:0}.feedReactions{flex:none}
+#browsePull{height:0;overflow:hidden;display:flex;align-items:center;justify-content:center;transition:height .18s;color:var(--muted)}
+#browsePull .spinner{animation:none;width:24px;height:24px}
+#browsePull.ready{color:var(--mint)}
+#browsePull.refreshing{height:45px!important}
+#browsePull.refreshing .spinner{animation:spin 1s linear infinite}
+body[data-page=browse] #workspace{overscroll-behavior-y:contain}

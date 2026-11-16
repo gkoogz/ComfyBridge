@@ -125,3 +125,43 @@ Horizontal drags and downward pulls at the top grab the media. A hold of about
 spring back; a deliberate flick or drag beyond roughly half the shorter viewport
 dimension dismisses. The background fades to reveal the retained feed. Videos
 keep their native player gestures. Pinch zoom remains browser-owned.
+
+
+## Beta 79 device cache and timeout
+
+Browse saves an account-bearing snapshot under a key scoped to the paired PC's
+fingerprint (host fallback). On launch it paints saved metadata and device blobs
+before awaiting account/status. A changed account clears the prior view and
+prefetched details. The first 20 items of the selected carousel and the last 10
+loaded For you items are retained. Previews are stored in CacheStorage on the
+device; the selected 30 are protected from normal 180-file/96 MiB eviction.
+Individual files above 8 MiB are not added. Originals/video files are not eagerly
+downloaded. With insufficient storage, ordinary online browsing still works.
+
+Carousel paging warms two pages to reach at least 20 when available. Server
+cursors are not persisted because the worker can restart; restored carousels
+rebuild a cursor and deduplicate before continuing. Refresh retains old visible
+content until replacement requests succeed. A blank first-ever visit still
+requires a connection; caching cannot supply content never downloaded.
+
+A single bounded detail queue starts ahead of visible items and the retained
+30 previews. Up to 100 detail records persist with the snapshot. Viewer reads
+reuse those records immediately. Refresh clears detail records, and explicit
+social writes invalidate affected records. Collection membership popups always
+check fresh state. Background downloads yield to generated-library transfers
+and stop advancing while Browse is hidden. Media width/height reserve layout
+before image decoding. Near-bottom paging stops automatically after repeated
+empty pages or an error, leaving manual retry available.
+
+The stopwatch is a ComfyBridge-only two-hour creator timeout, not an unfollow or
+Civitai block. Its expiry and idempotent receipt commit together in the PC's
+account-scoped SQLite settings. Every mixed-feed source is filtered, including
+cached LoRA samples matched by creator name when no user ID exists. Collection,
+reacted and exclusive creator/tag feeds remain accessible. Both phones receive
+current timeouts in status; expired entries no longer filter results.
+
+Verification: 152 Python tests and neutral-fixture mobile/desktop browser checks,
+including cache restoration with network deliberately held, 20+10 saved image
+files, detail request reuse, restarted-cursor recovery, touch pull refresh,
+automatic paging, timeout expiry/retry/account isolation. Physical phone touch
+behavior is not established by browser emulation.

@@ -132,5 +132,21 @@ class BrowseTests(unittest.TestCase):
         for bad in ['https://evil.test/a','http://image.civitai.com/a','https://image.civitai.com@evil.test/a','https://image.civitai.com:88/a']:self.assertFalse(cdn(bad))
         self.assertTrue(cdn('https://blobs-b2.civitai.com/file/blobs-managed-public/a.jpg'))
 
+    def test_creator_timeout_persistent_idempotent_expires_and_exclusive_allowed(self):
+        request=self.act(kind='timeout',creatorId=7,name='Potter')
+        first=self.b.action(request)
+        self.assertEqual(first,self.b.action(request))
+        self.assertAlmostEqual(first['until']-time.time(),7200,delta=2)
+        restarted=Browser(self.tmp.name,self.models,None,self.api)
+        self.assertIn('7',restarted.timeouts('1'))
+        self.assertEqual(restarted.timeouts('2'),{})
+        self.assertEqual(restarted.feed({'channel':'mix'})['items'],[])
+        self.assertTrue(restarted.feed({'channel':'creator:7:all'})['items'])
+        self.assertTrue(restarted.feed({'channel':'collection:4'})['items'])
+        self.assertTrue(restarted.is_muted({'credit':'POTTER'},restarted.timeouts('1')))
+        restarted.save('1','creator-timeouts',{'7':dict(until=time.time()-1,name='Potter')})
+        self.assertTrue(restarted.feed({'channel':'mix'})['items'])
+        self.assertFalse(any(write for _,_,write in self.api.calls))
+
 
 if __name__=='__main__':unittest.main()

@@ -3,11 +3,13 @@
 const CivitaiBrowser=(()=>{
  let account='',status=null,feed=[],strip=[],cursor='',stripCursor='',channel='',busy=false,stripBusy=false,session=0,timer,observer,viewer=null,lastStatus=0;
  let view={kind:'mix'}, history=[], feedEnded=false, collectionPopup=null;
+ let muted={},refreshing=false,warmTimer,bottomTimer,detailQueue=[],detailRunning=false,cacheScope='',stripResume=false,emptyPages=0,suppressTap=0;
+ const details=new Map(),detailRequests=new Map(),imageRequests=new Map();
  const emoji={Like:'👍',Heart:'❤️',Laugh:'😂',Cry:'😢'};
  const path=p=>'/'+String(p||'').replace(/^\//,'');
  const button=(label,attrs='')=>'<button '+attrs+'>'+label+'</button>';
- const thumbURL=item=>item.cacheAsset&&item.cacheSample&&ModelPreviews.url(item.cacheAsset,item.cacheSample)||path(item.path);
- const imageHTML=(item,full=false)=>item.type==='video'&&full?'<video controls playsinline preload="none" poster="'+esc(thumbURL(item))+'" src="'+esc(path(item.fullPath))+'"></video>':'<img loading="lazy" decoding="async" src="'+esc(thumbURL(item))+'" alt="Civitai '+(item.type==='video'?'video preview':'image')+'">';
+ const thumbURL=item=>assetCache.get(path(item.path))||(item.cacheAsset&&item.cacheSample&&ModelPreviews.url(item.cacheAsset,item.cacheSample))||path(item.path);
+ const imageHTML=(item,full=false)=>item.type==='video'&&full?'<video controls playsinline preload="none" poster="'+esc(thumbURL(item))+'" src="'+esc(path(item.fullPath))+'"></video>':'<img width="'+(Number(item.width)||512)+'" height="'+(Number(item.height)||768)+'" loading="lazy" decoding="async" src="'+esc(thumbURL(item))+'" alt="Civitai '+(item.type==='video'?'video preview':'image')+'">';
  const ribbonIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h12v18l-6-4-6 4z"/></svg>';
  const copyIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 8h12v13H8zM16 8V3H3v13h5"/></svg>';
  const caretIcon=down=>'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="'+(down?'M5 8l7 7 7-7':'M5 16l7-7 7 7')+'"/></svg>';
@@ -28,22 +30,149 @@ const CivitaiBrowser=(()=>{
   });
  }
  const assetCache=new Map();
- async function cachedImage(img){
-  // Reuse bounded persistent previews on this device; account is part of each URL.
-  const url=img.getAttribute('src');if(!url?.startsWith('/model-preview/browse/'))return;
-  try{
-   if(assetCache.has(url)){img.src=assetCache.get(url);return;}
-   const cache=await caches.open('comfybridge-browse-v1');let r=await cache.match(url);
-   if(!r){r=await fetch(url);if(!r.ok)return;const blob=await r.blob();if(blob.size>8*1024*1024)return;r=new Response(blob,{headers:{'Content-Type':blob.type,'X-Browse-Bytes':String(blob.size)}});await cache.put(url,r.clone());
-    const keys=await cache.keys();let bytes=0;for(let i=keys.length-1;i>=0;i--){const hit=await cache.match(keys[i]);bytes+=Number(hit?.headers.get('X-Browse-Bytes')||0);if(keys.length-i>180||bytes>96*1024*1024)await cache.delete(keys[i]);}
-   }
-   const object=URL.createObjectURL(await r.blob());assetCache.set(url,object);if(img.isConnected)img.src=object;
-   if(assetCache.size>200){const [key,value]=assetCache.entries().next().value;URL.revokeObjectURL(value);assetCache.delete(key);}
-  }catch{/* Native WebViews may not expose CacheStorage; HTTP preview remains usable. */}
+ function scope(){
+  let config={};try{config=window.Native?JSON.parse(Native.configuration()):{};}catch{}
+  return 'comfybridge-browse-v2:'+encodeURIComponent(config.fingerprint||config.host||(window.Desktop?'desktop':'local'));
  }
+ function saveSnapshot(){
+  if(!account||!status||view.kind!=='mix')return;
+  try{
+   const snapshot={account,status,channel,strip:strip.slice(0,20),feed:feed.filter(i=>!isMuted(i)).slice(-10),muted,
+    details:[...details.entries()].filter(([key])=>key.startsWith(account+':')).slice(-100),saved:Date.now()};
+   localStorage.setItem(scope(),JSON.stringify(snapshot));
+  }catch{/* Storage pressure must never prevent browsing. */}
+ }
+ function restoreSnapshot(){
+  const key=scope();if(cacheScope===key&&status)return;
+  reset();details.clear();muted={};account='';status=null;cacheScope=key;
+  try{
+   const data=JSON.parse(localStorage.getItem(key)||'null');if(!data?.account)return;
+   account=data.account;status=data.status;channel=data.channel;strip=data.strip||[];stripResume=true;muted=data.muted||{};
+   feed=(data.feed||[]).filter(i=>!isMuted(i));for(const entry of data.details||[])details.set(...entry);
+  }catch{/* A damaged snapshot is replaced after the next successful fetch. */}
+ }
+ function isMuted(item){return Object.entries(muted).some(([id,v])=>v.until*1000>Date.now()&&
+  (id===String(item.creatorId)||v.name&&v.name.toLowerCase()===String(item.credit||'').toLowerCase()));}
+ async function imageBlob(url,onlyCached=false){
+  if(assetCache.has(url))return assetCache.get(url);
+  if(imageRequests.has(url))return imageRequests.get(url);
+  const work=(async()=>{
+   const cache=await caches.open('comfybridge-browse-v1');let r=await cache.match(url);
+   if(!r){
+    if(onlyCached)return '';
+    r=await fetch(url);if(!r.ok)throw Error('Preview unavailable');
+    const blob=await r.blob();if(blob.size>8*1024*1024)return '';
+    r=new Response(blob,{headers:{'Content-Type':blob.type,'X-Browse-Bytes':String(blob.size)}});await cache.put(url,r.clone());
+   }
+   const object=URL.createObjectURL(await r.blob());assetCache.set(url,object);
+   return object;
+  })();imageRequests.set(url,work);
+  try{return await work;}finally{imageRequests.delete(url);}
+ }
+ async function cachedImage(img){
+  const url=img.getAttribute('src');if(!url?.startsWith('/model-preview/browse/'))return;
+  try{const object=await imageBlob(url);if(object&&img.isConnected&&img.getAttribute('src')===url)img.src=object;}catch{}
+ }
+ async function trimImages(){
+  try{
+   const protectedURLs=new Set([...strip.slice(0,20),...feed.slice(-10)].map(i=>path(i.path)));
+   const cache=await caches.open('comfybridge-browse-v1'),keys=await cache.keys();let bytes=0,count=0;
+   for(const key of [...keys.filter(k=>protectedURLs.has(new URL(k.url).pathname)),...keys.filter(k=>!protectedURLs.has(new URL(k.url).pathname)).reverse()]){
+    const r=await cache.match(key);bytes+=Number(r?.headers.get('X-Browse-Bytes')||0);count++;
+    if((count>180||bytes>96*1024*1024)&&!protectedURLs.has(new URL(key.url).pathname))await cache.delete(key);
+   }
+   while(assetCache.size>200){const [key,value]=assetCache.entries().next().value;
+    assetCache.delete(key);URL.revokeObjectURL(value);}
+  }catch{}
+ }
+ function detailKey(id){return account+':'+id;}
+ function fetchDetail(item,fresh=false){
+  const key=detailKey(item.id),boundAccount=account,old=details.get(key);
+  if(!fresh&&old)return Promise.resolve(old.result);
+  if(detailRequests.has(key))return detailRequests.get(key);
+  const request=api('browse/detail/'+item.id).then(result=>{
+   if(boundAccount&&result.account!==boundAccount)throw Error('Civitai account changed. Refresh Browse.');
+   if(boundAccount!==account)throw Error('Civitai account changed. Refresh Browse.');
+   details.delete(key);details.set(key,{result,at:Date.now()});
+   while(details.size>100)details.delete(details.keys().next().value);
+   Object.assign(item,result.item);saveSnapshot();return result;
+  }).finally(()=>detailRequests.delete(key));
+  detailRequests.set(key,request);return request;
+ }
+ function queueDetail(item,priority=false){
+  if(!item?.id||details.has(detailKey(item.id))||detailQueue.some(i=>i.id===item.id))return;
+  priority?detailQueue.unshift(item):detailQueue.push(item);detailQueue=detailQueue.slice(0,60);runDetails();
+ }
+ function backgroundAllowed(){return available()&&!syncing&&!filling&&!originalTransfers.size;}
+ async function runDetails(){
+  if(detailRunning||!backgroundAllowed()||busy||stripBusy)return;
+  detailRunning=true;
+  try{while(detailQueue.length&&backgroundAllowed()&&!busy&&!stripBusy){
+   const item=detailQueue.shift();try{await fetchDetail(item);}catch{break;}
+  }}finally{detailRunning=false;}
+ }
+ function warm(){
+  clearTimeout(warmTimer);warmTimer=setTimeout(async()=>{
+   if(!available())return;
+   if(!backgroundAllowed()){warm();return;}
+   const ticket=session,items=[...feed.slice(-10),...strip.slice(0,20)];
+   for(const item of items){
+    if(!backgroundAllowed()||ticket!==session){warm();return;}
+    try{await imageBlob(path(item.path));}catch{}
+    queueDetail(item);
+   }
+   await trimImages();saveSnapshot();runDetails();
+  },150);
+ }
+ const nearDetails=new IntersectionObserver(entries=>entries.forEach(e=>{if(e.isIntersecting&&e.target.browseItem)queueDetail(e.target.browseItem,true);}),{rootMargin:'900px'});
+ function paintCollections(){
+  if(!status||!$('#browseCollectionLabel'))return;
+  const reacted=channel==='reactions',choice=status.collections.find(c=>'collection:'+c.id===channel);
+  $('#browseSourceLabel').textContent=reacted?'Reacted media':'Collection';
+  $('#browseCollections').hidden=reacted;$('#browseCollectionDot').hidden=reacted;
+  $('#browseCollectionLabel').textContent=choice?.name||'Choose collection';
+  $('#browseItemCount').textContent=(choice?.count??strip.length)+' items';
+  $('#browseCollectionMenu').innerHTML=status.collections.map(c=>button(esc(c.name),'role="menuitemradio" aria-checked="'+('collection:'+c.id===channel)+'" data-channel="collection:'+c.id+'"')).join('')+button('＋ New collection','id="browseCreate"');
+  $$('[data-channel]').forEach(b=>b.onclick=()=>selectChannel(b.dataset.channel==='collection'?'collection:'+(status.collections[0]?.id||''):b.dataset.channel));
+  $('#browseCreate').onclick=()=>{closeMenus();createCollection();};
+  $('#browseEmptyCollections').hidden=status.collections.length>0;paintStatus();
+ }
+ function closeMenus(){$$('#browseCollections,#browseSources').forEach(el=>el.open=false);}
+ function selectChannel(value){
+  closeMenus();if(value==='collection:'){createCollection();return;}
+  if(channel===value)return;channel=value;strip=[];stripCursor='';stripBusy=false;stripResume=false;
+  $('#browseCarousel').replaceChildren();paintCollections();saveSnapshot();loadStrip();
+ }
+ async function refresh(){
+  if(refreshing||view.kind==='preferences')return;refreshing=true;
+  $('#browseRefresh')?.classList.add('refreshing');$('#browsePull')?.classList.add('refreshing');
+  const ticket=++session;busy=false;stripBusy=false;cursor='';stripCursor='';stripResume=false;feedEnded=false;emptyPages=0;details.clear();detailQueue=[];
+  // Retain visible/cache content until each replacement request succeeds.
+  try{await refreshStatus(true);if(ticket!==session)return;await Promise.all([loadFeed(true),view.kind==='mix'?loadStrip(true):Promise.resolve()]);}
+  catch(e){if($('#browseError'))$('#browseError').textContent=e.message;}
+  finally{refreshing=false;$('#browseRefresh')?.classList.remove('refreshing');$('#browsePull')?.classList.remove('refreshing');$('#browsePull')?.style.removeProperty('height');}
+ }
+ function pullToRefresh(){
+  const workspace=document.querySelector('#workspace');let gesture=null;
+  workspace.addEventListener('touchstart',e=>{
+   if(page!=='browse'||view.kind==='preferences'||workspace.scrollTop>0||refreshing||viewer||e.touches.length!==1||e.target.closest('button:not(.browseMedia),summary,input,.browseCarousel'))return;
+   gesture={x:e.touches[0].clientX,y:e.touches[0].clientY,amount:0};
+  },{passive:true});
+  workspace.addEventListener('touchmove',e=>{
+   if(!gesture)return;
+   const dx=e.touches[0].clientX-gesture.x,dy=e.touches[0].clientY-gesture.y;
+   if(Math.abs(dx)>Math.abs(dy)||dy<0){gesture=null;$('#browsePull')?.style.removeProperty('height');return;}
+   if(dy<8)return;e.preventDefault();e.stopPropagation();gesture.amount=Math.min(90,dy*.48);suppressTap=Date.now()+500;
+   const pull=$('#browsePull');if(pull){pull.style.height=gesture.amount+'px';pull.classList.toggle('ready',gesture.amount>=55);pull.setAttribute('aria-label',gesture.amount>=55?'Release to refresh':'Pull to refresh');}
+  },{passive:false});
+  const end=e=>{if(!gesture)return;const ready=gesture.amount>=55&&e.type!=='touchcancel';gesture=null;
+   if(ready)refresh();else $('#browsePull')?.style.removeProperty('height');};
+  workspace.addEventListener('touchend',end);workspace.addEventListener('touchcancel',end);
+ }
+ pullToRefresh();
  const imagesNear=new IntersectionObserver(entries=>entries.forEach(e=>{if(e.isIntersecting){imagesNear.unobserve(e.target);cachedImage(e.target);}}),{rootMargin:'250px'});
  function hydrate(root){root.querySelectorAll('img').forEach(img=>{img.addEventListener('error',()=>{img.classList.add('failed');img.alt='Preview unavailable · tap to retry';},{once:true});imagesNear.observe(img);});}
- function reset(){feed=[];strip=[];cursor='';stripCursor='';channel='';}
+ function reset(){feed=[];strip=[];cursor='';stripCursor='';channel='';stripResume=false;emptyPages=0;}
  function available(){return page==='browse'&&!document.hidden&&connected;}
  function paintStatus(){
   const el=$('#browseImport');if(!el||!status)return;
@@ -54,40 +183,36 @@ const CivitaiBrowser=(()=>{
  async function refreshStatus(force=false){
   if(view.kind!=='mix'||!available()||(!force&&Date.now()-lastStatus<14000))return;lastStatus=Date.now();
   const s=await api('browse/status');if(!available())return;
-  if(account&&account!==s.account){reset();close();$('#browseFeed')?.replaceChildren();$('#browseCarousel')?.replaceChildren();}
+  if(account&&account!==s.account){reset();details.clear();detailQueue=[];muted={};close();$('#browseFeed')?.replaceChildren();$('#browseCarousel')?.replaceChildren();}
   account=s.account;status=s;$('#browseHello').textContent='Hello '+s.username;
-  const choices=s.collections.map(c=>({value:'collection:'+c.id,label:c.name+' · '+c.count}));
-  choices.push({value:'reactions',label:'Reacted media'});
-  if(!choices.some(c=>c.value===channel))channel=choices[0].value;
-  $('#browseCollectionLabel').textContent=choices.find(c=>c.value===channel).label;
-  const menu=$('#browseCollectionMenu');
-  menu.innerHTML=choices.map(c=>button(esc(c.label),'type="button" role="menuitemradio" aria-checked="'+(c.value===channel)+'" data-channel="'+esc(c.value)+'"')).join('');
-  $$('[data-channel]',menu).forEach(b=>b.onclick=()=>{
-   channel=b.dataset.channel;
-   $('#browseCollectionLabel').textContent=b.textContent;
-   $('#browseCollections').open=false;
-   strip=[];stripCursor='';$('#browseCarousel').replaceChildren();loadStrip();
-  });
-  $('#browseEmptyCollections').hidden=s.collections.length>0;paintStatus();
+  muted=s.timeouts||muted;
+  if(!channel||(channel!=='reactions'&&!s.collections.some(c=>'collection:'+c.id===channel)))channel=s.collections.length?'collection:'+s.collections[0].id:'reactions';
+  feed=feed.filter(i=>!isMuted(i));
+  $$('.browseTile').forEach(el=>{if(isMuted(el.browseItem||{}))el.remove();});
+  paintCollections();saveSnapshot();
+
  }
  async function render(){
   view={kind:'mix'};history=[];feedEnded=false;busy=false;stripBusy=false;
-  const ticket=++session;clearTimeout(timer);observer?.disconnect();
-  $('#main').innerHTML='<section class="civitaiBrowse"><p id="browseError" class="warning" role="status"></p><div id="browseConnected" hidden><div class="browseCollectionHeading"><details id="browseCollections"><summary aria-label="Choose a media collection"><span id="browseCollectionLabel">Collections</span><span aria-hidden="true">⌄</span></summary><div id="browseCollectionMenu" role="menu"></div></details>'+button('＋','id="browseCreate" aria-label="Create a collection"')+button('↻','id="browseRefresh" aria-label="Refresh your feed"')+'</div><p id="browseEmptyCollections" hidden>No media collections yet. Create one with ＋.</p><div id="browseCarousel" class="browseCarousel"></div><div class="browseFeedHeading"><h2>For you</h2><button id="browseImport" aria-label="Edit feed preferences"></button></div><div id="browseFeed"></div>'+button('Load more','id="browseMore"')+'</div></section>';
-  $('#browseFeed').className='browseFeed';
-
-  $('#browseRefresh').onclick=()=>{reset();render();};
-  if(!connected){$('#browseError').textContent='Connect to your PC using the sidebar to browse Civitai.';schedule();return;}
+  const ticket=++session;clearTimeout(timer);observer?.disconnect();nearDetails.disconnect();restoreSnapshot();
+  $('#main').innerHTML='<section class="civitaiBrowse"><div id="browsePull" role="status" aria-label="Pull to refresh"><i class="spinner"></i></div><p id="browseError" class="warning" role="status"></p><div id="browseConnected" hidden><div class="browseCollectionHeading"><details id="browseSources"><summary><u id="browseSourceLabel">Collection</u>'+caretIcon(true)+'</summary><div class="browseMenu" role="menu">'+button('Collection','data-channel="collection"')+button('Reacted media','data-channel="reactions"')+'</div></details><span id="browseCollectionDot">•</span><details id="browseCollections"><summary aria-label="Choose a media collection"><u id="browseCollectionLabel">Choose collection</u>'+caretIcon(true)+'</summary><div id="browseCollectionMenu" class="browseMenu" role="menu"></div></details><small id="browseItemCount"></small></div><p id="browseEmptyCollections" hidden>No media collections yet. Create one in the collection menu.</p><div id="browseCarousel" class="browseCarousel"></div><div class="browseFeedHeading"><h2>For you</h2><button id="browseImport" aria-label="Edit feed preferences"></button></div><div id="browseFeed" class="browseFeed"></div>'+button('Load more','id="browseMore"')+'</div></section>';
+  $('#browseRefresh').onclick=refresh;
+  $('#browseImport').onclick=openPreferences;$('#browseMore').onclick=()=>loadFeed();
+  $('#browseCarousel').onscroll=()=>{const el=$('#browseCarousel');if(el.scrollLeft+el.clientWidth>el.scrollWidth-350)loadStrip();};
+  // Restore metadata and device files before waiting for the PC or Civitai.
+  if(status){
+   await Promise.all([...strip,...feed].map(i=>imageBlob(path(i.path),true).catch(()=>{})));
+   if(ticket!==session)return;
+   $('#browseConnected').hidden=false;$('#browseHello').textContent='Hello '+status.username;
+   paintCollections();paintFeed(feed);paintStrip(strip);
+  }
+  if(!connected){$('#browseError').textContent='Showing saved Browse. Connect to your PC to refresh.';schedule();return;}
   try{
    await refreshStatus(true);if(ticket!==session)return;
    $('#browseConnected').hidden=false;
-   $('#browseCreate').onclick=()=>createCollection();
-   $('#browseCarousel').onscroll=()=>{const el=$('#browseCarousel');if(el.scrollLeft+el.clientWidth>el.scrollWidth-350)loadStrip();};
-   $('#browseImport').onclick=openPreferences;
-   $('#browseMore').onclick=()=>loadFeed();
-   paintFeed(feed);paintStrip(strip);
+   // Server cursors are intentionally not persisted: a worker can restart.
    if(!strip.length)loadStrip();if(!feed.length)loadFeed();
-   observer=new IntersectionObserver(entries=>{if(entries.some(e=>e.isIntersecting))loadFeed();},{rootMargin:'350px'});observer.observe($('#browseMore'));
+   observeMore();warm();if(stripResume)loadStrip();
   }catch(e){if(ticket===session)$('#browseError').textContent=e.message;}
   schedule();
  }
@@ -98,13 +223,13 @@ const CivitaiBrowser=(()=>{
  },15000);}
  function tile(item,small=false){
   const el=document.createElement('article');
-  el.className=small?'browseThumb':'browseTile';
+  el.className=small?'browseThumb':'browseTile';el.browseItem=item;nearDetails.observe(el);
   el.innerHTML='<button class="browseMedia" aria-label="Open '+esc(item.type)+' by '+esc(item.credit)+'">'+imageHTML(item)+(item.type==='video'?'<span class="browseVideo">▶</span>':'')+'</button>';
   $('.browseMedia',el).onclick=()=>open(item,small?strip:feed);
   if(!small){
    const caption=document.createElement('div');
    caption.className='browseCaption';
-   caption.innerHTML=button(esc(item.credit||'Creator'),'class="feedAuthor"')+
+   caption.innerHTML=button(esc(item.credit||'Creator'),'class="feedAuthor"')+button('<svg viewBox="0 0 24 24"><path d="M9 2h6M12 2v3m6 1 2 2M12 9v5l3 2"/><circle cx="12" cy="14" r="8"/></svg>','class="feedTimeout" aria-label="Silence creator for two hours"')+
     '<div class="feedReactions">'+Object.entries(emoji).map(([key,value])=>button(value+' <small>'+reactionCount(item,key)+'</small>','data-feed-react="'+key+'" aria-label="'+key+'" aria-pressed="'+item.reactions.includes(key)+'"')).join('')+'</div>'+
     button('<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h12v18l-6-4-6 4z"/></svg>','class="feedCollect" aria-label="Add to collection"');
    el.append(caption);
@@ -115,6 +240,16 @@ const CivitaiBrowser=(()=>{
     }catch(error){toast(error.message);}
    };
    const boundAccount=account;
+   $('.feedTimeout',caption).onclick=async e=>{
+    const b=e.currentTarget;b.disabled=true;
+    try{
+     if(!item.creatorId)Object.assign(item,(await fetchDetail(item)).item);
+     const result=await action({account:boundAccount,kind:'timeout',creatorId:item.creatorId,name:item.credit});
+     if(account!==boundAccount)return;muted[result.creatorId]={until:result.until,name:item.credit};
+     if(view.kind==='mix'){feed=feed.filter(i=>!isMuted(i));$$('.browseTile').forEach(el=>{if(isMuted(el.browseItem))el.remove();});saveSnapshot();observeMore();}
+     toast(item.credit+' silenced in For you for 2 hours');
+    }catch(error){toast(error.message);}finally{b.disabled=false;}
+   };
    $$('[data-feed-react]',caption).forEach(b=>b.onclick=async()=>{
     const reaction=b.dataset.feedReact, selected=item.reactions.includes(reaction);
     b.disabled=true;
@@ -152,6 +287,7 @@ const CivitaiBrowser=(()=>{
   const saved=history.pop();
   view=saved.view;feed=saved.feed;cursor=saved.cursor;feedEnded=saved.feedEnded;
   $('#main').replaceChildren(...saved.nodes);
+  if(view.kind==='mix'){feed=feed.filter(i=>!isMuted(i));$$('.browseTile').forEach(el=>{if(isMuted(el.browseItem))el.remove();});saveSnapshot();}
   $('#workspace').scrollTop=saved.scroll;
   if(view.kind!=='preferences')observeMore();
   return true;
@@ -159,7 +295,7 @@ const CivitaiBrowser=(()=>{
  function observeMore(){
   observer?.disconnect();
   if(!$('#browseMore')||feedEnded)return;
-  observer=new IntersectionObserver(entries=>{if(entries.some(e=>e.isIntersecting))loadFeed();},{rootMargin:'350px'});
+  observer=new IntersectionObserver(entries=>{if(entries.some(e=>e.isIntersecting)&&emptyPages<2)loadFeed();},{rootMargin:'550px'});
   observer.observe($('#browseMore'));
  }
  function openSubject(kind,id,name){
@@ -229,7 +365,7 @@ const CivitaiBrowser=(()=>{
   $('.collectionClose',popup).onclick=dismiss;
   popup.onclick=e=>{if(e.target===popup)dismiss();};
   async function refresh(){
-   const result=await api('browse/detail/'+item.id);
+   const result=await fetchDetail(item,true);
    if(!popup.isConnected)return;
    if(result.account!==boundAccount)throw Error('Civitai account changed. Reopen this menu.');
    const members=membershipIds(result.item.collections),host=$('.feedCollectionChoices',popup);
@@ -248,25 +384,40 @@ const CivitaiBrowser=(()=>{
  }
  function paintFeed(items){const el=$('#browseFeed');if(el)items.forEach(i=>el.append(tile(i)));}
  function paintStrip(items){const el=$('#browseCarousel');if(el)items.forEach(i=>el.append(tile(i,true)));}
- async function loadFeed(){
+ async function loadFeed(replace=false){
+  replace=replace===true;
   if(busy||feedEnded||!available()||!$('#browseMore'))return;busy=true;const ticket=session;$('#browseMore').innerHTML='<i class="spinner"></i> Finding inspiration…';
   try{const r=await api('browse/feed',{channel:view.kind==='mix'?'mix':view.kind+':'+view.id+':'+view.filter,cursor});if(ticket!==session)return;
    if(r.account!==account){reset();render();return;}
-   const added=r.items.filter(i=>!feed.some(x=>x.id===i.id));feed.push(...added);cursor=r.nextCursor||'';feedEnded=!r.nextCursor;paintFeed(added);$('#browseError').textContent='';
+   if(replace){feed=[];$('#browseFeed').replaceChildren();}
+   const added=r.items.filter(i=>!(view.kind==='mix'&&isMuted(i))&&!feed.some(x=>x.id===i.id));feed.push(...added);cursor=r.nextCursor||'';feedEnded=!r.nextCursor;paintFeed(added);saveSnapshot();warm();$('#browseError').textContent='';
+   emptyPages=added.length?0:emptyPages+1;
    if(!added.length)$('#browseError').textContent='No new media in this page. Try Load more or refresh.';
-  }catch(e){if(ticket===session)$('#browseError').textContent=e.message;}
-  finally{if(ticket===session){busy=false;if($('#browseMore')){$('#browseMore').textContent='Load more';$('#browseMore').hidden=feedEnded;}}}
+  }catch(e){if(ticket===session){emptyPages=2;$('#browseError').textContent=e.message;}}
+  finally{if(ticket===session){busy=false;if($('#browseMore')){$('#browseMore').textContent='Load more';$('#browseMore').hidden=feedEnded;}checkBottom();}}
  }
- async function loadStrip(){
-  if(stripBusy||!available()||(strip.length&&!stripCursor))return;stripBusy=true;const chosen=channel,ticket=session;
+ function checkBottom(){
+  if(!available()||busy||feedEnded||emptyPages>=2||view.kind==='preferences')return;
+  const more=$('#browseMore'),workspace=$('#workspace');
+  if(more&&!more.hidden&&more.getBoundingClientRect().top<workspace.getBoundingClientRect().bottom+550){
+   clearTimeout(bottomTimer);bottomTimer=setTimeout(()=>{
+    const current=$('#browseMore');if(current&&current.getBoundingClientRect().top<workspace.getBoundingClientRect().bottom+550&&emptyPages<2)loadFeed();
+   },120);
+  }
+ }
+ document.querySelector('#workspace').addEventListener('scroll',checkBottom,{passive:true});
+ async function loadStrip(replace=false){
+  replace=replace===true;
+  if(stripBusy||!available()||(!replace&&!stripResume&&strip.length&&!stripCursor))return;stripBusy=true;const chosen=channel,ticket=session;
   try{const r=await api('browse/feed',{channel:chosen,cursor:stripCursor});if(chosen!==channel||ticket!==session)return;
    if(r.account!==account){reset();render();return;}
-   const added=r.items.filter(i=>!strip.some(x=>x.id===i.id));strip.push(...added);stripCursor=r.nextCursor||'';paintStrip(added);
+   if(replace){strip=[];$('#browseCarousel').replaceChildren();}
+   const added=r.items.filter(i=>!strip.some(x=>x.id===i.id));strip.push(...added);stripCursor=r.nextCursor||'';stripResume=stripResume&&!added.length&&!!stripCursor;paintStrip(added);paintCollections();saveSnapshot();warm();
    if(!strip.length)$('#browseCarousel').innerHTML='<p class="muted">No accessible media here yet.</p>';
   }catch(e){if(ticket===session)$('#browseError').textContent=e.message;}
-  finally{stripBusy=false;}
+  finally{if(chosen===channel&&ticket===session){stripBusy=false;if((strip.length<20||stripResume)&&stripCursor)setTimeout(()=>loadStrip(),0);}}
  }
- async function action(data){return api('browse/action',{account,...data,requestId:crypto.randomUUID()});}
+ async function action(data){const result=await api('browse/action',{account,...data,requestId:crypto.randomUUID()});if(data.imageId)details.delete(detailKey(data.imageId));else if(data.kind==='follow')details.clear();saveSnapshot();return result;}
  async function createCollection(parent,onCreated,boundAccount=account){
   const form=document.createElement('form');form.className='browseCollectionForm';form.innerHTML='<label>New private media collection<input name="name" maxlength="30" required placeholder="Collection name"></label><div class="row">'+button('Create','type="submit" class="green"')+button('Cancel','type="button"')+'</div><p role="status"></p>';
   (parent||$('.browseCollectionHeading')).after(form);form.querySelector('input').focus();form.querySelector('[type=button]').onclick=()=>form.remove();
@@ -332,7 +483,7 @@ const CivitaiBrowser=(()=>{
   if(!target){target=document.createElement('div');target.className='civitaiSocial';$('.modelPreviewDetails',host)?.prepend(target);}
   target.textContent='Loading creator and interactions…';
   try{
-   const result=await api('browse/detail/'+image.id);if(!target.isConnected)return;
+   const result=await fetchDetail(image);if(!target.isConnected)return;
    account=result.account;const item=result.item;Object.assign(image,item);
    const prompts=$('.civitaiPromptBlocks',host);if(prompts){prompts.outerHTML=promptHTML(item);wirePromptCopies(host,item);}
    target.innerHTML=socialHTML(item,result.collections);wireSocial(target,item,result.collections);
@@ -434,6 +585,7 @@ const CivitaiBrowser=(()=>{
 
  function close(){if(viewer){viewer.dispose?.();viewer.el.remove();viewer=null;}document.body.classList.remove('civitaiViewerOpen');}
  function open(item,list){
+  const cached=details.get(detailKey(item.id));if(cached)Object.assign(item,cached.result.item);
   close();const el=document.createElement('section');el.className='civitaiViewer';el.setAttribute('role','dialog');el.setAttribute('aria-modal','true');el.setAttribute('aria-label','Civitai media details');
   const v={el,item,list};viewer=v;document.body.append(el);document.body.classList.add('civitaiViewerOpen');
   el.innerHTML='<div class="civitaiViewerHead">'+button('×','class="civitaiClose" aria-label="Close media"')+'</div><div class="civitaiViewerScroll modelPreviewViewer"><div class="modelPreviewHero">'+imageHTML(item,true)+'<div class="modelPreviewNavigation">'+button('‹','data-prev aria-label="Previous media"')+button('›','data-next aria-label="Next media"')+'</div></div><div class="modelPreviewPeek"><strong>Prompt & resources <span>⌄</span></strong><p>'+esc(item.prompt||'Scroll for details')+'</p></div><div class="modelPreviewDetails"><div class="civitaiSocial"></div>'+promptHTML(item)+'<h2>Resources</h2><div class="civitaiResourceHost">'+resourcesHTML(item.resources||[])+'</div><dl class="modelPreviewParameters">'+Object.entries(item.parameters||{}).map(([k,val])=>'<dt>'+esc(k)+'</dt><dd>'+esc(val)+'</dd>').join('')+'</dl><div class="civitaiTagHost"></div>'+button('Open on Civitai ↗','data-origin')+'</div></div>';
@@ -446,9 +598,10 @@ const CivitaiBrowser=(()=>{
  }
  async function detail(v){if(viewer===v)await enrich(v.el,v.item);}
  document.addEventListener('click',e=>{
-  if(!e.target.closest('#browseCollections')){const menu=$('#browseCollections');if(menu)menu.open=false;}
+  if(!e.target.closest('#browseCollections,#browseSources'))closeMenus();
  });
+ document.addEventListener('click',e=>{if(Date.now()<suppressTap){e.preventDefault();e.stopImmediatePropagation();}},true);
  document.addEventListener('keydown',e=>{if(e.key==='Escape'){if(viewer){e.preventDefault();close();}else if(page==='browse'&&back())e.preventDefault();}});
- document.addEventListener('visibilitychange',()=>{if(available())refreshStatus(true).catch(()=>{});});
+ document.addEventListener('visibilitychange',()=>{if(available()){refreshStatus(true).catch(()=>{});warm();}});
  return {render,open,close,back,isOpen:()=>!!viewer,enrich,peek,resourcesHTML,wireResources,promptHTML,wirePromptCopies};
 })();
