@@ -6,6 +6,64 @@ const CivitaiBrowser=(()=>{
  let muted={},refreshing=false,warmTimer,bottomTimer,detailQueue=[],detailRunning=false,cacheScope='',stripResume=false,emptyPages=0,suppressTap=0;
  const details=new Map(),detailRequests=new Map(),imageRequests=new Map();
  const socialRevisions=new Map();let followRevision=0,banRevision=0;
+ let seenScope='',seenPosts=new Set(),pendingSeen=new Set(),seenTimer,seenSending=false,replacingCache=false,cacheCheckAt=0;
+ const exposureTimers=new Map();
+ function loadSeen(){
+  const key=scope()+':seen:'+account;if(seenScope===key)return;
+  seenScope=key;seenPosts=new Set();pendingSeen=new Set();cacheCheckAt=0;
+  try{const s=JSON.parse(localStorage.getItem(key)||'{}');seenPosts=new Set(s.seen||[]);pendingSeen=new Set(s.pending||[]);}catch{}
+ }
+ function saveSeen(){
+  try{localStorage.setItem(seenScope,JSON.stringify({seen:[...seenPosts].slice(-30000),pending:[...pendingSeen].slice(-30000)}));}catch{}
+ }
+ function markSeen(id){
+  if(!account)return;loadSeen();id=String(id);if(seenPosts.has(id))return;
+  seenPosts.add(id);pendingSeen.add(id);saveSeen();clearTimeout(seenTimer);seenTimer=setTimeout(flushSeen,1200);
+ }
+ async function flushSeen(){
+  if(seenSending||!available()||!pendingSeen.size)return;
+  seenSending=true;const bound=account,key=seenScope,ids=[...pendingSeen].slice(0,500);
+  try{const r=await api('browse/seen',{account:bound,viewed:ids});if(account===bound&&seenScope===key&&r.account===bound){ids.forEach(id=>pendingSeen.delete(id));saveSeen();}}
+  catch{/* Offline views remain queued on this device. */}finally{seenSending=false;if(available()&&pendingSeen.size)seenTimer=setTimeout(flushSeen,15000);}
+ }
+ function actuallyVisible(el){
+  if(!el.isConnected||document.hidden||page!=='browse'||view.kind!=='mix'||viewer)return false;
+  const image=$('.browseMedia img',el);if(!image?.complete||!image.naturalWidth)return false;
+  const r=el.getBoundingClientRect(),w=$('#workspace').getBoundingClientRect();
+  return Math.min(r.bottom,w.bottom)-Math.max(r.top,w.top)>=Math.min(160,r.height*.5)&&r.right>w.left&&r.left<w.right;
+ }
+ function watchExposure(el){
+  clearTimeout(exposureTimers.get(el));exposureTimers.delete(el);
+  if(actuallyVisible(el))exposureTimers.set(el,setTimeout(()=>{exposureTimers.delete(el);if(actuallyVisible(el)){markSeen(el.browseItem.id);viewedTiles.unobserve(el);}},800));
+ }
+ const viewedTiles=new IntersectionObserver(entries=>entries.forEach(({target:el})=>watchExposure(el)),{threshold:[0,.1,.25,.5,1]});
+ function farBelow(el){const r=$('#workspace').getBoundingClientRect();return el.isConnected&&el.getBoundingClientRect().top>r.bottom+r.height*2;}
+ async function refreshCachedFeed(){
+  if(!available()||view.kind!=='mix'||viewer||refreshing||busy||stripBusy||replacingCache)return;
+  const cached=$$('#browseFeed .browseTile[data-restored]');if(!cached.length)return;
+  replacingCache=true;const ticket=session,bound=account;
+  try{
+   if(Date.now()-cacheCheckAt>15000){
+    const r=await api('browse/seen',{account:bound,candidates:cached.map(e=>e.browseItem.id).slice(0,500)});
+    if(ticket!==session||r.account!==account)return;cacheCheckAt=Date.now();
+    for(const id of r.seen||[])seenPosts.add(String(id));saveSeen();
+   }
+   const stale=cached.filter(el=>seenPosts.has(el.browseItem.id)&&farBelow(el));if(!stale.length)return;
+   const r=await feedPage('mix',cursor,feed.map(i=>i.id));if(ticket!==session||r.account!==account)return;
+   cursor=r.nextCursor||'';
+   const incoming=r.items.filter(i=>!seenPosts.has(i.id)&&!isBanned(i)&&!isMuted(i)&&!feed.some(x=>x.id===i.id));
+   const unused=[...incoming];
+   for(const item of incoming){
+    const el=stale.find(e=>farBelow(e));if(!el||ticket!==session||viewer)break;
+    const url=await imageBlob(path(item.path));if(!url)continue;
+    const decoded=new Image();decoded.src=url;await decoded.decode();
+    if(ticket!==session||view.kind!=='mix'||viewer||!farBelow(el))break;
+    const index=feed.findIndex(i=>i.id===el.browseItem.id);if(index<0)continue;
+    feed[index]=item;viewedTiles.unobserve(el);nearDetails.unobserve(el);el.replaceWith(tile(item));stale.splice(stale.indexOf(el),1);unused.splice(unused.indexOf(item),1);queueDetail(item,true);
+   }
+   if(ticket===session&&view.kind==='mix'){feed.push(...unused);paintFeed(unused);saveSnapshot();warm();}
+  }catch{/* Keep the cached image if replacement cannot be fully prepared. */}finally{replacingCache=false;}
+ }
  let lastActivity=0,lastActivitySaved=0,suspended=null,pendingCreator=null;
  let personalTags={},personalTagsAt=0,personalTagAccount='';const pendingTagWeights=new Set(),lastTagAdjust=new Map();
  const emoji={Like:'👍',Heart:'❤️',Laugh:'😂',Cry:'😢'};
@@ -74,8 +132,9 @@ const CivitaiBrowser=(()=>{
   if(activityAge()>=7200000){close();render();return;}
   markActivity();
  }
- async function feedPage(selected,position,seen){
-  try{return await api('browse/feed',{channel:selected,cursor:position,seen:seen.slice(-5000)});}
+ async function feedPage(selected,position,seen,refresh=false){
+  if(selected==='mix'){loadSeen();seen=[...new Set([...seen,...seenPosts])];}
+  try{return await api('browse/feed',{channel:selected,cursor:position,seen:seen.slice(-5000),refresh});}
   catch(error){
    // Compatibility recovery if the PC is still running an older worker.
    if(position&&/feed expired/i.test(error.message))return api('browse/feed',{channel:selected,cursor:'',seen:seen.slice(-5000)});
@@ -107,7 +166,7 @@ const CivitaiBrowser=(()=>{
  function saveSnapshot(){
   if(!account||!status||view.kind!=='mix')return;
   try{
-   const snapshot={account,status,channel,strip:strip.slice(0,20),feed:feed.filter(i=>!isMuted(i)).slice(-10),muted,
+   const snapshot={account,status,channel,exposureVersion:1,strip:strip.slice(0,20),feed:feed.filter(i=>!isMuted(i)).slice(-10),muted,
     details:[...details.entries()].filter(([key])=>key.startsWith(account+':')).slice(-100),saved:Date.now()};
    localStorage.setItem(scope(),JSON.stringify(snapshot));
   }catch{/* Storage pressure must never prevent browsing. */}
@@ -118,7 +177,8 @@ const CivitaiBrowser=(()=>{
   try{
    const data=JSON.parse(localStorage.getItem(key)||'null');if(!data?.account)return;
    account=data.account;status=data.status;acceptTagWeights({...status,account});channel=data.channel;strip=(data.strip||[]).filter(i=>!isBanned(i));stripResume=true;muted=data.muted||{};
-   feed=(data.feed||[]).filter(i=>!isMuted(i)&&!isBanned(i));for(const entry of data.details||[])if(entry[1]?.result?.item?.detailVersion===2)details.set(...entry);
+   loadSeen();if(!data.exposureVersion)for(const item of data.feed||[])markSeen(item.id);
+   feed=(data.feed||[]).filter(i=>!seenPosts.has(i.id)&&!isMuted(i)&&!isBanned(i)).map(i=>({...i,restoredFeed:true}));for(const entry of data.details||[])if(entry[1]?.result?.item?.detailVersion===2)details.set(...entry);
   }catch{/* A damaged snapshot is replaced after the next successful fetch. */}
  }
  function isBanned(item){
@@ -242,6 +302,7 @@ const CivitaiBrowser=(()=>{
   if(refreshing||view.kind==='preferences')return;refreshing=true;
   $('#browseRefresh')?.classList.add('refreshing');$('#browsePull')?.classList.add('refreshing');
   const ticket=++session;busy=false;stripBusy=false;cursor='';stripCursor='';stripResume=false;feedEnded=false;emptyPages=0;details.clear();detailQueue=[];
+  if(view.kind==='mix'){feed=[];$('#browseFeed')?.replaceChildren();saveSnapshot();flushSeen();}
   // Retain visible/cache content until each replacement request succeeds.
   try{await refreshStatus(true);if(ticket!==session)return;await Promise.all([loadFeed(true),view.kind==='mix'?loadStrip(true):Promise.resolve()]);}
   catch(e){if($('#browseError'))$('#browseError').textContent=e.message;}
@@ -284,11 +345,11 @@ const CivitaiBrowser=(()=>{
   if(account===s.account&&followTicket!==followRevision&&status?.followingIds){s.followingIds=status.followingIds;s.follows=status.follows;}
   if(account&&account!==s.account){reset();details.clear();detailQueue=[];muted={};close();$('#browseFeed')?.replaceChildren();$('#browseCarousel')?.replaceChildren();}
   if(account===s.account&&banTicket!==banRevision)s.bans=status?.bans||[];
-  account=s.account;status=s;acceptTagWeights(s);$('#browseHello').textContent='Hello '+s.username;
+  account=s.account;loadSeen();status=s;acceptTagWeights(s);$('#browseHello').textContent='Hello '+s.username;
   muted=s.timeouts||muted;
   if(!channel||(channel!=='reactions'&&!s.collections.some(c=>'collection:'+c.id===channel)))channel=s.collections.length?'collection:'+s.collections[0].id:'reactions';
   if(view.kind==='mix'){feed=feed.filter(i=>!isMuted(i));$$('.browseTile').forEach(el=>{if(isMuted(el.browseItem||{}))el.remove();});}
-  pruneBanned();paintCollections();paintSocial();saveSnapshot();
+  pruneBanned();paintCollections();paintSocial();saveSnapshot();flushSeen();refreshCachedFeed();
 
  }
  async function render(){
@@ -300,7 +361,7 @@ const CivitaiBrowser=(()=>{
   }
   suspended=null;if(stale){cursor='';stripCursor='';detailQueue=[];cacheScope='';status=null;close();collectionPopup?.remove();collectionPopup=null;}
   view={kind:'mix'};history=[];feedEnded=false;busy=false;stripBusy=false;
-  const ticket=++session;clearTimeout(timer);observer?.disconnect();nearDetails.disconnect();restoreSnapshot();
+  const ticket=++session;clearTimeout(timer);observer?.disconnect();nearDetails.disconnect();viewedTiles.disconnect();restoreSnapshot();
   $('#main').innerHTML='<section class="civitaiBrowse"><div id="browsePull" role="status" aria-label="Pull to refresh"><i class="spinner"></i></div><p id="browseError" class="warning" role="status"></p><div id="browseConnected" hidden><div class="browseCollectionHeading"><details id="browseSources"><summary><u id="browseSourceLabel">Collection</u>'+caretIcon(true)+'</summary><div class="browseMenu" role="menu">'+button('Collection','data-channel="collection"')+button('Reacted media','data-channel="reactions"')+'</div></details><span id="browseCollectionDot">•</span><details id="browseCollections"><summary aria-label="Choose a media collection"><u id="browseCollectionLabel">Choose collection</u>'+caretIcon(true)+'</summary><div id="browseCollectionMenu" class="browseMenu" role="menu"></div></details><small id="browseItemCount"></small></div><p id="browseEmptyCollections" hidden>No media collections yet. Create one in the collection menu.</p><div id="browseCarousel" class="browseCarousel"></div><div class="browseFeedHeading"><h2>For you</h2><button id="browseImport" aria-label="Edit feed preferences"></button></div><div id="browseFeed" class="browseFeed"></div>'+button('Load more','id="browseMore"')+'</div></section>';
   $('#browseRefresh').innerHTML=refreshIcon;$('#browseRefresh').onclick=refresh;
   $('#browseImport').onclick=openPreferences;$('#browseMore').onclick=()=>loadFeed();
@@ -337,7 +398,9 @@ const CivitaiBrowser=(()=>{
  function tile(item,small=false){
   const el=document.createElement('article');
   el.className=small?'browseThumb':'browseTile';el.browseItem=item;nearDetails.observe(el);
+  if(!small&&view.kind==='mix'){if(item.restoredFeed)el.dataset.restored='true';viewedTiles.observe(el);}
   el.innerHTML='<button class="browseMedia" aria-label="Open '+esc(item.type)+' by '+esc(item.credit)+'">'+imageHTML(item)+(item.type==='video'?'<span class="browseVideo">▶</span>':'')+'</button>';
+  if(!small&&view.kind==='mix')$('.browseMedia img',el)?.addEventListener('load',()=>watchExposure(el));
   $('.browseMedia',el).onclick=()=>open(item,small?strip:feed);
   if(!small){
    const caption=document.createElement('div');
@@ -524,10 +587,10 @@ const CivitaiBrowser=(()=>{
  async function loadFeed(replace=false){
   replace=replace===true;
   if(busy||feedEnded||!available()||!$('#browseMore'))return;busy=true;const ticket=session;$('#browseMore').innerHTML='<i class="spinner"></i> Finding inspiration…';
-  try{const r=await feedPage(view.kind==='mix'?'mix':view.kind+':'+view.id+':'+view.filter,cursor,replace?[]:feed.map(i=>i.id));if(ticket!==session)return;
+  try{const r=await feedPage(view.kind==='mix'?'mix':view.kind+':'+view.id+':'+view.filter,cursor,replace?[]:feed.map(i=>i.id),replace);if(ticket!==session)return;
    if(r.account!==account){reset();render();return;}
    if(replace){feed=[];$('#browseFeed').replaceChildren();}
-   const added=r.items.filter(i=>!isBanned(i)&&!(view.kind==='mix'&&isMuted(i))&&!feed.some(x=>x.id===i.id));feed.push(...added);cursor=r.nextCursor||'';feedEnded=!r.nextCursor;paintFeed(added);saveSnapshot();warm();$('#browseError').textContent='';
+   const added=r.items.filter(i=>!isBanned(i)&&!(view.kind==='mix'&&(isMuted(i)||seenPosts.has(i.id)))&&!feed.some(x=>x.id===i.id));feed.push(...added);cursor=r.nextCursor||'';feedEnded=!r.nextCursor;paintFeed(added);saveSnapshot();warm();$('#browseError').textContent='';
    emptyPages=added.length?0:emptyPages+1;
    if(!added.length)$('#browseError').textContent='No new media in this page. Try Load more or refresh.';
   }catch(e){if(ticket===session){emptyPages=2;$('#browseError').textContent=e.message;}}
@@ -543,6 +606,7 @@ const CivitaiBrowser=(()=>{
   }
  }
  document.querySelector('#workspace').addEventListener('scroll',checkBottom,{passive:true});
+ let cacheScrollTimer;document.querySelector('#workspace').addEventListener('scroll',()=>{clearTimeout(cacheScrollTimer);cacheScrollTimer=setTimeout(refreshCachedFeed,200);},{passive:true});
  async function loadStrip(replace=false){
   replace=replace===true;
   if(stripBusy||!available()||(!replace&&!stripResume&&strip.length&&!stripCursor))return;stripBusy=true;const chosen=channel,ticket=session;
@@ -800,6 +864,7 @@ const CivitaiBrowser=(()=>{
 
  function close(){if(viewer){viewer.dispose?.();viewer.el.remove();viewer=null;}document.body.classList.remove('civitaiViewerOpen');}
  function open(item,list){
+  if(view.kind==='mix'&&list===feed)markSeen(item.id);
   const cached=details.get(detailKey(item.id));if(cached)Object.assign(item,cached.result.item);
   close();const el=document.createElement('section');el.className='civitaiViewer';el.setAttribute('role','dialog');el.setAttribute('aria-modal','true');el.setAttribute('aria-label','Civitai media details');
   const v={el,item,list};viewer=v;document.body.append(el);document.body.classList.add('civitaiViewerOpen');

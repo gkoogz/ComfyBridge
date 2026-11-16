@@ -47,6 +47,7 @@ class Browser:
         self.lock = threading.RLock()
         self.network = threading.Lock()
         self.action_lock = threading.RLock()
+        self.mix_lock = threading.Lock()
         self.media_lock = threading.Lock()
         self.identity = None
         self.leases = {}
@@ -60,7 +61,13 @@ class Browser:
               CREATE TABLE IF NOT EXISTS observations(account TEXT,source TEXT,image TEXT,creator TEXT,tags TEXT,score REAL,stamp TEXT,PRIMARY KEY(account,source,image));
               CREATE TABLE IF NOT EXISTS actions(account TEXT,id TEXT,payload TEXT,state TEXT,result TEXT,PRIMARY KEY(account,id));
               CREATE TABLE IF NOT EXISTS feed_sessions(account TEXT,id TEXT,channel TEXT,payload TEXT,touched REAL,PRIMARY KEY(account,id));
+              CREATE TABLE IF NOT EXISTS feed_exposure(account TEXT,image TEXT,viewed REAL NOT NULL DEFAULT 0,served REAL NOT NULL DEFAULT 0,PRIMARY KEY(account,image));
             ''')
+            # Upgrade existing sessions as recently offered, not proven viewed.
+            for row in db.execute("SELECT account,payload,touched FROM feed_sessions WHERE channel='mix'").fetchall():
+                payload=json.loads(row['payload'])
+                db.executemany('INSERT INTO feed_exposure(account,image,served) VALUES(?,?,?) ON CONFLICT(account,image) DO UPDATE SET served=MAX(served,excluded.served)',
+                    [(row['account'],str(i),row['touched']) for i in payload.get('seen',[]) if str(i).isdigit()])
 
     @contextmanager
     def db(self):
@@ -384,7 +391,30 @@ class Browser:
         finally:
             with self.lock:self.running.discard(account)
 
+    def exposure(self, query):
+        me,_=self.account();account=me['id']
+        if str(query.get('account'))!=account:raise ValueError('Civitai account changed. Refresh Browse.')
+        def ids(key):
+            values=query.get(key,[])
+            if not isinstance(values,list) or len(values)>500:raise ValueError('At most 500 media IDs are allowed.')
+            return list({str(ident(i)) for i in values})
+        viewed=ids('viewed');candidates=ids('candidates');now=time.time()
+        with self.db() as db:
+            db.executemany('INSERT INTO feed_exposure(account,image,viewed) VALUES(?,?,?) ON CONFLICT(account,image) DO UPDATE SET viewed=MAX(viewed,excluded.viewed)',[(account,i,now) for i in viewed])
+            known=[]
+            if candidates:
+                slots=','.join('?' for _ in candidates)
+                known=[r[0] for r in db.execute('SELECT image FROM feed_exposure WHERE account=? AND viewed>0 AND image IN ('+slots+')',(account,*candidates))]
+                known+= [r[0] for r in db.execute('SELECT DISTINCT image FROM observations WHERE account=? AND score>0 AND image IN ('+slots+')',(account,*candidates))]
+        return dict(account=account,seen=list(set(known)))
+
     def feed(self, query):
+        if query.get('channel','mix')=='mix':
+            # Concurrent phones must not receive the same newly reserved posts.
+            with self.mix_lock:return self._feed(query)
+        return self._feed(query)
+
+    def _feed(self, query):
         me, token=self.account(); account=me['id']; cursor=query.get('cursor',''); channel=query.get('channel','mix')
         with self.lock:
             self.feeds={k:v for k,v in self.feeds.items() if time.time()-v['touched']<7200}
@@ -405,9 +435,19 @@ class Browser:
                 loras=[i for i in self.models.snapshot()['items'] if i.get('kind')=='loras' and i.get('versionId') and not i.get('archived')]
                 seen=[str(i) for i in query.get('seen',[])[-5000:] if str(i).isdigit()]
                 state=dict(account=account,channel=channel,touched=time.time(),seen=seen,sources={},loras=loras,turn=0,lora=0, lock=threading.Lock())
+                if channel=='mix' and not query.get('refresh'):
+                    progress=self.setting(account,'mix-progress',{})
+                    if time.time()-progress.get('at',0)<1800 and progress.get('muted',[])==sorted(self.timeouts(account)):
+                        for field in ('sources','turn','lora'):state[field]=progress.get(field,state[field])
                 self.feeds[cursor]=state
         with state['lock']:
             state['touched']=time.time();out=[];weights=self.weights(account);bans=self.bans(account)
+            excluded=set()
+            if channel=='mix':
+                with self.db() as db:
+                    excluded={r[0] for r in db.execute('SELECT image FROM feed_exposure WHERE account=? AND (viewed>0 OR served>?)',(account,time.time()-7*86400))}
+                    excluded.update(r[0] for r in db.execute('SELECT DISTINCT image FROM observations WHERE account=? AND score>0',(account,)))
+                excluded.update(str(i) for i in query.get('seen',[])[-5000:] if str(i).isdigit())
             muted=self.timeouts(account) if channel=='mix' else {}
             weights['creators']={k:v for k,v in weights['creators'].items() if k not in muted}
             follows=[uid for uid in self.setting(account,'follows',[]) if str(uid) in weights['creators']]
@@ -487,11 +527,11 @@ class Browser:
                     source.update(items=items,cursor=nxt,started=True,done=nxt is None)
                 take=1 if channel=='mix' else 12
                 before=len(out)
-                for _ in range(take):
-                    if not source['items']:break
+                while source['items'] and len(out)-before<take and len(out)<12:
                     item=source['items'].pop(0)
                     if self.is_muted(item,muted):continue
                     if item['id'] in state['seen']:continue
+                    if item['id'] in excluded:continue
                     if required_tags and not self.matches_tags(item,required_tags):continue
                     if self.is_banned(item,bans):continue
                     if any(b['kind']=='tag' for b in bans) and not item.get('tagsKnown'):
@@ -507,6 +547,10 @@ class Browser:
             state['seen']=state['seen'][-5000:]
             ended=channel!='mix' and all(s['done'] and not s['items'] for s in state['sources'].values())
             with self.db() as db:
+                if channel=='mix':
+                    db.executemany('INSERT INTO feed_exposure(account,image,served) VALUES(?,?,?) ON CONFLICT(account,image) DO UPDATE SET served=excluded.served',[(account,i['id'],time.time()) for i in out])
+                    progress=dict(at=time.time(),muted=sorted(muted),**{k:state[k] for k in ('sources','turn','lora')})
+                    db.execute('INSERT OR REPLACE INTO settings VALUES(?,?,?)',(account,'mix-progress',json.dumps(progress)))
                 db.execute('DELETE FROM feed_sessions WHERE touched<?',(time.time()-7200,))
                 db.execute('INSERT OR REPLACE INTO feed_sessions VALUES(?,?,?,?,?)',
                     (account,cursor,channel,json.dumps({k:v for k,v in state.items() if k!='lock'}),time.time()))

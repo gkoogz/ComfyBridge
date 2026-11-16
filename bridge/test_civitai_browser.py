@@ -326,6 +326,40 @@ class BrowseTests(unittest.TestCase):
         self.assertEqual(second['account'],'2')
         self.assertTrue(second['recovered'])
 
+    def test_seen_posts_survive_refresh_restart_and_are_account_scoped(self):
+        original=self.b.transport
+        def request(token,route,value,write,rest):
+            if route=='image.getInfinite':return {'items':[image(i) for i in range(1,41)]}
+            return original(token,route,value,write,rest)
+        self.b.transport=request
+        first=self.b.feed({'channel':'mix'});a={i['id'] for i in first['items']}
+        self.assertTrue(a)
+        restarted=Browser(self.tmp.name,self.models,None,request)
+        second=restarted.feed({'channel':'mix','refresh':True});b={i['id'] for i in second['items']}
+        self.assertTrue(b);self.assertFalse(a&b)
+        result=restarted.exposure(dict(account='1',viewed=list(a),candidates=list(a|b)))
+        self.assertEqual(set(result['seen']),a)
+        with restarted.db() as db:db.execute('UPDATE feed_exposure SET served=0')
+        third=restarted.feed({'channel':'mix','refresh':True})
+        self.assertFalse(a&{i['id'] for i in third['items']},'Viewed IDs never expire with delivery reservations')
+        self.assertTrue(a&{i['id'] for i in restarted.feed({'channel':'creator:7:all'})['items']})
+        self.models.key='account-b'
+        self.assertEqual(restarted.exposure(dict(account='2',candidates=list(a)))['seen'],[])
+        self.assertTrue(a&{i['id'] for i in restarted.feed({'channel':'mix','refresh':True})['items']})
+        with self.assertRaisesRegex(ValueError,'account changed'):restarted.exposure(dict(account='1',viewed=['1']))
+        self.assertFalse(any(write for _,_,write in self.api.calls))
+
+    def test_exposure_validation_and_upgrade_old_mix_session(self):
+        for values in (['bad'],['1']*501,'1'):
+            with self.assertRaises(ValueError):self.b.exposure(dict(account='1',viewed=values))
+        first=self.b.feed({'channel':'mix'})
+        with self.b.db() as db:db.execute('DELETE FROM feed_exposure')
+        restarted=Browser(self.tmp.name,self.models,None,self.api)
+        with restarted.db() as db:
+            rows=db.execute('SELECT image,viewed,served FROM feed_exposure').fetchall()
+        self.assertTrue(rows);self.assertTrue(all(r['viewed']==0 and r['served']>0 for r in rows))
+        self.assertEqual({r['image'] for r in rows},{i['id'] for i in first['items']})
+
     def test_creator_timeout_persistent_idempotent_expires_and_exclusive_allowed(self):
         request=self.act(kind='timeout',creatorId=7,name='Potter')
         first=self.b.action(request)

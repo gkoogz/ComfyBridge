@@ -312,3 +312,37 @@ sections. Clearing the search restores the visible list without a network call.
 The viewer distinguishes a pending generation-data request from a completed empty response or a failed request. Failures offer Retry details in place and retain any existing prompt. Complete cached details are reused immediately on reopening. Metadata updates leave the hero media element and scroll position intact; opening peek positioning happens once, not on every social-row resize. Scroll anchoring is disabled within the viewer. The full image is decoded before it replaces the visible preview, and the hero is excluded from thumbnail cache URL rewrites.
 
 The viewer-loading browser regression delays metadata and decoding independently, checks unchanged media identity/source/geometry and scroll position, and covers retry, confirmed missing prompts and cached reopen at phone and desktop widths.
+
+## Beta 85: persistent For You exposure and safe cache replacement
+
+`feed_exposure` stores account-scoped post IDs in SQLite. Actually viewed posts
+stay excluded indefinitely from For You; recently offered but unviewed posts
+are excluded for seven days. Positive imported reactions/collection observations
+also exclude those known posts. These rules do not filter explicit collection,
+reacted, creator or tag feeds, and make no public Civitai mutations.
+
+The client records a post after 800ms with a meaningful portion of its loaded
+preview visible, or immediately on opening it from For You. Hidden documents,
+offscreen prefetches and unloaded previews do not count. An account-scoped device
+outbox survives offline use and syncs batches to `browse/seen`; the server's
+history is shared by both phones. The local lookup retains up to 30,000 IDs;
+the durable server history has no viewed-post expiry. Pre-upgrade saved feed
+posts are treated as probably seen, and old server sessions seed recent offers.
+
+Mixed-feed delivery is serialized and reserves IDs before responding, including
+across concurrent phones and new feed cursors. Source paging progress is reused
+for up to 30 minutes; explicit refresh checks source heads again while retaining
+all exposure exclusions. Skipped duplicates do not consume the valid-item quota.
+
+Startup omits locally known seen posts from restored For You tiles. Remaining
+cached tiles are checked against shared history. A stale tile is replaced only
+when its top is more than two viewport heights below the viewport bottom, after
+the replacement preview is cached and decoded. The guard is checked again after
+download; scrolling close cancels that swap. Visible/nearby tiles are left intact.
+Unused fetched replacements join the end of the feed rather than being discarded.
+Explicit refresh clears the old For You tiles immediately and requests unseen
+results; a failed refresh cannot silently present the stale list as fresh.
+
+Regression coverage includes restart/account isolation, old-session migration,
+recent-offer versus permanent-view exclusions, offline outbox persistence,
+decoded replacement, viewport stability and cancellation when a tile approaches.
