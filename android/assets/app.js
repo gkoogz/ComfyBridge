@@ -818,18 +818,15 @@ function refreshCarouselSelection(){
  });
 }
 const recentResults=()=>library.filter(x=>x.kind===page&&!x.archived);
+const carouselItems=()=>recentResults().slice(0,20);
 function latestResultSummary(){
- const items=recentResults(),selected=$('#result .asset')?.dataset.id;
- const live=liveSelection?.kind===page&&liveJob(liveSelection.id);
- const activePreview=liveStatus(live?.status);
- const first=items.find(item=>item.id===selected)||items[0];
- const completed=activePreview?items.slice(0,9):first?[first,...items.filter(item=>item!==first).slice(0,9)]:[];
- const thumbs=completed.map(item=>{
+ const live=nextGeneration(page);
+ const thumbs=carouselItems().map(item=>{
   const src=media(item.id,true);
   const time=item.kind==='video'&&item.duration>0?'<small>'+esc(duration(item.duration))+'</small>':'';
-  return '<div class="foldResult">'+(src?'<img class="foldThumb" src="'+esc(src)+'" loading="lazy" draggable="false" alt="Generated '+item.kind+'">':'<span class="foldThumb" aria-label="Thumbnail unavailable"></span>')+time+'</div>';
+  return '<div class="foldResult" data-media="'+esc(item.id)+'">'+(src?'<img class="foldThumb" src="'+esc(src)+'" loading="lazy" draggable="false" alt="Generated '+item.kind+'">':'<span class="foldThumb" aria-label="Thumbnail unavailable"></span>')+time+'</div>';
  });
- if(activePreview){
+ if(live){
   const preview=frames.get(live.id)?.url;
   thumbs.unshift('<div class="foldResult foldLive" aria-label="Generation in progress"><img class="foldThumb" data-frame-job="'+esc(live.id)+'" '+(preview?'src="'+esc(preview)+'"':'hidden')+' alt=""><i class="spinner" aria-hidden="true"></i></div>');
  }
@@ -838,7 +835,7 @@ function latestResultSummary(){
 function renderCarousel(){
  const carousel=$('#carousel');if(!carousel)return;
  $('#latestPanel')?.refreshFoldSummary?.();
- const items=recentResults().slice(0,20);
+ const items=carouselItems();
  if(!carousel.querySelector('.recentStrip'))carousel.innerHTML='<div class="recentStrip"></div>';
  const strip=carousel.querySelector('.recentStrip');
  const key=JSON.stringify(items.map(x=>[x.id,media(x.id,true),x.duration]));

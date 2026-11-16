@@ -81,10 +81,12 @@ body:is([data-page=image],[data-page=video]) .modeRow{margin:2px 0 7px}
 .promptHeight{display:block;min-width:36px;min-height:28px;padding:0 6px;margin-top:2px;font-size:22px}
 .foldBody .togglelabel{margin:6px 0 0}
 #latestPanel>.foldBody{padding-bottom:2px}
-#latestPanel #carousel{width:100vw;margin-inline:calc(50% - 50vw);padding:8px 0}
-.foldRecent{display:grid;grid-template-columns:repeat(10,minmax(0,38px));gap:4px;align-items:start}
-#latestPanel .foldSummary{padding-left:0}
-.foldResult{position:relative;min-width:0;text-align:center;font-variant-numeric:tabular-nums}
+#latestPanel #carousel{width:100vw;margin-inline:calc(50% - 50vw);padding:8px 0;gap:6px}
+#carousel .thumb{width:64px;min-width:64px;height:80px;border-radius:7px}
+#carousel .thumb .spinner{top:50%;left:50%;translate:-50% -50%}
+#latestPanel .foldSummary{padding-left:0;overflow-x:auto;overscroll-behavior-x:contain;scrollbar-width:thin;touch-action:pan-x pan-y}
+.foldRecent{display:flex;gap:5px;align-items:start}
+.foldResult{position:relative;flex:0 0 46px;text-align:center;font-variant-numeric:tabular-nums}
 .foldResult .foldThumb{display:block;width:100%;height:auto;aspect-ratio:1}
 .foldResult small{display:block;margin-top:2px;font-size:10px}
 .foldLive{aspect-ratio:1;border-radius:6px;background:var(--bg);display:grid;place-items:center}

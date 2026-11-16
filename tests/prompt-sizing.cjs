@@ -3,7 +3,7 @@ const assert=require('node:assert/strict'),path=require('node:path');
 (async()=>{
  const browser=await chromium.launch({executablePath:process.env.CHROME_PATH||undefined});
  try{
-  const p=await browser.newPage({viewport:{width:370,height:740}});
+  const p=await browser.newPage({viewport:{width:370,height:740},hasTouch:true});
   await p.route('https://bridge.test/**',r=>r.fulfill({path:path.join(__dirname,'../android/assets',new URL(r.request().url()).pathname.slice(1)||'index.html')}));
   await p.addInitScript(()=>{window.Native={configuration:()=>JSON.stringify({device:'one',paired:false}),notificationRoute:()=>''};});
   await p.goto('https://bridge.test');await p.waitForSelector('#connect');
@@ -95,19 +95,50 @@ const assert=require('node:assert/strict'),path=require('node:path');
   assert.equal(await box('Positive prompt').locator('.foldSummary glazed').count(),0);
   await p.route('**/local/**',r=>r.fulfill({contentType:'image/svg+xml',body:'<svg xmlns="http://www.w3.org/2000/svg" width="4" height="3"/>'}));
   await p.evaluate(()=>{
-   for(const kind of ['image','video'])for(let i=0;i<12;i++)library.push({kind,id:kind+i,local:'hash',duration:67+i,created:100-i,archived:i===2});
+   for(const kind of ['image','video'])for(let i=0;i<25;i++)library.push({kind,id:kind+i,local:'hash',duration:67+i,created:100-i,archived:i===2});
    renderResults();
   });
   const thumbs=p.locator('#latestPanel .foldRecent img');
-  assert.equal(await thumbs.count(),10);
+  const foldedIds=()=>p.locator('.foldRecent [data-media]').evaluateAll(items=>items.map(item=>item.dataset.media));
+  const expandedIds=()=>p.locator('#carousel [data-media]').evaluateAll(items=>items.map(item=>item.dataset.media));
+  assert.equal(await thumbs.count(),20);
+  assert.deepEqual(await foldedIds(),await expandedIds());
   assert.equal(await p.locator('.foldRecent small').count(),0);
   assert.match(await thumbs.nth(2).getAttribute('src'),/image3/);
+  const collapsed=p.locator('#latestPanel .foldSummary');
+  await collapsed.scrollIntoViewIfNeeded();
+  const row=await collapsed.boundingBox();
+  assert((await thumbs.first().boundingBox()).width>38);
+  const cdp=await p.context().newCDPSession(p);
+  async function swipe(x,dx){
+   const y=row.y+20,dispatch=(type,touchPoints)=>cdp.send('Input.dispatchTouchEvent',{type,touchPoints});
+   await dispatch('touchStart',[{x,y}]);
+   for(let i=1;i<=10;i++)await dispatch('touchMove',[{x:x+dx*i/10,y}]);
+   await dispatch('touchEnd',[]);
+  }
+  await swipe(row.x+290,-205);
+  await p.waitForFunction(()=>$('#latestPanel .foldSummary').scrollLeft>100);
+  // Stretch beyond the first item and check that the gesture stays in the row.
+  await swipe(row.x+45,235);
+  await p.waitForFunction(()=>$('#latestPanel .foldSummary').scrollLeft<20);
+  assert(await p.locator('#drawer').evaluate(el=>el.inert));
+  assert.equal(await fold('Latest result').getAttribute('aria-expanded'),'false');
+  await collapsed.evaluate(el=>{el.scrollLeft=el.scrollWidth;});
+  assert(await thumbs.last().evaluate(el=>el.getBoundingClientRect().right<=el.closest('.foldSummary').getBoundingClientRect().right+1));
+  await p.evaluate(()=>{library[19].local='cached';renderCarousel();});
+  assert(await collapsed.evaluate(el=>el.scrollLeft>100));
+  await fold('Latest result').click();
+  const tile=await p.locator('#carousel .thumb').first().evaluate(el=>({
+   width:el.offsetWidth,radius:parseFloat(getComputedStyle(el).borderRadius),gap:parseFloat(getComputedStyle(el.closest('#carousel')).gap)
+  }));
+  assert(tile.width<72&&tile.radius<10&&tile.gap<9);
   await p.evaluate(()=>navigate('video'));
   await fold('Canvas & model').click();
   assert.match(await box('Canvas & model').locator('.foldSummary').textContent(),/0.92 s · 24 FPS/);
   await fold('Latest result').click();
-  assert.equal(await thumbs.count(),10);
+  assert.equal(await thumbs.count(),20);
+  assert.deepEqual(await foldedIds(),await expandedIds());
   assert.deepEqual((await p.locator('.foldRecent small').allTextContents()).slice(0,3),['1:07','1:08','1:10']);
-  console.log('Prompt sizing, full collapsed text, card alignment and bleed, ten recent results and video timing passed.');
+  console.log('Prompt sizing, card alignment and bleed, full carousel parity, swipe scrolling and video timing passed.');
  }finally{await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;});
