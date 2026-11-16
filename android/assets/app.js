@@ -152,6 +152,10 @@ function slider(key,label,min,max,step=1,disabled=false){let s=state.settings[pa
 function renderGenerator(){
  const kind=page,s=state.settings[kind],inp=state.inputs[kind];
  if(!s){$('#main').innerHTML='<div class="empty"><div class="symbol">◉</div><h2>'+(connected?'Waiting for workflow settings':(window.Desktop?'Turn on your server':'Connect your studio first'))+'</h2><p>'+(connected?'The PC is connected. Check Bridge for model loading status.':(window.Desktop?'Use the power button in the left column.':'Workflow defaults and your model library will load from the PC.'))+'</p><button class="green" id="goBridge">Open Bridge</button></div>';$('#goBridge').onclick=()=>navigate('bridge');return;}
+ if(kind==='video'&&s.model===erosModel&&s.stepsBeforeCharacter!=null&&hasCharacterReference(s,inp)){
+  // Beta 68 kept Eros in the editor but temporarily used the stock reference steps.
+  s.steps=s.stepsBeforeCharacter;delete s.stepsBeforeCharacter;delete s.videoModelBeforeCharacter;
+ }
  const maxSteps=s.replayOf?Math.max(stepLimit(kind),Number(s.steps)||1):stepLimit(kind);
  s.steps=limit(Math.round(Number(s.steps))||1,1,maxSteps);
  const ext=kind==='video'&&s.extension;
@@ -209,6 +213,9 @@ function videoReferenceInputs(input){
 function hasCharacterReference(settings,input=state.inputs.video){
  return !!(settings?.characterReference||input?.characterReference?.data);
 }
+function characterVideoProfile(model){
+ return model===erosModel?catalog?.characterVideo?.eros:catalog?.characterVideo;
+}
 function videoFrameFields(settings,input){
  const ext=settings.extension;
  const first=ext?extensionSource(ext):input.data?'<img src="'+esc(input.data)+'" alt="First frame">':
@@ -239,9 +246,10 @@ function characterReferenceField(settings,input){
  return '<section class="card characterReferenceCard"><h2>Stable Character reference</h2>'+
   videoReferencePicker({value:input.characterReference,saved:settings.characterReference,upload:'uploadCharacter',
    clear:'clearCharacterReference',label:'Character reference',choose:'Choose character image'})+
-  '<small>Uses Ref2VA and carries this image into each extension.</small></section>';
+  '<small>Carries this image into each extension.</small></section>';
 }
 function beginCharacterReference(settings){
+ if(settings.model===erosModel)return;
  settings.stepsBeforeCharacter=settings.steps;
  settings.steps=catalog?.characterVideo?.steps||20;
 }
@@ -291,9 +299,18 @@ function wirePrompts(){
 const erosModel='10Eros_Max_h3_8stepTURBO_beta7_int8HQ.safetensors';
 function videoModelField(s){
  if(hasCharacterReference(s)){
-  const missing=catalog?.characterVideo?.missing;
-  const detail=missing?.length?'Missing on PC: '+missing.join(', '):!catalog?.characterVideo?'Stable Character reference requires the updated Windows bridge.':'';
-  return '<strong>MiniMax H3 · Ref2VA</strong>'+(detail?'<small class="warning">'+esc(detail)+'</small>':'');
+  const reference=catalog?.characterVideo;
+  if(!reference)return '<small class="warning">Stable Character reference requires the updated Windows bridge.</small>';
+  const eros=s.model===erosModel;
+  const profiles=[reference.eros||{model:erosModel,label:'10Eros Max · Beta 7',missing:['updated Windows bridge']},
+   {...reference,label:'MiniMax H3 · Ref2VA'}];
+  const selected=eros?profiles[0]:profiles[1];
+  const detail=selected.missing.length?'Needs on PC: '+selected.missing.join(', '):
+   eros?'Character reference · built-in 8-step Turbo':'Character reference · stock Ref2VA';
+  return '<div id="videoModel" role="group" aria-label="Video model">'+profiles.map(p=>
+   '<button type="button" value="'+esc(p.model)+'" aria-pressed="'+(p===selected)+'" '+(p.missing.length?'aria-disabled="true"':'')+'>'+
+   esc(p.label)+'</button>').join('')+'</div><small>'+esc(detail)+'</small>'+
+   (eros?'<button type="button" id="videoModelListing" class="seeListing">See Listing</button>':'');
  }
  const profiles=catalog?.videoModels;
  if(!profiles)return '<input readonly aria-label="Video model" value="'+esc(s.model)+'">';
@@ -315,6 +332,21 @@ function refreshVideoModelField(){
 async function switchVideoModel(model){
  const s=state.settings.video,session=epoch,original=s.model;
  try{await resolvePendingSubmission('video');}catch(e){toast(e.message);return;}
+ if(page!=='video'||epoch!==session||s!==state.settings.video||original!==s.model)return;
+ if(hasCharacterReference(s)){
+  const profile=characterVideoProfile(model);
+  if(!profile||profile.missing.length){toast('Needs on PC: '+(profile?.missing.join(', ')||'updated Windows bridge'));return;}
+  if((original===erosModel)===(model===erosModel))return;
+  if(model===ref2vaModel){
+   s.videoModelBeforeCharacter=original;
+   s.stepsBeforeCharacter=s.steps;
+  }
+  s.steps=model===erosModel&&s.videoModelBeforeCharacter===erosModel
+   ?s.stepsBeforeCharacter??profile.steps:profile.steps;
+  s.model=model;delete s.replayOf;
+  if(model===erosModel){delete s.stepsBeforeCharacter;delete s.videoModelBeforeCharacter;}
+  persist('video');renderGenerator();return;
+ }
  let profile=catalog?.videoModels?.find(p=>p.model===model);
  if(!profile)return;
  if(profile.missing.length&&connected){
@@ -334,8 +366,8 @@ async function switchVideoModel(model){
  persist('video');renderGenerator();
 }
 function renderLoras(){
- if(page==='video'&&hasCharacterReference(state.settings.video)){
-  $('#loras').innerHTML='<small>Ref2VA uses its base weights. Clear the character reference to use your video LoRAs.</small>';
+ if(page==='video'&&hasCharacterReference(state.settings.video)&&state.settings.video.model!==erosModel){
+  $('#loras').innerHTML='<small>Stock Ref2VA uses its base weights.</small>';
   $('#addLora').disabled=true;
   return;
  }
@@ -560,15 +592,20 @@ async function generate(){
  submitting=true;$('#play').disabled=true;$('#batchButton').disabled=true;$('#runSpinner').hidden=false;
  try{
   if(!payload&&character){
-   if(!catalog?.characterVideo||catalog.characterVideo.missing?.length)catalog=await api('catalog');
-   if(!catalog?.characterVideo||catalog.characterVideo.missing?.length){
+   const eros=snapshot.model===erosModel;
+   const current=characterVideoProfile(snapshot.model);
+   if(!current||current.missing.length)catalog=await api('catalog');
+   const profile=characterVideoProfile(snapshot.model);
+   if(!profile||profile.missing.length){
     if(page===kind)refreshVideoModelField();
-    const missing=catalog?.characterVideo?.missing?.join(', ')||'the updated Windows bridge';
+    const missing=profile?.missing.join(', ')||'the updated Windows bridge';
     throw Error('Stable Character reference needs '+missing+'.');
    }
-   if(snapshot.model!==ref2vaModel)snapshot.videoModelBeforeCharacter=snapshot.model;
-   snapshot.model=catalog.characterVideo.model;
-   snapshot.loras=[];
+   if(!eros){
+    if(snapshot.model!==ref2vaModel)snapshot.videoModelBeforeCharacter=snapshot.model;
+    snapshot.model=profile.model;
+    snapshot.loras=[];
+   }
   }
   if(!payload){
    if(inp.data&&!snapshot.upload)snapshot.upload=(await api('upload',{data:inp.data})).name;

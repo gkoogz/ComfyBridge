@@ -589,7 +589,8 @@ class BridgeTests(unittest.IsolatedAsyncioTestCase):
         settings['extension'] = w.extension.describe(source, 'character-fixture-a')
         with w.DB:
             w.DB.execute("INSERT INTO media(id,path,kind) VALUES(?,?,'video')", ('character-fixture-a', str(source)))
-        w.CATALOG['characterVideo'] = dict(model=w.H3_REF2VA, steps=20, missing=[])
+        w.CATALOG['characterVideo'] = dict(model=w.H3_REF2VA, steps=20, missing=[],
+                                          eros=dict(model=w.EROS_BETA7, steps=8, missing=[]))
         response, result = await self.request('generate', dict(kind='video', settings=settings, requestId=str(uuid.uuid4())))
         self.assertEqual(response.status, 200, result)
         parent = result['ids'][0]
@@ -618,11 +619,22 @@ class BridgeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(inherited['name'], saved['characterReference'])
         self.assertEqual(inherited['job'], parent)
         settings.update(extension=description, characterReference=inherited['name'],
-                        characterReferenceOrigin=inherited['origin'])
+                        characterReferenceOrigin=inherited['origin'], model=w.EROS_BETA7, steps=8)
+        optional_lora = dict(name=w.CATALOG['loras'][0], strength=0.4, enabled=True)
+        settings['loras'].append(optional_lora)
         second, result = await self.request('generate', dict(kind='video', settings=settings, requestId=str(uuid.uuid4())))
         self.assertEqual(second.status, 200, result)
         child = result['ids'][0]
         child_settings = json.loads(w.rows('SELECT settings FROM jobs WHERE id=?',(child,))[0]['settings'])
+        child_graph = w.recipes.recorded_graph(w.DB, child)
+        self.assertEqual(child_settings['model'], w.EROS_BETA7)
+        self.assertEqual(child_settings['loras'], [optional_lora])
+        self.assertEqual(child_graph['5']['inputs']['unet_name'], w.EROS_BETA7)
+        self.assertEqual(child_graph['6']['inputs']['ref_images.ref_image_0'], ['61', 0])
+        self.assertEqual(child_graph['50']['inputs']['image'], ['43', 0])
+        self.assertEqual(child_graph['10']['inputs']['sampler_name'], 'euler')
+        self.assertEqual(child_graph['12']['inputs']['steps'], 8)
+        self.assertEqual(child_graph['28']['class_type'], 'ComfyBridgeErosVSA')
         self.assertEqual(child_settings['characterReference'], saved['characterReference'])
         self.assertEqual(child_settings['characterReferenceOrigin'], dict(job=parent, role='characterReference'))
         from studio import replay

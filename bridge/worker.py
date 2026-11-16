@@ -203,15 +203,16 @@ async def load_catalogue():
     CATALOG['finalFrameSupported']=any('last_frame' in h3_inputs.get(key,{}) for key in ('required','optional'))
     CATALOG['videoModels']=WF.video_models(obj,choices('UNETLoader','unet_name'),choices('CLIPLoader','clip_name'),
                                             choices('VAELoader','vae_name'),CATALOG['loras'])
+    reference_nodes = [node for node in ('MiniMaxH3ReferenceToVideo', 'MiniMaxH3AddGuide') if node not in obj]
     reference_dependencies = (
         (H3_REF2VA, choices('UNETLoader', 'unet_name')),
         (WF.widgets('video', 3)[0], choices('CLIPLoader', 'clip_name')),
         (WF.widgets('video', 4)[0], choices('VAELoader', 'vae_name')),
-        ('MiniMaxH3ReferenceToVideo', obj),
-        ('MiniMaxH3AddGuide', obj),
     )
+    eros = next(profile for profile in CATALOG['videoModels'] if profile['model'] == EROS_BETA7)
     CATALOG['characterVideo'] = dict(model=H3_REF2VA, steps=H3_REFERENCE_STEPS,
-                                     missing=[name for name, available in reference_dependencies if name not in available])
+                                     missing=reference_nodes + [name for name, available in reference_dependencies if name not in available],
+                                     eros={**eros, 'missing': reference_nodes + eros['missing']})
     CATALOG['audioMissing']=[name for name in ('LTXVAudioVAEDecode','TrimAudioDuration') if name not in obj]
     if H3_AUDIO_VAE not in choices('VAELoader','vae_name'):
         CATALOG['audioMissing'].append(H3_AUDIO_VAE)
@@ -853,7 +854,7 @@ async def api(request):
                     j['etaSeconds']=None
                 else:
                     j['progress'],j['current_node']=TRACKER.sample()
-        return web.json_response(dict(protocol=20,build='0.1.0-beta.68',jobs=jobs, active=ACTIVE, preview=bool(PREVIEW), previewRevision=PREVIEW_REV,ownedComfy=bool(OWNED),queueEtaSeconds=total_eta))
+        return web.json_response(dict(protocol=20,build='0.1.0-beta.69',jobs=jobs, active=ACTIVE, preview=bool(PREVIEW), previewRevision=PREVIEW_REV,ownedComfy=bool(OWNED),queueEtaSeconds=total_eta))
     if path.startswith('preview/'):
         job=str(uuid.UUID(path[8:]))
         after=int(request.query.get('after','-1'))
@@ -954,9 +955,15 @@ async def api(request):
             raise ValueError('The PC H3 nodes do not support a final frame. Update ComfyUI before using this input.')
         if character:
             profile = cat['characterVideo']
+            if s.get('model') == EROS_BETA7:
+                profile = profile['eros']
+            elif s.get('model') not in (None, H3_REF2VA, WF.widgets('video', 5)[0]):
+                raise ValueError('Choose an installed H3 video model.')
             if profile['missing']:
                 raise ValueError('Stable Character reference needs '+', '.join(profile['missing'])+' on the PC.')
-            s.update(model=profile['model'], loras=[])
+            s['model'] = profile['model']
+            if s['model'] == H3_REF2VA:
+                s['loras'] = []
         existing=rows('SELECT id,owner FROM jobs WHERE batch=? ORDER BY ordinal',(batch,))
         if existing:
             if existing[0]['owner']!=device:raise web.HTTPForbidden()

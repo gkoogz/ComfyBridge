@@ -50,18 +50,26 @@ const assert=require('node:assert/strict'),path=require('node:path');
   assert.equal(first.y,last.y);assert(last.x>=first.x+first.width);
   assert.equal(await p.locator('.videoFramesCard .foldToggle').count(),1);
   await p.evaluate(()=>{
-   calls=[];queueProtocol=20;catalog.characterVideo={model:ref2vaModel,steps:20,missing:[]};
+   calls=[];queueProtocol=20;catalog.characterVideo={model:ref2vaModel,steps:20,missing:[],
+    eros:{model:erosModel,label:'10Eros Max · Beta 7',steps:8,missing:[]}};
    activateExtension({id:'generated-1',width:64,height:96,fps:18,frames:180});
   });
   const photo={name:'puppet.png',mimeType:'image/png',buffer:Buffer.from(data.split(',')[1],'base64')};
   await p.locator('#uploadCharacter').setInputFiles(photo);
   await p.waitForSelector('.characterReferenceCard img');
-  assert.equal(await p.locator('#addLora').isDisabled(),true);
+  assert.equal(await p.locator('#addLora').isDisabled(),false);
+  assert.match(await p.locator('#videoModel button[aria-pressed=true]').textContent(),/Eros Max/);
   await p.locator('#play').click();
   await p.waitForFunction(()=>calls.some(c=>c.route==='generate'));
   let guided=await p.evaluate(()=>calls.find(c=>c.route==='generate').body.settings);
   assert.equal(guided.characterReference,'ComfyBridge/final.png');
-  assert.match(guided.model,/ref2va/);assert.equal(guided.steps,20);assert.deepEqual(guided.loras,[]);
+  assert.match(guided.model,/Eros_Max/);assert.equal(guided.steps,8);
+  await p.locator('#videoModel button').filter({hasText:'Ref2VA'}).click();
+  await p.waitForFunction(()=>state.settings.video.model===ref2vaModel);
+  assert.equal(await p.locator('#addLora').isDisabled(),true);
+  assert.equal(await p.evaluate(()=>state.settings.video.steps),20);
+  await p.locator('#videoModel button').filter({hasText:'Eros Max'}).click();
+  await p.waitForFunction(()=>state.settings.video.model===erosModel);
   await p.evaluate(()=>{
    calls=[];
    activateExtension({id:'generated-2',width:64,height:96,fps:18,frames:360,
@@ -73,6 +81,7 @@ const assert=require('node:assert/strict'),path=require('node:path');
   guided=await p.evaluate(()=>calls.find(c=>c.route==='generate').body.settings);
   assert.equal(guided.characterReference,'ComfyBridge/recipes/original.png');
   assert.equal(guided.characterReferenceOrigin.job,'first-job');
+  assert.match(guided.model,/Eros_Max/);assert.equal(guided.steps,8);
   assert.equal(guided.extension.id,'generated-2');assert.equal(guided.extension.characterReference,undefined);
   assert.equal(await p.evaluate(()=>calls.some(c=>c.route==='upload')),false);
   await p.locator('#clearCharacterReference').click();
@@ -82,6 +91,6 @@ const assert=require('node:assert/strict'),path=require('node:path');
   assert.equal(await p.evaluate(()=>state.settings.video.steps),8);
   await p.evaluate(()=>navigate('image'));assert.equal(await p.locator('#uploadFinal').count(),0);
   assert.deepEqual(errors,[]);
-  console.log('Video frames: side-by-side layout, exact last-frame submission and separate clear. Character reference: upload, inherited file reuse, Ref2VA selection, and return to ordinary Extend passed.');
+  console.log('Video frames and character reference passed, including Eros retention, explicit stock selection and inherited image reuse.');
  }finally{await browser.close();}
 })().catch(error=>{console.error(error);process.exitCode=1;});

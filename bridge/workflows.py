@@ -118,8 +118,10 @@ class Workflows:
         elif kind == 'video':
             base_model=self.widgets('video',5)[0]
             character = s.get('characterReference')
-            checkpoint = H3_REF2VA if character else s.get('model') or base_model
-            if checkpoint not in (base_model, EROS_BETA7) and not character:
+            checkpoint = s.get('model') or base_model
+            if character and checkpoint == base_model:
+                checkpoint = H3_REF2VA
+            if checkpoint not in (base_model, EROS_BETA7) and not (character and checkpoint == H3_REF2VA):
                 raise ValueError('Choose an installed H3 video model.')
             eros=checkpoint==EROS_BETA7
             extension = s.get('extension')
@@ -163,7 +165,7 @@ class Workflows:
             mandatory = self.widgets('video', 8)
             if not character and not eros and (not loras or loras[0].get('name') != mandatory[0] or not loras[0].get('enabled', True)):
                 raise ValueError('The MiniMax turbo LoRA is required in the first slot.')
-            for i, l in enumerate([] if character else loras):
+            for i, l in enumerate([] if checkpoint == H3_REF2VA else loras):
                 if eros and l['name']==mandatory[0]:
                     continue
                 if l.get('enabled', True):
@@ -205,7 +207,7 @@ class Workflows:
                 guider = node(9, 'CFGGuider', model=model, positive=cond, negative=avoid, cfg=2.0)
             else:
                 guider = node(9, 'BasicGuider', model=model, conditioning=cond)
-            sampler_name = 'res_multistep' if character else 'euler' if eros else self.widgets('video', 10)[0]
+            sampler_name = 'euler' if eros else 'res_multistep' if character else self.widgets('video', 10)[0]
             sampler = node(10, 'KSamplerSelect', sampler_name=sampler_name)
             noise = node(11, 'RandomNoise', noise_seed=seed)
             sigmas = node(12, 'BasicScheduler', model=model, scheduler='simple', steps=steps, denoise=1.)
