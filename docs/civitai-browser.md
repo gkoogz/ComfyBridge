@@ -734,3 +734,32 @@ details; held/directional tosses retain the existing threshold and snapback.
 spinner cover, responsive prefetch distance, native-control exclusion, mouse
 scroll/toss and mobile touch-emulated dismissal. Physical Android remains a
 separate verification gate.
+
+
+## Beta 96: compact social header and persistent creator avatars
+
+Both feed and full-screen media expose one Like action. Its displayed count sums
+all four upstream reaction totals (Like, Heart, Laugh, Cry), but filled state is
+specifically the user's Like. Taps enqueue only a Like desired-state mutation;
+existing other reactions are not silently rewritten. Server schemas and pending
+legacy reaction jobs remain compatible. Feed discovery attribution now precedes
+the action controls without an inline follow button. Following remains available
+on the creator feed. The full-screen creator/provenance group stays left, with
+Like and collection on the right, wrapping left on narrow screens.
+
+Creator avatars use a separate `comfybridge-avatars-v1` CacheStorage namespace
+bounded to 300 files, plus bounded creator metadata and in-memory object URLs.
+Keys include paired-server scope and Civitai account and creator ID; multiple
+posts reuse a creator image. Avatar metadata is learned from existing media and
+viewer details, without a new per-post profile API call. Creator-feed headings
+use that cache before the name, including after app reload and when the next
+feed payload omits an avatar URL. Feed warming fetches known avatars after its
+media transfers in the existing bounded background lane; visible avatars share
+in-flight work. Failed image fetches back off for a minute. Generic media-cache
+trimming does not touch avatar files. Initials remain when no valid image is
+known. Avatar requests are bridge media/CDN transfers, not new Civitai API reads.
+
+`tests/social-header.cjs` validates aggregate count, Like-only persisted intent,
+outline/filled styling, provenance order, wide/narrow action alignment, creator
+heading placement, one shared avatar fetch, restart reuse and the 300-file cap.
+Existing browse, discovery and durable-social tests use the single Like control.

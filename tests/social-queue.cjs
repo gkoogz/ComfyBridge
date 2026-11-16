@@ -25,7 +25,7 @@ const assert=require('node:assert/strict'),path=require('node:path');
    if(route==='browse/seen')return {account:'1',seen:[]};return {};
   };navigate('browse');
  });await p.waitForSelector('.feedReactions');}
- await boot();const heart=p.locator('.feedReactions [data-feed-react=Heart]').first();
+ await boot();const heart=p.locator('.feedReactions [data-feed-react=Like]').first();
  await heart.click();assert.equal(await heart.getAttribute('aria-pressed'),'true');assert.equal(server.size,0);
  await heart.click();assert.equal(await heart.getAttribute('aria-pressed'),'false');await heart.click();
  const local=await p.evaluate(()=>Object.entries(localStorage).find(([k])=>k.endsWith(':social:1')&&!k.startsWith('native:'))?.[1]);
