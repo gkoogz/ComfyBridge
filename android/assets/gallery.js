@@ -328,7 +328,7 @@ document.addEventListener('pointerdown',e=>{
  const noteSwipe=note&&e.pointerType!=='mouse'&&note.selectionStart===note.selectionEnd;
  if(!e.isPrimary||e.button!==0||viewerClosing||(!noteSwipe&&e.target.closest('input,textarea,select,canvas,.loraSlider,.browseCarousel,.civitaiViewer,#carousel,#latestPanel .foldSummary,#chatGrab,[contenteditable]')))return;
  if(e.target.closest('.chatWords')&&window.getSelection()?.type==='Range')return;
- const type=$('#modal').open?'modal':viewerOpen()?'viewer':$('#drawer').classList.contains('open')?'closeDrawer':page==='library'&&archived?'archive':'drawer';
+ const type=$('#modal').open?'modal':viewerOpen()?'viewer':$('#drawer').classList.contains('open')?'closeDrawer':page==='library'&&archived?'archive':page==='browse'&&typeof CivitaiBrowser!=='undefined'&&CivitaiBrowser.canSwipeBack()?'browseBack':'drawer';
  if(type)drag={id:e.pointerId,type,x:e.clientX,y:e.clientY,t:performance.now(),dx:0,active:false,note:noteSwipe?note:null,queue:e.target.closest('.historyCard')};
 });
 document.addEventListener('pointermove',e=>{
@@ -340,14 +340,16 @@ document.addEventListener('pointermove',e=>{
   if(Math.abs(dx)<8&&Math.abs(dy)<8)return;
   if(dx<0||Math.abs(dy)>Math.abs(dx)*1.2){drag=null;return;}
   if(dx<Math.abs(dy)*1.2)return;
+  if(d.type==='browseBack'&&!CivitaiBrowser.beginSwipeBack()){drag=null;return;}
   d.active=true;document.body.classList.add('dragging');
   // After horizontal intent is clear, keep receiving the gesture as the
   // drawer covers the row. Ordinary taps and vertical scrolling stay native.
-  if(d.queue||d.note)$('#workspace').setPointerCapture(e.pointerId);
+  if(d.queue||d.note||d.type==='browseBack')$('#workspace').setPointerCapture(e.pointerId);
   if(d.note)d.note.blur();
   if(d.type==='viewer')$('#viewer').setPointerCapture(e.pointerId);
  }
  d.dx=Math.max(0,Math.min(dx,innerWidth));if(d.type==='viewer'){$('#viewer').style.transform='';$('#workspace').style.transform='translateX('+(-1+d.dx/innerWidth)*100+'%)';}
+ if(d.type==='browseBack')CivitaiBrowser.moveSwipeBack(d.dx);
  if(d.type==='drawer'||closingDrawer){
   const panel=$('#drawer'),width=panel.offsetWidth,travel=Math.min(width,d.dx);
   const visible=closingDrawer?width-travel:travel;
@@ -367,6 +369,7 @@ function endDrag(e){
   drawer(d.type==='closeDrawer'?!commit:commit);
  }
  else if(d.type==='viewer'){if(commit)closeViewer();else{$('#viewer').style.transform='';$('#workspace').style.transform='';}}
+ else if(d.type==='browseBack')CivitaiBrowser.endSwipeBack(commit);
  else if(commit)bridgeBack();
 }
 document.addEventListener('pointerup',endDrag);document.addEventListener('pointercancel',endDrag);

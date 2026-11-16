@@ -49,7 +49,7 @@ const assert=require('node:assert/strict'),path=require('node:path');
  assert(await tag(12).evaluate(el=>el.classList.contains('chosenSource')&&!el.classList.contains('selectedTag')));
  await tag(12).locator('.tagSearch').click();await tag(13).locator('.tagSearch').click();
  assert.equal(await p.locator('.selectedTag').count(),2);
- const searchBox=await p.locator('.tagSearchSubmit').boundingBox();assert(searchBox.x<20&&searchBox.y>800&&searchBox.y+searchBox.height<=900);
+ const searchBox=await p.locator('.tagSearchSubmit').boundingBox();assert(Math.abs(searchBox.x+searchBox.width-(width-12))<2&&searchBox.y>800&&searchBox.y+searchBox.height<=900);
  const priorScroll=await p.locator('#workspace').evaluate(el=>el.scrollTop);
  if(process.env.BROWSE_SHOTS)await p.screenshot({path:path.join(process.env.BROWSE_SHOTS,'tag-selection-'+width+'.png')});
  await p.locator('.tagSearchSubmit').click();await p.waitForSelector('.subjectFilters');

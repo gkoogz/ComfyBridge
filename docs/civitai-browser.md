@@ -346,3 +346,9 @@ results; a failed refresh cannot silently present the stale list as fresh.
 Regression coverage includes restart/account isolation, old-session migration,
 recent-offer versus permanent-view exclusions, offline outbox persistence,
 decoded replacement, viewport stability and cancellation when a tile approaches.
+
+## Beta 86: Browse history swipe
+
+The shared navigation gesture checks Browse history before choosing the drawer. Once horizontal intent is established, an inert overlay holds the actual retained previous screen nodes at their saved scroll position and tracks the finger from the left over the stationary current feed. Commit restores those same nodes through Browse back; a short or cancelled gesture removes the overlay without changing history. Nested creator/tag/preference screens return one level at a time. Vertical scrolling and editable fields retain ownership. Full-screen Civitai media is excluded and keeps its existing gestures. Root For You continues to open the drawer. Search by tag is anchored at bottom right.
+
+The CDP touch regression covers partial progress, commit, cancellation, vertical scrolling, nested history with retained search input, root drawer behavior and full-screen exclusion.

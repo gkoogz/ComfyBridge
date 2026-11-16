@@ -3,6 +3,26 @@
 const CivitaiBrowser=(()=>{
  let account='',status=null,feed=[],strip=[],cursor='',stripCursor='',channel='',busy=false,stripBusy=false,session=0,timer,observer,viewer=null,lastStatus=0;
  let view={kind:'mix'}, history=[], feedEnded=false, collectionPopup=null;
+ let backLayer=null;
+ function clearBackLayer(){if(backLayer){const layer=backLayer;backLayer=null;layer.animation?.cancel();layer.el.remove();}}
+ function canSwipeBack(){return !viewer&&!collectionPopup&&!backLayer&&history.length>0;}
+ function beginSwipeBack(){
+  if(!canSwipeBack())return false;
+  const work=$('#workspace'),saved=history.at(-1),rect=work.getBoundingClientRect();
+  const el=document.createElement('section');el.className='browseBackLayer';el.setAttribute('aria-hidden','true');el.inert=true;
+  Object.assign(el.style,{left:rect.left+'px',top:rect.top+'px',width:rect.width+'px',height:rect.height+'px'});
+  const head=$('header',work).cloneNode(true);$$('[id]',head).forEach(n=>n.removeAttribute('id'));
+  const main=document.createElement('main');main.append(...saved.nodes);el.append(head,main);document.body.append(el);el.scrollTop=saved.scroll;
+  backLayer={el,saved,ticket:session,width:rect.width};moveSwipeBack(0);return true;
+ }
+ function moveSwipeBack(dx){if(backLayer)backLayer.el.style.transform='translateX('+(-backLayer.width+Math.min(dx,backLayer.width))+'px)';}
+ function endSwipeBack(commit){
+  const layer=backLayer;if(!layer)return;
+  const finish=()=>{if(backLayer!==layer)return;clearBackLayer();if(commit&&session===layer.ticket&&history.at(-1)===layer.saved)back();};
+  if(matchMedia('(prefers-reduced-motion: reduce)').matches){finish();return;}
+  layer.animation=layer.el.animate([{transform:layer.el.style.transform},{transform:commit?'translateX(0)':'translateX(-100%)'}],{duration:180,easing:'ease-out',fill:'forwards'});
+  layer.animation.onfinish=finish;
+ }
  let muted={},refreshing=false,warmTimer,bottomTimer,detailQueue=[],detailRunning=false,cacheScope='',stripResume=false,emptyPages=0,suppressTap=0;
  const details=new Map(),detailRequests=new Map(),imageRequests=new Map();
  const socialRevisions=new Map();let followRevision=0,banRevision=0;
@@ -353,6 +373,7 @@ const CivitaiBrowser=(()=>{
 
  }
  async function render(){
+  clearBackLayer();
   const stale=activityAge()>=7200000;markActivity();
   if(suspended&&!stale&&suspended.scope===scope()){
    const saved=suspended;suspended=null;$('#main').replaceChildren(...saved.nodes);
@@ -390,6 +411,7 @@ const CivitaiBrowser=(()=>{
   schedule();
  },15000);}
  function suspend(){
+  clearBackLayer();
   close();collectionPopup?.remove();collectionPopup=null;
   if(!$('.civitaiBrowse'))return;
   suspended={scope:scope(),scroll:$('#workspace').scrollTop,nodes:[...$('#main').childNodes]};
@@ -450,6 +472,7 @@ const CivitaiBrowser=(()=>{
   session++;busy=false;stripBusy=false;
  }
  function back(){
+  clearBackLayer();
   if(collectionPopup){collectionPopup.remove();collectionPopup=null;return true;}
   if(!history.length)return false;
   observer?.disconnect();session++;busy=false;stripBusy=false;
@@ -888,5 +911,5 @@ const CivitaiBrowser=(()=>{
  document.addEventListener('keydown',e=>{if(e.key==='Escape'){if(viewer){e.preventDefault();close();}else if(page==='browse'&&back())e.preventDefault();}});
  document.addEventListener('visibilitychange',()=>{if(page==='browse'&&!document.hidden){if(activityAge()>=7200000){render();return;}if(available()){refreshStatus(true).catch(()=>{});warm();}}});
  document.addEventListener('pointerdown',activity,{passive:true});document.addEventListener('keydown',activity,{passive:true});document.addEventListener('wheel',activity,{passive:true});document.addEventListener('touchmove',activity,{passive:true});
- return {render,suspend,open,close,back,isOpen:()=>!!viewer,enrich,peek,resourcesHTML,wireResources,promptHTML,wirePromptCopies};
+ return {render,suspend,open,close,back,canSwipeBack,beginSwipeBack,moveSwipeBack,endSwipeBack,isOpen:()=>!!viewer,enrich,peek,resourcesHTML,wireResources,promptHTML,wirePromptCopies};
 })();

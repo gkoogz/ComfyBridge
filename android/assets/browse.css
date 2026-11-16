@@ -177,7 +177,9 @@ body[data-page=browse] #workspace{overscroll-behavior-y:contain}
 .civitaiTag.chosenSource .personalTagWeight{color:#ffdb73}
 .civitaiTag.selectedTag{color:var(--mint);border-color:var(--mint);background:#1d3b31}
 .civitaiTag.selectedTag .personalTagWeight{color:var(--mint)}
-.tagSearchSubmit{position:fixed;left:12px;bottom:calc(12px + env(safe-area-inset-bottom,0px));z-index:210;background:var(--mint);color:#10231d;border:1px solid var(--mint);border-radius:12px;min-height:44px;padding:10px 16px;box-shadow:0 3px 18px #0007;font-weight:650}
+.tagSearchSubmit{position:fixed;right:12px;bottom:calc(12px + env(safe-area-inset-bottom,0px));z-index:210;background:var(--mint);color:#10231d;border:1px solid var(--mint);border-radius:12px;min-height:44px;padding:10px 16px;box-shadow:0 3px 18px #0007;font-weight:650}
 .civitaiTagHost.hasTagSelection{padding-bottom:60px}
 .weightSearchBox{padding:0 8px 8px}
 #weightSearch{width:100%;min-height:40px;padding:9px 12px;font-size:14px}
+
+.browseBackLayer{position:fixed;z-index:35;overflow:hidden;background:var(--bg);pointer-events:none;box-shadow:8px 0 24px #0005;will-change:transform;overflow-anchor:none}
