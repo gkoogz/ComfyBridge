@@ -38,6 +38,8 @@ class API:
         if route=='collection.getUserCollectionItemsByItem':return self.members
         if route=='collection.saveItem':self.members=[{'collectionId':x['collectionId']} for x in value['collections']];return {}
         if route=='image.getResources':return [{'modelVersionId':20,'modelId':30,'modelName':'Ceramics','modelType':'LORA'}]
+        if route=='image.getGenerationData':return {'meta':{'prompt':'A ceramic vase.'},'resources':[{'modelVersionId':20,'modelId':30,'modelName':'Ceramics','modelType':'LORA'}]}
+        if route=='user.getCreator':return {'profilePicture':{'url':'06c1e11a-6a5b-465c-b014-2e22104488f6'}}
         if route=='tag.getVotableTags':return [{'id':12,'name':'ceramics','vote':1}]
         if route in ('tag.addTagVotes','collection.upsert'):return {}
         if route=='image.getInfinite':
@@ -64,6 +66,35 @@ class BrowseTests(unittest.TestCase):
     def test_normalization_and_resources(self):
         x=self.b.detail(1)['item'];self.assertEqual(x['prompt'],'A ceramic vase.');self.assertEqual(x['resources'][0]['name'],'Ceramics')
         self.assertNotIn('_urls',x);self.assertTrue(x['following']);self.assertIn('/1/1/',x['path'])
+    def test_generation_endpoint_fills_missing_feed_metadata_and_all_resources(self):
+        original=self.b.transport
+        def request(token,route,value,write,rest):
+            if route=='image.getInfinite':
+                raw=image(value.get('imageId',1));raw['meta']=None;raw['user']['image']=None
+                return {'items':[raw]}
+            if route=='image.getGenerationData':return {'meta':{'prompt':'A blue ceramic vase.','negativePrompt':'blurry','seed':42},'resources':[
+                {'modelVersionId':i,'modelId':i+100,'modelName':'Resource '+str(i),'modelType':'LORA','versionName':'v1','strength':0.4} for i in range(1,10)]}
+            return original(token,route,value,write,rest)
+        self.b.transport=request
+        item=self.b.detail(1)['item']
+        self.assertEqual(item['prompt'],'A blue ceramic vase.');self.assertEqual(item['negativePrompt'],'blurry')
+        self.assertEqual(len(item['resources']),9);self.assertEqual(item['resources'][0]['weight'],0.4)
+        self.assertEqual(item['detailVersion'],2);self.assertTrue(item['avatarPath'])
+        self.b.images('1','account-a',{},meta=False)
+        saved=self.b.stored('1',1)
+        self.assertEqual(saved['prompt'],item['prompt']);self.assertEqual(len(saved['resources']),9)
+        self.b.detail(1)
+        self.assertEqual(sum(r=='user.getCreator' for r,_,_ in self.api.calls),1)
+    def test_generation_failure_is_retryable_and_keeps_cached_prompt(self):
+        self.b.detail(1)
+        original=self.b.transport
+        def request(token,route,value,write,rest):
+            if route=='image.getGenerationData':raise ValueError('Temporary failure')
+            return original(token,route,value,write,rest)
+        self.b.transport=request
+        item=self.b.detail(1)['item']
+        self.assertFalse(item['generationDataAvailable']);self.assertEqual(item['detailVersion'],0)
+        self.assertEqual(item['prompt'],'A ceramic vase.')
     def test_only_owned_media_collections_and_bookmark(self):
         cs=self.b.collections('1','account-a');self.assertEqual(len(cs),1);self.assertTrue(cs[0]['bookmark'])
     def test_observations_are_idempotent_and_removal_reverses(self):

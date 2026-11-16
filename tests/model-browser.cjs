@@ -27,7 +27,7 @@ const assert=require('node:assert/strict'),path=require('node:path');
   await p.locator('[data-model-use]').nth(1).check();
   assert.equal(await p.evaluate(()=>state.settings.image.model),'raw-b.safetensors');assert.equal(await p.locator('[data-model-use]:checked').count(),1);
   await p.locator('#modelSearch').fill('Watercolor');assert.equal(await p.locator('.modelCard').count(),1);
-  await p.locator('[data-model-source]').click();assert.equal(await p.evaluate(()=>opened),'https://civitai.com/models/123');
+  await p.locator('[data-model-source]').click();assert.equal(await p.evaluate(()=>opened),'https://civitai.red/models/123');
   await p.locator('[data-model-keywords]').click();assert.equal(await p.evaluate(()=>copied),'ceramic glaze');
   if(process.env.MODEL_SHOT)await p.screenshot({path:process.env.MODEL_SHOT});
   assert(await p.evaluate(()=>document.querySelector('#modalBody').scrollWidth<=document.querySelector('#modalBody').clientWidth));

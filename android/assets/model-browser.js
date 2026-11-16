@@ -185,7 +185,7 @@ function stopModelBrowser(){
  $('#modelPreviewViewer')?.remove();$('#modal')?.classList.remove('modelBrowserDialog','modelPreviewOpen');modelBrowser=null;ModelPreviews.wake();
 }
 function openModelSource(url){
- try{const u=new URL(url);if(u.protocol!=='https:'||!['civitai.com','civitai.red','huggingface.co'].includes(u.hostname)||u.username||u.password||u.port)return;}catch{return;}
+ try{const u=new URL(url);if(u.protocol!=='https:'||!['civitai.com','civitai.red','huggingface.co'].includes(u.hostname)||u.username||u.password||u.port)return;if(u.hostname==='civitai.com')u.hostname='civitai.red';url=u.href;}catch{return;}
  if(window.Native?.openListing)Promise.resolve(Native.openListing(url)).catch(e=>toast(e.message));else window.open(url,'_blank','noopener,noreferrer');
 }
 function modelSampleGallery(view,item){

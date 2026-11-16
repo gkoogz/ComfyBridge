@@ -144,7 +144,7 @@ class Browser:
             raise ValueError('Civitai account changed. Refresh Browse before continuing.')
 
     def user_url(self, name):
-        return 'https://civitai.com/user/' + urllib.parse.quote(str(name), safe='')
+        return 'https://civitai.red/user/' + urllib.parse.quote(str(name), safe='')
 
     def remember(self, account, raw):
         image_id = str(ident(raw['id']))
@@ -160,7 +160,7 @@ class Browser:
             if kind=='video' and re.fullmatch(r'[a-fA-F0-9-]{36}',str(raw.get('url',''))):
                 thumb=CDN+raw['url']+'/anim=false,transcode=true,optimized=true/'+raw['url']+'.jpeg'
                 original=CDN+raw['url']+'/original=true/'+raw['url']+'.mp4'
-        avatar = user.get('image') or user.get('avatarUrl')
+        avatar = user.get('profilePicture') or user.get('image') or user.get('avatarUrl')
         if isinstance(avatar, dict): avatar = avatar.get('url')
         reactions = raw.get('reactions') or []
         reactions = [r.get('reaction') if isinstance(r, dict) else r for r in reactions]
@@ -178,10 +178,20 @@ class Browser:
                     prompt=str(meta.get('prompt') or ''), negativePrompt=str(meta.get('negativePrompt') or ''),
                     created=str(raw.get('createdAt') or ''), credit=str(user.get('username') or raw.get('username') or ''),
                     creatorId=str(user.get('id') or ''), path=prefix+'thumb', fullPath=prefix+'full', avatarPath=prefix+'avatar' if cdn(avatar) else '',
-                    imageUrl='https://civitai.com/images/'+image_id, resources=resources, tags=tags, reactions=reactions,
+                    imageUrl='https://civitai.red/images/'+image_id, resources=resources, tags=tags, reactions=reactions,
                     stats=raw.get('stats') or {}, parameters={k:meta[k] for k in ('seed','steps','cfgScale','sampler','Size','Model','Clip skip') if k in meta},
                     _urls=dict(thumb=thumb, full=original, avatar=cdn(avatar, 'width=96')))
         with self.db() as db:
+            # Feed/import responses are deliberately lighter than generation data.
+            # Never let them erase details already fetched for this account.
+            db.execute('BEGIN IMMEDIATE')
+            row=db.execute('SELECT payload FROM media WHERE account=? AND id=?',(account,image_id)).fetchone()
+            previous=json.loads(row[0]) if row else {}
+            if previous.get('detailVersion')==2:
+                for key in ('prompt','negativePrompt','resources','parameters','detailVersion','generationDataAvailable'):
+                    item[key]=previous[key]
+            if not item['avatarPath'] and previous.get('avatarPath'):
+                item['avatarPath']=previous['avatarPath'];item['_urls']['avatar']=previous['_urls']['avatar']
             db.execute('INSERT OR REPLACE INTO media VALUES(?,?,?,?)', (account, image_id, json.dumps(item), time.time()))
         return item
 
@@ -455,10 +465,41 @@ class Browser:
         items,_=self.images(account,token,{'imageId':int(image_id)},1)
         if not items:raise ValueError('This media is no longer available to your account.')
         item=items[0]
-        raw=self.call(token,'image.getResources',{'id':int(image_id)})
-        strengths={r['versionId']:r.get('weight','') for r in item['resources']}
-        item['resources']=[dict(versionId=str(r.get('modelVersionId') or ''),modelId=str(r.get('modelId') or ''),
-            name=str(r.get('modelName') or r.get('name') or 'Resource'),version=str(r.get('modelVersionName') or ''),type=str(r.get('modelType') or 'Resource'),weight=strengths.get(str(r.get('modelVersionId') or ''),'')) for r in raw]
+        # This is the same endpoint used by the website's Generation data panel.
+        # withMeta on getInfinite is not a promise of full metadata.
+        try:
+            generation=self.call(token,'image.getGenerationData',{'id':int(image_id)})
+            meta=generation.get('meta') or {}
+            item['prompt']=str(meta.get('prompt') or '')
+            item['negativePrompt']=str(meta.get('negativePrompt') or '')
+            item['parameters']={k:meta[k] for k in ('seed','steps','cfgScale','sampler','Size','Model','clipSkip','Clip skip','denoise') if k in meta}
+            raw=generation.get('resources') or []
+            item['resources']=[dict(versionId=str(r.get('modelVersionId') or r.get('versionId') or ''),modelId=str(r.get('modelId') or ''),
+                name=str(r.get('modelName') or r.get('name') or 'Resource'),version=str(r.get('versionName') or r.get('modelVersionName') or ''),
+                type=str(r.get('modelType') or r.get('type') or 'Resource'),weight=r.get('strength',r.get('weight',''))) for r in raw]
+            item['generationDataAvailable']=True;item['detailVersion']=2
+        except ValueError:
+            # Keep useful cached content; do not mislabel a temporary lookup failure
+            # as an uploader withholding the prompt. Clients may retry this detail.
+            item['generationDataAvailable']=False;item['detailVersion']=0
+        if not item.get('avatarPath') and item.get('creatorId'):
+            key='creator-avatar:'+item['creatorId'];cached=self.setting(account,key,{})
+            if cached.get('expires',0)<time.time():
+                try:
+                    creator=self.call(token,'user.getCreator',{'id':int(item['creatorId'])})
+                    avatar=creator.get('profilePicture') or creator.get('image') or creator.get('avatarUrl')
+                    if isinstance(avatar,dict):avatar=avatar.get('url')
+                    cached=dict(url=cdn(avatar,'width=96'),expires=time.time()+86400)
+                except ValueError:cached=dict(url=cached.get('url',''),expires=time.time()+600)
+                self.save(account,key,cached)
+            if cached.get('url'):
+                item['_urls']['avatar']=cached['url']
+                item['avatarPath']='model-preview/browse/'+account+'/'+image_id+'/avatar'
+        item['avatarResolved']=True
+        if not item['generationDataAvailable'] and not item['resources']:
+            raw=self.call(token,'image.getResources',{'id':int(image_id)})
+            item['resources']=[dict(versionId=str(r.get('modelVersionId') or ''),modelId=str(r.get('modelId') or ''),
+                name=str(r.get('modelName') or 'Resource'),version=str(r.get('modelVersionName') or ''),type=str(r.get('modelType') or 'Resource'),weight='') for r in raw]
         follows=self.call(token,'user.getFollowingUsers')
         follows=[str(x.get('id') if isinstance(x,dict) else x) for x in follows]
         self.save(account,'follows',follows)

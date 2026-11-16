@@ -203,3 +203,31 @@ renewal, legacy expiry retry, one-hour UI preservation and two-hour UI reset,
 follow/profile controls, bookmark fill and zero-to-one reactions. Native Windows
 smoke checks verify the website return bar and isolation without visiting a live
 profile. No physical Android phone is connected for touch/profile validation.
+
+
+## Beta 81 full metadata and external browser
+
+The feed's `withMeta` option can still return `meta: null`. Detail prefetch now
+calls `image.getGenerationData`, the website Generation data source, for both
+prompts, parameters and the complete resource list/strengths. The narrower
+`image.getResources` endpoint is only a fallback when generation-data fetching
+fails. Account-scoped full metadata survives subsequent lightweight feed/import
+writes. Detail format 2 invalidates old incomplete device records without
+throwing away cached images. Failed lookups keep existing text, show unavailable
+rather than claiming the uploader withheld it, and retry after a bounded cooldown.
+
+Missing avatar URLs are resolved with `user.getCreator` and cached per account
+and creator for a day (ten minutes after a failed request). API credentials stay
+on the PC; avatar downloads retain the existing trusted CDN restrictions.
+
+The Browse viewer starts with real creator and reaction rows exposed. Scrolling
+toward the top stows them and moves X out of view; tapping media reveals X again.
+Video controls have a 44-pixel scrollable gutter. Feed opens the creator-only
+page with retained back navigation; the adjacent arrow opens their web profile.
+Follow/Following is to the right of the artist feed title.
+
+Civitai links normalize to civitai.red at the shared/native launch boundary,
+including cached .com links. Windows uses its default browser through ShellExecute;
+Android resolves the default HTTPS browser. The former isolated profile WebViews
+and their separate login state are removed. OS Back/app switching returns to
+ComfyBridge; the external browser does not have a ComfyBridge-owned top bar.

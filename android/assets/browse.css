@@ -138,3 +138,13 @@ body[data-page=browse] #workspace{overscroll-behavior-y:contain}
 .subjectHeading h2{min-width:0}
 .subjectHeading .subjectFilters{gap:0}
 .feedReactions small:empty,.civitaiReactions small:empty{display:none}
+/* The real social rows peek into the viewport, then scroll with the details. */
+.civitaiViewer .modelPreviewHero{height:calc(100dvh - var(--status-inset,0px));display:block}
+.civitaiViewer .modelPreviewHero img,.civitaiViewer .modelPreviewHero video{display:block;width:100%;object-fit:contain}
+.civitaiViewer .modelPreviewHero.isVideo{touch-action:pan-y pinch-zoom}
+.civitaiViewerHead{transition:transform .18s ease,opacity .18s ease}
+.civitaiViewer.mediaOnly .civitaiViewerHead{transform:translateY(-80px);opacity:0;pointer-events:none}
+.civitaiAuthor .creatorName{margin-right:auto;flex:0 1 auto;min-width:0;overflow-wrap:anywhere}
+.civitaiAuthor .creatorFeed,.civitaiAuthor .creatorProfile{flex:none;min-height:36px;height:36px;padding:5px 9px;font-size:13px}
+.civitaiAuthor .creatorProfile{width:36px;font-size:20px;padding:0;display:grid;place-items:center}
+.civitaiAuthor img,.avatarPlaceholder{flex:none}

@@ -42,14 +42,16 @@ const assert=require('node:assert/strict'),path=require('node:path');
   assert(await p.locator('.modelPreviewPrompt').first().textContent().then(t=>t.includes('<script>')));assert.equal(await p.evaluate(()=>window.bad),undefined);
   await p.locator('[data-copy-prompt="prompt"]').click();assert.match(await p.evaluate(()=>copied),/ceramic bowl/);
   assert.match(await p.locator('.modelPreviewResources').textContent(),/Pottery glaze.*0.6/s);
-  await p.locator('[data-image-source]').click();assert.equal(await p.evaluate(()=>opened),'https://civitai.com/images/1');
-  await p.locator('[data-listing-source]').click();assert.equal(await p.evaluate(()=>opened),'https://civitai.com/models/8');
+  await p.locator('[data-image-source]').click();assert.equal(await p.evaluate(()=>opened),'https://civitai.red/images/1');
+  await p.locator('[data-listing-source]').click();assert.equal(await p.evaluate(()=>opened),'https://civitai.red/models/8');
   await p.locator('#modalClose').click();assert.equal(await p.locator('#modelPreviewViewer').count(),0);assert(await p.locator('#modal').evaluate(x=>x.open));
   await strip.evaluate(x=>x.scrollLeft=x.scrollWidth);
   await p.waitForFunction(()=>galleryRequests.some(x=>x.includes('cursor=second')));
   await p.waitForFunction(()=>document.querySelectorAll('.modelSample').length===3);
   assert.equal(await p.locator('[data-sample-more]').count(),0);assert.match(await p.locator('.modelSampleCaption').textContent(),/End of available/);
   // Returning from the full image leaves the same live carousel and scroll position.
+  await p.locator('.modelSample').last().scrollIntoViewIfNeeded();
+  await p.waitForTimeout(120);
   const before=await strip.evaluate(x=>x.scrollLeft);
   await p.locator('.modelSample').last().click();await p.waitForSelector('#modelPreviewViewer');
   await p.keyboard.press('Escape');assert.equal(await p.locator('#modelPreviewViewer').count(),0);

@@ -163,12 +163,17 @@ public class MainActivity extends Activity {
  String exportOperation="export";
  public class NativeApi {
   @JavascriptInterface public void openProfile(String value){
-   if(!ProfileActivity.validProfile(value))return;
-   runOnUiThread(()->startActivity(new Intent(MainActivity.this,ProfileActivity.class).putExtra("url",value)));
+   openListing(value);
   }
   @JavascriptInterface public void openListing(String value){
    Uri uri=Uri.parse(value);if(!"https".equals(uri.getScheme())||!Arrays.asList("civitai.com","civitai.red","huggingface.co").contains(uri.getHost())||uri.getUserInfo()!=null||uri.getPort()!=-1)return;
-   runOnUiThread(()->{try{startActivity(new Intent(Intent.ACTION_VIEW,uri));}catch(Exception ignored){}});
+   final Uri target="civitai.com".equals(uri.getHost())?uri.buildUpon().authority("civitai.red").build():uri;
+   runOnUiThread(()->{try{
+    Intent intent=new Intent(Intent.ACTION_VIEW,target).addCategory(Intent.CATEGORY_BROWSABLE);
+    android.content.pm.ResolveInfo browser=getPackageManager().resolveActivity(new Intent(Intent.ACTION_VIEW,Uri.parse("https://example.com")).addCategory(Intent.CATEGORY_BROWSABLE),android.content.pm.PackageManager.MATCH_DEFAULT_ONLY);
+    if(browser!=null&&browser.activityInfo!=null&&!"android".equals(browser.activityInfo.packageName))intent.setPackage(browser.activityInfo.packageName);
+    startActivity(intent);
+   }catch(Exception ignored){Toast.makeText(MainActivity.this,"Could not open your browser",Toast.LENGTH_SHORT).show();}});
   }
   @JavascriptInterface public void copyText(String text){if(text==null||text.length()>1000000)return;runOnUiThread(()->{android.content.ClipboardManager clipboard=(android.content.ClipboardManager)getSystemService(CLIPBOARD_SERVICE);clipboard.setPrimaryClip(android.content.ClipData.newPlainText("ComfyBridge response",text));});}
   @JavascriptInterface public void prefetchEnabled(boolean enabled){

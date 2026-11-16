@@ -6,7 +6,7 @@ const CivitaiBrowser=(()=>{
  let muted={},refreshing=false,warmTimer,bottomTimer,detailQueue=[],detailRunning=false,cacheScope='',stripResume=false,emptyPages=0,suppressTap=0;
  const details=new Map(),detailRequests=new Map(),imageRequests=new Map();
  const socialRevisions=new Map();let followRevision=0;
- let lastActivity=0,lastActivitySaved=0,suspended=null;
+ let lastActivity=0,lastActivitySaved=0,suspended=null,pendingCreator=null;
  const emoji={Like:'👍',Heart:'❤️',Laugh:'😂',Cry:'😢'};
  const path=p=>'/'+String(p||'').replace(/^\//,'');
  const button=(label,attrs='')=>'<button '+attrs+'>'+label+'</button>';
@@ -25,7 +25,7 @@ const CivitaiBrowser=(()=>{
     const item=el.browseItem;
     $('.feedFollowing',el).hidden=!following(item);
     $('.feedCollect',el).classList.toggle('bookmarked',membershipIds(item.collections).length>0);
-    $$('[data-feed-react]',el).forEach(b=>{b.innerHTML=reactionLabel(item,b.dataset.feedReact);b.setAttribute('aria-pressed',String(item.reactions.includes(b.dataset.feedReact)));});
+    $$('[data-feed-react]',el).forEach(b=>{b.innerHTML=reactionLabel(item,b.dataset.feedReact);b.setAttribute('aria-pressed',String((item.reactions||[]).includes(b.dataset.feedReact)));});
    });
    $$('[data-follow-creator]',root).forEach(b=>{
     const selected=following({creatorId:b.dataset.followCreator});b.classList.toggle('selected',selected);b.textContent=selected?'Following ✓':'Follow';b.setAttribute('aria-pressed',String(selected));
@@ -34,7 +34,7 @@ const CivitaiBrowser=(()=>{
   if(viewer){
    const host=viewer.el,item=viewer.item;
    $('.viewerCollect',host)?.classList.toggle('bookmarked',membershipIds(item.collections).length>0);
-   $$('[data-civi-react]',host).forEach(b=>{b.innerHTML=reactionLabel(item,b.dataset.civiReact);b.setAttribute('aria-pressed',String(item.reactions.includes(b.dataset.civiReact)));b.classList.toggle('selected',item.reactions.includes(b.dataset.civiReact));});
+   $$('[data-civi-react]',host).forEach(b=>{b.innerHTML=reactionLabel(item,b.dataset.civiReact);b.setAttribute('aria-pressed',String((item.reactions||[]).includes(b.dataset.civiReact)));b.classList.toggle('selected',(item.reactions||[]).includes(b.dataset.civiReact));});
   }
  }
  function updateItemSocial(item,values){
@@ -43,7 +43,7 @@ const CivitaiBrowser=(()=>{
  }
  function applyReaction(item,reactions){
   const stats={...item.stats};for(const key of Object.keys(emoji)){
-   stats[key.toLowerCase()+'CountAllTime']=Math.max(0,reactionCount(item,key)+Number(reactions.includes(key))-Number(item.reactions.includes(key)));
+   stats[key.toLowerCase()+'CountAllTime']=Math.max(0,reactionCount(item,key)+Number(reactions.includes(key))-Number((item.reactions||[]).includes(key)));
   }
   updateItemSocial(item,{stats,reactions});
  }
@@ -58,7 +58,7 @@ const CivitaiBrowser=(()=>{
   catch(error){toast(error.message);}finally{b.disabled=false;}
  }
  function profile(name){
-  const url='https://civitai.com/user/'+encodeURIComponent(name);
+  const url='https://civitai.red/user/'+encodeURIComponent(name);
   if(window.Native?.openProfile)Promise.resolve(Native.openProfile(url)).catch(e=>toast(e.message));else openModelSource(url);
  }
  function activityAge(){
@@ -84,7 +84,7 @@ const CivitaiBrowser=(()=>{
  function promptHTML(item){
   return '<div class="civitaiPromptBlocks">'+[['prompt','Prompt'],['negativePrompt','Negative prompt']].map(([key,label])=>{
    if(key==='negativePrompt'&&!item[key])return '';
-   return '<h2>'+label+'</h2><p class="modelPreviewPrompt">'+esc(item[key]||'The uploader did not share a prompt.')+'</p>'+
+   return '<h2>'+label+'</h2><p class="modelPreviewPrompt">'+esc(item[key]||(item.generationDataAvailable?'No prompt is available in this media’s generation data.':'Prompt details unavailable. Reopen to retry.'))+'</p>'+
     (item[key]?button(copyIcon,'class="promptCopy" data-copy-prompt="'+key+'" aria-label="Copy '+label.toLowerCase()+'"'):'');
   }).join('')+'</div>';
  }
@@ -116,7 +116,7 @@ const CivitaiBrowser=(()=>{
   try{
    const data=JSON.parse(localStorage.getItem(key)||'null');if(!data?.account)return;
    account=data.account;status=data.status;channel=data.channel;strip=data.strip||[];stripResume=true;muted=data.muted||{};
-   feed=(data.feed||[]).filter(i=>!isMuted(i));for(const entry of data.details||[])details.set(...entry);
+   feed=(data.feed||[]).filter(i=>!isMuted(i));for(const entry of data.details||[])if(entry[1]?.result?.item?.detailVersion===2)details.set(...entry);
   }catch{/* A damaged snapshot is replaced after the next successful fetch. */}
  }
  function isMuted(item){return Object.entries(muted).some(([id,v])=>v.until*1000>Date.now()&&
@@ -156,7 +156,7 @@ const CivitaiBrowser=(()=>{
  function detailKey(id){return account+':'+id;}
  function fetchDetail(item,fresh=false){
   const key=detailKey(item.id),boundAccount=account,old=details.get(key),revision=socialRevisions.get(key)||0;
-  if(!fresh&&old)return Promise.resolve(old.result);
+  if(!fresh&&old&&(old.result.item.detailVersion===2||Date.now()-old.at<60000))return Promise.resolve(old.result);
   if(detailRequests.has(key))return detailRequests.get(key);
   const request=api('browse/detail/'+item.id).then(result=>{
    if(boundAccount&&result.account!==boundAccount)throw Error('Civitai account changed. Refresh Browse.');
@@ -172,7 +172,8 @@ const CivitaiBrowser=(()=>{
   detailRequests.set(key,request);return request;
  }
  function queueDetail(item,priority=false){
-  if(!item?.id||details.has(detailKey(item.id))||detailQueue.some(i=>i.id===item.id))return;
+  const old=details.get(detailKey(item?.id));
+  if(!item?.id||(old&&(old.result.item.detailVersion===2||Date.now()-old.at<60000))||detailQueue.some(i=>i.id===item.id))return;
   priority?detailQueue.unshift(item):detailQueue.push(item);detailQueue=detailQueue.slice(0,60);runDetails();
  }
  function backgroundAllowed(){return available()&&!syncing&&!filling&&!originalTransfers.size;}
@@ -272,7 +273,7 @@ const CivitaiBrowser=(()=>{
   if(suspended&&!stale&&suspended.scope===scope()){
    const saved=suspended;suspended=null;$('#main').replaceChildren(...saved.nodes);
    await Promise.resolve();$('#workspace').scrollTop=saved.scroll;
-   paintSocial();observeMore();schedule();warm();refreshStatus(true).catch(()=>{});return;
+   paintSocial();observeMore();schedule();warm();refreshStatus(true).catch(()=>{});openPendingCreator();return;
   }
   suspended=null;if(stale){cursor='';stripCursor='';detailQueue=[];cacheScope='';status=null;close();collectionPopup?.remove();collectionPopup=null;}
   view={kind:'mix'};history=[];feedEnded=false;busy=false;stripBusy=false;
@@ -296,7 +297,7 @@ const CivitaiBrowser=(()=>{
    if(!strip.length)loadStrip();if(!feed.length)loadFeed();
    if(stale){await refresh();$('#workspace').scrollTop=0;}else {observeMore();warm();if(stripResume)loadStrip();}
   }catch(e){if(ticket===session)$('#browseError').textContent=e.message;}
-  schedule();
+  schedule();openPendingCreator();
  }
  function schedule(){clearTimeout(timer);timer=setTimeout(async()=>{
   if(page!=='browse')return;
@@ -319,7 +320,7 @@ const CivitaiBrowser=(()=>{
    const caption=document.createElement('div');
    caption.className='browseCaption';
    caption.innerHTML=button(esc(item.credit||'Creator'),'class="feedAuthor"')+'<span class="feedFollowing" aria-label="Following" '+(following(item)?'':'hidden')+'>✓</span>'+button('<svg viewBox="0 0 24 24"><path d="M9 2h6M12 2v3m6 1 2 2M12 9v5l3 2"/><circle cx="12" cy="14" r="8"/></svg>','class="feedTimeout" aria-label="Silence creator for two hours"')+
-    '<div class="feedReactions">'+Object.entries(emoji).map(([key,value])=>button(reactionLabel(item,key),'data-feed-react="'+key+'" aria-label="'+key+'" aria-pressed="'+item.reactions.includes(key)+'"')).join('')+'</div>'+
+    '<div class="feedReactions">'+Object.entries(emoji).map(([key,value])=>button(reactionLabel(item,key),'data-feed-react="'+key+'" aria-label="'+key+'" aria-pressed="'+(item.reactions||[]).includes(key)+'"')).join('')+'</div>'+
     button('<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h12v18l-6-4-6 4z"/></svg>','class="feedCollect '+(membershipIds(item.collections).length?'bookmarked':'')+'" aria-label="Add to collection"');
    el.append(caption);
    $('.feedAuthor',caption).onclick=async()=>{
@@ -340,7 +341,7 @@ const CivitaiBrowser=(()=>{
     }catch(error){toast(error.message);}finally{b.disabled=false;}
    };
    $$('[data-feed-react]',caption).forEach(b=>b.onclick=async()=>{
-    const reaction=b.dataset.feedReact, selected=item.reactions.includes(reaction);
+    const reaction=b.dataset.feedReact, selected=(item.reactions||[]).includes(reaction);
     b.disabled=true;
     try{
      const result=await action({account:boundAccount,kind:'reaction',imageId:item.id,reaction,selected:!selected});
@@ -385,7 +386,7 @@ const CivitaiBrowser=(()=>{
   saveView();
   view={kind,id:String(id),name,filter:'all'};
   feed=[];cursor='';feedEnded=false;emptyPages=0;
-  $('#main').innerHTML='<section class="civitaiBrowse"><div class="subjectHeading">'+button('‹','class="browseBack" aria-label="Back"')+(kind==='creator'?button('Follow','class="creatorFollow" data-follow-creator="'+esc(id)+'"'):'')+'<h2>'+(kind==='creator'?button(esc(name),'class="profileName" aria-label="Open '+esc(name)+' profile"'):esc(name))+'</h2><div class="subjectFilters">'+
+  $('#main').innerHTML='<section class="civitaiBrowse"><div class="subjectHeading">'+button('‹','class="browseBack" aria-label="Back"')+'<h2>'+(kind==='creator'?button(esc(name),'class="profileName" aria-label="Open '+esc(name)+' profile"'):esc(name))+'</h2>'+(kind==='creator'?button('Follow','class="creatorFollow" data-follow-creator="'+esc(id)+'"'):'')+'<div class="subjectFilters">'+
    [['image','▧','Images'],['video','▷','Videos'],['all','▦','All media']].map(([value,icon,label])=>button(icon,'data-media-filter="'+value+'" aria-label="'+label+'" title="'+label+'" aria-pressed="'+(value==='all')+'"')).join('')+'</div></div><p id="browseError" class="warning" role="status"></p><div id="browseFeed" class="browseFeed"></div>'+button('Load more','id="browseMore"')+'</section>';
   $('.browseBack').onclick=back;
   if(kind==='creator'){$('.profileName').onclick=()=>profile(name);$('.creatorFollow').onclick=e=>changeFollow(e.currentTarget,id);paintSocial();}
@@ -547,7 +548,7 @@ const CivitaiBrowser=(()=>{
  }
  function socialHTML(item,collections){
   const followed=following(item);
-  return '<div class="civitaiAuthor">'+(item.avatarPath?'<img src="'+esc(path(item.avatarPath))+'" alt="">':'<span class="avatarPlaceholder">'+esc((item.credit||'?')[0])+'</span>')+button(esc(item.credit||'Unknown creator'),'class="creatorName" data-civi-link="https://civitai.com/user/'+esc(encodeURIComponent(item.credit||''))+'"')+(item.creatorId?button(followed?'Following ✓':'Follow','data-civi-follow class="'+(followed?'selected':'')+'"'):'')+'</div><div class="civitaiReactions">'+Object.entries(emoji).map(([key,value])=>button(reactionLabel(item,key),'data-civi-react="'+key+'" aria-label="'+key+'" aria-pressed="'+item.reactions.includes(key)+'" class="'+(item.reactions.includes(key)?'selected':'')+'"')).join('')+button(ribbonIcon,'class="viewerCollect '+(membershipIds(item.collections).length?'bookmarked':'')+'" aria-label="Add to collection"')+'</div><p class="civitaiActionError warning" role="status"></p>';
+  return '<div class="civitaiAuthor">'+(item.avatarPath?'<img src="'+esc(path(item.avatarPath))+'" alt="">':'<span class="avatarPlaceholder">'+esc((item.credit||'?')[0])+'</span>')+button(esc(item.credit||'Unknown creator'),'class="creatorName" data-civi-link="https://civitai.red/user/'+esc(encodeURIComponent(item.credit||''))+'"')+(item.creatorId?button('Feed','data-creator-feed class="creatorFeed"'):'')+button('↗','data-creator-profile class="creatorProfile" aria-label="Open creator profile"')+'</div><div class="civitaiReactions">'+Object.entries(emoji).map(([key,value])=>button(reactionLabel(item,key),'data-civi-react="'+key+'" aria-label="'+key+'" aria-pressed="'+(item.reactions||[]).includes(key)+'" class="'+((item.reactions||[]).includes(key)?'selected':'')+'"')).join('')+button(ribbonIcon,'class="viewerCollect '+(membershipIds(item.collections).length?'bookmarked':'')+'" aria-label="Add to collection"')+'</div><p class="civitaiActionError warning" role="status"></p>';
 
  }
  function membershipIds(raw){
@@ -555,12 +556,20 @@ const CivitaiBrowser=(()=>{
   const list=Array.isArray(raw)?raw:raw.items||raw.collections||[];
   return list.filter(c=>c.collectionId||c.inCollection||c.items?.length||c.collectionItems?.length).map(c=>String(c.collectionId||c.id));
  }
+ function showCreatorFeed(item){
+  close();if($('#modal')?.open)closeModal();
+  if(page==='browse')openSubject('creator',item.creatorId,item.credit);
+  else {pendingCreator=item;navigate('browse');}
+ }
+ function openPendingCreator(){if(pendingCreator){const item=pendingCreator;pendingCreator=null;openSubject('creator',item.creatorId,item.credit);}}
  function wireSocial(host,item,collections){
   hydrate(host);$$('[data-civi-link]',host).forEach(b=>b.onclick=()=>openModelSource(b.dataset.civiLink));
+  $('[data-creator-feed]',host)?.addEventListener('click',()=>showCreatorFeed(item));
+  $('[data-creator-profile]',host)?.addEventListener('click',()=>profile(item.credit));
   const error=$('.civitaiActionError',host),boundAccount=account;
   async function run(b,payload,done){b.disabled=true;error.textContent='';try{const r=await action({...payload,account:boundAccount});if(host.isConnected)done(r);}catch(e){error.textContent=e.message;if(b.type==='checkbox')b.checked=!b.checked;}finally{b.disabled=false;}}
   $('[data-civi-follow]',host)?.addEventListener('click',e=>run(e.currentTarget,{kind:'follow',creatorId:item.creatorId,selected:!following(item)},r=>{updateFollowing(item.creatorId,r.selected);e.target.textContent=r.selected?'Following ✓':'Follow';e.target.classList.toggle('selected',r.selected);}));
-  $$('[data-civi-react]',host).forEach(b=>b.onclick=()=>run(b,{kind:'reaction',imageId:item.id,reaction:b.dataset.civiReact,selected:!item.reactions.includes(b.dataset.civiReact)},r=>{applyReaction(item,r.reactions);$$('[data-civi-react]',host).forEach(x=>{const selected=r.reactions.includes(x.dataset.civiReact);x.innerHTML=reactionLabel(item,x.dataset.civiReact);x.classList.toggle('selected',selected);x.setAttribute('aria-pressed',String(selected));});}));
+  $$('[data-civi-react]',host).forEach(b=>b.onclick=()=>run(b,{kind:'reaction',imageId:item.id,reaction:b.dataset.civiReact,selected:!(item.reactions||[]).includes(b.dataset.civiReact)},r=>{applyReaction(item,r.reactions);$$('[data-civi-react]',host).forEach(x=>{const selected=r.reactions.includes(x.dataset.civiReact);x.innerHTML=reactionLabel(item,x.dataset.civiReact);x.classList.toggle('selected',selected);x.setAttribute('aria-pressed',String(selected));});}));
   $('.viewerCollect',host).onclick=()=>showCollections(item,boundAccount);
 
  }
@@ -570,31 +579,44 @@ const CivitaiBrowser=(()=>{
   if(!image.id)return;
   let target=$('.civitaiSocial',host);
   if(!target){target=document.createElement('div');target.className='civitaiSocial';$('.modelPreviewDetails',host)?.prepend(target);}
-  target.textContent='Loading creator and interactions…';
+  target.innerHTML=socialHTML(image,status?.collections||[]);wireSocial(target,image,status?.collections||[]);
   try{
    const result=await fetchDetail(image);if(!target.isConnected)return;
    account=result.account;const item=result.item;Object.assign(image,item);
    const prompts=$('.civitaiPromptBlocks',host);if(prompts){prompts.outerHTML=promptHTML(item);wirePromptCopies(host,item);}
    target.innerHTML=socialHTML(item,result.collections);wireSocial(target,item,result.collections);
+   const parameters=$('.modelPreviewParameters',host);if(parameters)parameters.innerHTML=Object.entries(item.parameters||{}).map(([k,val])=>'<dt>'+esc(k)+'</dt><dd>'+esc(val)+'</dd>').join('');
    const resourceHost=$('.civitaiResourceHost',host);if(resourceHost){resourceHost.innerHTML=resourcesHTML(item.resources);wireResources(resourceHost);}
    let tags=$('.civitaiTagHost',host);if(!tags){tags=document.createElement('section');tags.className='civitaiTagHost';$('.modelPreviewDetails',host)?.append(tags);}
    tags.innerHTML='<h2>Tags</h2>'+tagHTML(item.tags||[]);wireTags(tags,item);
-  }catch(e){if(target.isConnected)target.textContent=e.message;}
+  }catch(e){if(target.isConnected)$('.civitaiActionError',target).textContent=e.message;}
  }
  function peek(host){host.addEventListener('scroll',()=>host.classList.toggle('pastPeek',host.scrollTop>20),{passive:true});}
  function viewerMotion(v){
   const el=v.el,scroll=$('.civitaiViewerScroll',el),hero=$('.modelPreviewHero',el);
-  const media=$('img,video',hero),peek=$('.modelPreviewPeek',el);
-  let gap=0,gesture=null,frame=0,closed=false;
+  const media=$('img,video',hero),social=$('.civitaiSocial',el);
+  let gap=0,gesture=null,frame=0,closed=false,peekHeight=110,touched=false,tapVisible=false;
+  const video=v.item.type==='video';hero.classList.toggle('isVideo',video);
   function align(){
    const width=media.naturalWidth||media.videoWidth||v.item.width;
    const height=media.naturalHeight||media.videoHeight||v.item.height;
-   const renderedHeight=width&&height?Math.min(hero.clientHeight,hero.clientWidth*height/width):hero.clientHeight;
-   gap=Math.max(0,(hero.clientHeight-renderedHeight)/2)+(peek?.offsetHeight||0);
+   const author=$('.civitaiAuthor',social),reactions=$('.civitaiReactions',social);
+   if(author&&reactions)peekHeight=reactions.offsetTop+reactions.offsetHeight-social.offsetTop+16;
+   const visible=Math.min(scroll.scrollTop,peekHeight),gutter=video?44:0;
+   const mediaHeight=Math.max(160,hero.clientHeight-visible-gutter);
+   media.style.height=mediaHeight+'px';
+   const renderedHeight=width&&height?Math.min(mediaHeight,hero.clientWidth*height/width):mediaHeight;
+   gap=peekHeight+Math.max(0,(mediaHeight-renderedHeight)/2)+gutter;
    hero.style.transform='translateY('+Math.min(scroll.scrollTop,gap)+'px)';
+   el.classList.toggle('mediaOnly',scroll.scrollTop<=1&&!tapVisible);
   }
   const resize=new ResizeObserver(align);
-  resize.observe(hero);
+  resize.observe(hero);resize.observe(social);
+  const reveal=()=>{if(!touched){align();scroll.scrollTop=peekHeight;align();}};
+  const socialResize=new ResizeObserver(reveal);socialResize.observe(social);
+  scroll.addEventListener('pointerdown',()=>{touched=true;},{passive:true});
+  scroll.addEventListener('wheel',()=>{touched=true;},{passive:true});
+  requestAnimationFrame(reveal);
   media.addEventListener('load',align);
   media.addEventListener('loadedmetadata',align);
   scroll.addEventListener('scroll',align,{passive:true});
@@ -630,10 +652,11 @@ const CivitaiBrowser=(()=>{
    }
    frame=requestAnimationFrame(step);
   }
+  if(video)media.addEventListener('click',()=>{tapVisible=!tapVisible;align();});
   hero.addEventListener('dragstart',e=>e.preventDefault());
   hero.addEventListener('pointerdown',e=>{
    if(!e.isPrimary){gesture=null;reset();return;}
-   if(e.button!==0||e.target.closest('button,video'))return;
+   if(e.button!==0||e.target.closest('button,video')||video)return;
    cancelAnimationFrame(frame);
    scroll.style.transition='none';el.style.transition='none';
    gesture={id:e.pointerId,x:e.clientX,y:e.clientY,lastX:e.clientX,lastY:e.clientY,time:performance.now(),last:performance.now(),top:scroll.scrollTop,mode:'',dx:0,dy:0,vx:0,vy:0};
@@ -662,11 +685,12 @@ const CivitaiBrowser=(()=>{
    if(performance.now()-g.last>100){g.vx=0;g.vy=0;}
    if(g.mode==='toss')finishToss(g);
    else if(g.mode==='scroll')coast(g.vy);
+   else {tapVisible=!tapVisible;align();}
    if(hero.hasPointerCapture(e.pointerId))hero.releasePointerCapture(e.pointerId);
   });
   hero.addEventListener('pointercancel',()=>{gesture=null;reset();});
   return ()=>{
-   closed=true;cancelAnimationFrame(frame);resize.disconnect();
+   closed=true;cancelAnimationFrame(frame);resize.disconnect();socialResize.disconnect();
    media.removeEventListener('load',align);media.removeEventListener('loadedmetadata',align);
    scroll.removeEventListener('scroll',align);
   };
@@ -677,7 +701,7 @@ const CivitaiBrowser=(()=>{
   const cached=details.get(detailKey(item.id));if(cached)Object.assign(item,cached.result.item);
   close();const el=document.createElement('section');el.className='civitaiViewer';el.setAttribute('role','dialog');el.setAttribute('aria-modal','true');el.setAttribute('aria-label','Civitai media details');
   const v={el,item,list};viewer=v;document.body.append(el);document.body.classList.add('civitaiViewerOpen');
-  el.innerHTML='<div class="civitaiViewerHead">'+button('×','class="civitaiClose" aria-label="Close media"')+'</div><div class="civitaiViewerScroll modelPreviewViewer"><div class="modelPreviewHero">'+imageHTML(item,true)+'<div class="modelPreviewNavigation">'+button('‹','data-prev aria-label="Previous media"')+button('›','data-next aria-label="Next media"')+'</div></div><div class="modelPreviewPeek"><strong>Prompt & resources <span>⌄</span></strong><p>'+esc(item.prompt||'Scroll for details')+'</p></div><div class="modelPreviewDetails"><div class="civitaiSocial"></div>'+promptHTML(item)+'<h2>Resources</h2><div class="civitaiResourceHost">'+resourcesHTML(item.resources||[])+'</div><dl class="modelPreviewParameters">'+Object.entries(item.parameters||{}).map(([k,val])=>'<dt>'+esc(k)+'</dt><dd>'+esc(val)+'</dd>').join('')+'</dl><div class="civitaiTagHost"></div>'+button('Open on Civitai ↗','data-origin')+'</div></div>';
+  el.innerHTML='<div class="civitaiViewerHead">'+button('×','class="civitaiClose" aria-label="Close media"')+'</div><div class="civitaiViewerScroll modelPreviewViewer"><div class="modelPreviewHero">'+imageHTML(item,true)+'<div class="modelPreviewNavigation">'+button('‹','data-prev aria-label="Previous media"')+button('›','data-next aria-label="Next media"')+'</div></div><div class="modelPreviewDetails"><div class="civitaiSocial">'+socialHTML(item,status?.collections||[])+'</div>'+promptHTML(item)+'<h2>Resources</h2><div class="civitaiResourceHost">'+resourcesHTML(item.resources||[])+'</div><dl class="modelPreviewParameters">'+Object.entries(item.parameters||{}).map(([k,val])=>'<dt>'+esc(k)+'</dt><dd>'+esc(val)+'</dd>').join('')+'</dl><div class="civitaiTagHost"></div>'+button('Open on Civitai ↗','data-origin')+'</div></div>';
   $('.civitaiClose',el).onclick=close;$('.civitaiClose',el).focus();$('[data-origin]',el).onclick=()=>openModelSource(item.imageUrl);
   wirePromptCopies(el,item);
   const position=list.findIndex(i=>i.id===item.id);$('[data-prev]',el).disabled=position<=0;$('[data-next]',el).disabled=position>=list.length-1;

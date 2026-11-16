@@ -89,26 +89,10 @@ partial class Bridge {
         string hint,code=Pairing.Display(out hint);
         return new{online=online,phones=PhoneCount(),code=code,hint=online?hint:"Turn the server on to pair a phone.",error=powerError,addresses=addressBox.Items.Cast<object>().Select(x=>x.ToString()).ToArray(),address=addressBox.Text};
     }
-    async void OpenProfile(string url){
+    static string ExternalListing(string url){
         var uri=new Uri(url);
-        if(uri.Scheme!="https"||!new[]{"civitai.com","civitai.red"}.Contains(uri.Host)||!String.IsNullOrEmpty(uri.UserInfo)||!uri.IsDefaultPort||!uri.AbsolutePath.StartsWith("/user/"))return;
-        var form=new Form{Text="Civitai — ComfyBridge",Width=1100,Height=850,StartPosition=FormStartPosition.CenterParent,BackColor=Ink};
-        var bar=new Panel{Dock=DockStyle.Top,Height=48,BackColor=Ink};
-        var back=new Button{Text="‹ Back to ComfyBridge",Dock=DockStyle.Left,Width=210,FlatStyle=FlatStyle.Flat,ForeColor=Color.FromArgb(163,242,204),BackColor=Ink};
-        back.FlatAppearance.BorderSize=0;back.Click+=(s,e)=>form.Close();bar.Controls.Add(back);
-        var site=new Label{Text="civitai.com",Dock=DockStyle.Right,Width=250,TextAlign=ContentAlignment.MiddleRight,ForeColor=Color.LightGray,Padding=new Padding(0,0,16,0)};bar.Controls.Add(site);
-        var browser=new WebView2{Dock=DockStyle.Fill,DefaultBackgroundColor=Ink};form.Controls.Add(browser);form.Controls.Add(bar);bar.BringToFront();
-        form.FormClosed+=(s,e)=>{browser.Dispose();if(!monitor.IsDisposed)monitor.Activate();};form.Show(monitor);
-        try{
-            var env=await CoreWebView2Environment.CreateAsync(null,Path.Combine(Data,"profile-webview"));if(form.IsDisposed)return;
-            await browser.EnsureCoreWebView2Async(env);if(form.IsDisposed)return;
-            var web=browser.CoreWebView2;
-            web.Settings.AreHostObjectsAllowed=false;web.Settings.IsWebMessageEnabled=false;
-            web.PermissionRequested+=(s,e)=>e.State=CoreWebView2PermissionState.Deny;
-            web.NavigationStarting+=(s,e)=>{Uri target;if(!Uri.TryCreate(e.Uri,UriKind.Absolute,out target)||target.Scheme!="https")e.Cancel=true;else site.Text=target.Host;};
-            web.NewWindowRequested+=(s,e)=>{e.Handled=true;Uri target;if(Uri.TryCreate(e.Uri,UriKind.Absolute,out target)&&target.Scheme=="https")web.Navigate(target.AbsoluteUri);};
-            web.Navigate(uri.AbsoluteUri);
-        }catch(Exception ex){if(!form.IsDisposed){site.Text="Could not load profile";MessageBox.Show(form,ex.Message,"ComfyBridge");}}
+        if(uri.Scheme!="https"||!new[]{"civitai.com","civitai.red","huggingface.co"}.Contains(uri.Host)||!String.IsNullOrEmpty(uri.UserInfo)||!uri.IsDefaultPort)throw new IOException("Invalid listing URL.");
+        var target=new UriBuilder(uri);if(target.Host=="civitai.com")target.Host="civitai.red";return target.Uri.AbsoluteUri;
     }
     async void DesktopMessage(WebView2 view,CoreWebView2WebMessageReceivedEventArgs e){
         if(desktop!=view||e.Source!=DesktopOrigin+"/index.html")return;
@@ -129,8 +113,7 @@ partial class Bridge {
             case "civitaiKey":EditCivitaiKey();result=CivitaiKeySaved();break;
             case "copy":if(addressBox.Items.Contains(Convert.ToString(args["address"])))Clipboard.SetText(Convert.ToString(args["address"]));result=true;break;
             case "copyText":{string text=Convert.ToString(args["text"]);if(text.Length>1000000)throw new IOException("Text is too long to copy.");if(text.Length>0)Clipboard.SetText(text);result=true;break;}
-            case "openListing":{var uri=new Uri(Convert.ToString(args["url"]));if(uri.Scheme!="https"||!new[]{"civitai.com","civitai.red","huggingface.co"}.Contains(uri.Host)||!String.IsNullOrEmpty(uri.UserInfo)||!uri.IsDefaultPort)throw new IOException("Invalid listing URL.");Process.Start(uri.AbsoluteUri);result=true;break;}
-            case "openProfile":OpenProfile(Convert.ToString(args["url"]));result=true;break;
+            case "openListing":case "openProfile":Process.Start(new ProcessStartInfo(ExternalListing(Convert.ToString(args["url"]))){UseShellExecute=true});result=true;break;
             case "collapse":CollapseDesktop();return;
             case "hide":HidePanel();return;
             case "quit":HidePanel();return; // Legacy desktop assets: X also hides.

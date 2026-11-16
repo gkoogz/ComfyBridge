@@ -5,7 +5,7 @@ async function setup(p,options={}){
   heartbeat=poll=syncSettings=()=>{};connected=true;window.calls=[];window.apiOptions=options;
   api=async(route,body)=>{
    calls.push({route,body});const account=apiOptions.account||'1';
-   const item=n=>({id:String(n),type:'image',credit:'Potter',creatorId:'7',path:`model-preview/browse/${account}/${n}/thumb`,fullPath:`model-preview/browse/${account}/${n}/full`,width:300,height:600,prompt:'A ceramic vase '+n,negativePrompt:'blur',resources:[],tags:[],reactions:[],stats:{},parameters:{}});
+   const item=n=>({detailVersion:2,generationDataAvailable:true,id:String(n),type:'image',credit:'Potter',creatorId:'7',path:`model-preview/browse/${account}/${n}/thumb`,fullPath:`model-preview/browse/${account}/${n}/full`,width:300,height:600,prompt:'A ceramic vase '+n,negativePrompt:'blur',resources:[],tags:[],reactions:[],stats:{},parameters:{}});
    if(route==='browse/status'){
     if(apiOptions.holdStatus)await new Promise(resolve=>window.releaseStatus=resolve);
     return {account,username:'Potter',collections:[{id:4,name:'Ceramics',count:30}],timeouts:{},learned:30,follows:1,importState:{complete:true}};
@@ -43,6 +43,8 @@ async function setup(p,options={}){
  await p.locator('.browseTile .browseMedia').first().click();await p.waitForSelector('.civitaiAuthor');
  assert.equal(await p.evaluate(()=>calls.filter(c=>c.route==='browse/detail/1').length),detailsBefore,'Viewer reuses prefetched detail');
  await p.locator('.civitaiClose').click();
+ // A pre-fix detail snapshot must be fetched again while image files stay cached.
+ await p.evaluate(()=>{const key='comfybridge-browse-v2:test-PC',s=JSON.parse(localStorage.getItem(key));for(const [,entry] of s.details){delete entry.result.item.detailVersion;entry.result.item.prompt='';}localStorage.setItem(key,JSON.stringify(s));});
  // Loading the saved screen must not depend on a status/network response.
  await p.reload();await p.waitForSelector('#connect');await setup(p,{holdStatus:true});
  await p.waitForSelector('.browseTile');assert.equal(await p.locator('.browseThumb').count(),20);
@@ -50,6 +52,7 @@ async function setup(p,options={}){
  assert.equal(await p.locator('.browseTile').count(),10);
  await p.evaluate(()=>{apiOptions.holdStatus=false;releaseStatus();});
  await p.waitForFunction(()=>calls.some(c=>c.route==='browse/feed'&&c.body.channel==='collection:4'));
+ await p.waitForFunction(()=>calls.some(c=>c.route==='browse/detail/101'));
  // A restarted worker receives a fresh cursor and carousel can still continue past cached 20.
  await p.locator('#browseCarousel').evaluate(el=>el.scrollLeft=el.scrollWidth);
  await p.waitForFunction(()=>document.querySelectorAll('.browseThumb').length>=24);

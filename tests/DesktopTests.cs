@@ -88,21 +88,9 @@ partial class Bridge {
                 })();");
                 await Until(async()=>await web.ExecuteScriptAsync("window.devicePreviewResult!==null")=="true","device preview cache");
                 if(await web.ExecuteScriptAsync("window.devicePreviewResult")!="true")throw new Exception(await web.ExecuteScriptAsync("window.devicePreviewResult"));
-                // Website view has an app-owned return bar and no privileged bridge.
-                app.OpenProfile("https://civitai.com/user/Fixture");
-                var profile=Application.OpenForms.Cast<Form>().First(f=>f.Text=="Civitai — ComfyBridge");
-                var profileWeb=profile.Controls.OfType<Microsoft.Web.WebView2.WinForms.WebView2>().Single();
-                profileWeb.CoreWebView2InitializationCompleted+=(sender,ready)=>{
-                    if(ready.IsSuccess)profileWeb.CoreWebView2.NavigationStarting+=(sender2,navigation)=>navigation.Cancel=true;
-                }; // No real profile network request is needed for this host smoke test.
-                await Until(()=>Task.FromResult(profileWeb.CoreWebView2!=null),"profile browser startup");
-                await Task.Delay(100);
-                if(profileWeb.CoreWebView2.Settings.IsWebMessageEnabled||profileWeb.CoreWebView2.Settings.AreHostObjectsAllowed)throw new Exception("Profile exposed native capabilities");
-                if(await profileWeb.CoreWebView2.ExecuteScriptAsync("typeof Native")!="\"undefined\"")throw new Exception("Profile exposed Native interface");
-                var returnButton=profile.Controls.OfType<Panel>().SelectMany(c=>c.Controls.OfType<Button>()).Single();
-                if(returnButton.Text!="‹ Back to ComfyBridge")throw new Exception("Profile return button missing");
-                returnButton.PerformClick();
-                if(!profile.IsDisposed||app.desktop==null)throw new Exception("Profile return discarded studio");
+                if(ExternalListing("https://civitai.com/user/Fixture")!="https://civitai.red/user/Fixture")throw new Exception("Listing host normalization failed");
+                bool rejected=false;try{ExternalListing("https://evil.test/user/Fixture");}catch{rejected=true;}
+                if(!rejected)throw new Exception("Untrusted listing allowed");
                 var processId=web.BrowserProcessId;
                 app.CollapseDesktop();
                 await Until(()=>Task.FromResult(!app.expanded&&app.desktop==null&&app.compactPanel.Visible),"collapse");

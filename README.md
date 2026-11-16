@@ -1,6 +1,6 @@
 # ComfyBridge
 
-**[Open the beta 80 release page](https://github.com/gkoogz/ComfyBridge/releases/tag/v0.1.0-beta.80)** · [Download the Android APK](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.80/ComfyBridge-0.1.0-beta.80.apk) · [Download Windows](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.80/ComfyBridge-Windows-0.1.0-beta.80.zip) · [All releases](https://github.com/gkoogz/ComfyBridge/releases)
+**[Open the beta 81 release page](https://github.com/gkoogz/ComfyBridge/releases/tag/v0.1.0-beta.81)** · [Download the Android APK](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.81/ComfyBridge-0.1.0-beta.81.apk) · [Download Windows](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.81/ComfyBridge-Windows-0.1.0-beta.81.zip) · [All releases](https://github.com/gkoogz/ComfyBridge/releases)
 
 <img src="artwork/comfybridge.png" width="128" alt="ComfyBridge white cube and play icon on black">
 
@@ -9,6 +9,8 @@ An Android remote for an existing Windows ComfyUI installation. The phone edits 
 **Local project:** this PC's canonical checkout is `E:\ComfyBridge`. Source, builds, installed app data, local LLMs and archived work are consolidated there. See [the local folder map](docs/local-layout.md) for private-data exclusions, compatibility links and external ComfyUI dependencies. Run `Start-ComfyBridge.ps1` to open the installed PC panel.
 
 **Working on the project:** agents and contributors should start with [AGENTS.md](AGENTS.md) for the code map, build/test commands, live queue preservation and delivery instructions.
+
+**Beta 81** retrieves full Civitai generation data, including prompts and all listed resources, and preserves it against incomplete feed refreshes. Creator photos use the creator profile when missing from a feed. The media viewer opens with its actual creator/reaction rows visible; Feed and profile buttons sit beside the name, videos have more scrolling room, and all Civitai links open on civitai.red in your default browser.
 
 **Beta 80** keeps Browse sessions through worker restarts and recovers expired cursors without losing your place. Two hours of inactivity returns to fresh cached Browse. Artist feeds have Follow/Following controls and profiles open with a Back to ComfyBridge bar. Followed creators show green checks; saved collection ribbons are filled, zero reaction counts are hidden, and the refresh icon rotates about its center.
 
