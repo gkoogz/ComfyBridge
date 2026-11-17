@@ -5,6 +5,8 @@ from functools import lru_cache
 from pathlib import Path
 
 KREA_MODEL = 'krea2_turbo_bf16.safetensors'
+HOMOFIDELIS_BF16 = 'HomoFidelis_Krea2_Turbo_BF16_v1.safetensors'
+KREA_MODELS = {KREA_MODEL: 'Krea 2 Turbo · BF16', HOMOFIDELIS_BF16: 'HomoFidelis Krea 2 Turbo · BF16'}
 KREA_ENCODER = 'qwen3vl_4b_bf16.safetensors'
 KREA_VAE = 'qwen_image_vae.safetensors'
 KREA_DEFAULTS = dict(model=KREA_MODEL, width=1024, height=1024, steps=8, cfg=1,
@@ -56,19 +58,19 @@ def compatible(target, item_family):
     # remain untouched; callers validate known cross-family mismatches as well.
     return bool(target and item_family and target == item_family)
 
-def profile(obj, choices):
+def profile(obj, choices, model=KREA_MODEL):
     required = ('UNETLoader','CLIPLoader','VAELoader','CLIPTextEncode',
                 'ConditioningZeroOut','EmptyLatentImage','KSampler','VAEDecode','SaveImage')
     missing = [node for node in required if node not in obj]
-    for node, field, value in (('UNETLoader','unet_name',KREA_MODEL),
+    for node, field, value in (('UNETLoader','unet_name',model),
                                ('CLIPLoader','clip_name',KREA_ENCODER),
                                ('CLIPLoader','type','krea2'),('VAELoader','vae_name',KREA_VAE)):
         if node not in obj or value not in choices(node,field): missing.append(value)
-    return dict(model=KREA_MODEL,label='Krea 2 Turbo · BF16',family='krea2',
-                defaults=KREA_DEFAULTS,missing=missing)
+    return dict(model=model,label=KREA_MODELS[model],family='krea2',
+                defaults={**KREA_DEFAULTS, 'model': model},missing=missing)
 
 def normalize(settings):
-    if settings.get('model') != KREA_MODEL: return
+    if settings.get('model') not in KREA_MODELS: return
     if re.search(r'\bembedding\s*:', settings.get('positive',''), re.I):
         raise ValueError('SDXL textual inversions cannot be used by the Krea 2 text encoder.')
     settings.update(steps=8,cfg=1,sampler='euler',scheduler='simple',negative='')
@@ -84,7 +86,7 @@ def build(settings, prefix):
     def node(id, cls, **inputs):
         g[str(id)] = dict(class_type=cls,inputs=inputs)
         return [str(id),0]
-    model = node(4,'UNETLoader',unet_name=KREA_MODEL,weight_dtype='default')
+    model = node(4,'UNETLoader',unet_name=s['model'],weight_dtype='default')
     clip = node(18,'CLIPLoader',clip_name=KREA_ENCODER,type='krea2',device='default')
     for i,lora in enumerate(s.get('loras',[])):
         if lora.get('enabled',True):

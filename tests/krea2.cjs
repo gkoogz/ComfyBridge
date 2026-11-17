@@ -7,7 +7,7 @@ const assert=require('node:assert/strict'),path=require('node:path');
  await p.goto('https://bridge.test');await p.waitForSelector('#connect');
  await p.evaluate(()=>{
   heartbeat=poll=syncSettings=()=>{};connected=true;
-  catalog={models:['studio.safetensors',kreaModel],loras:['ceramic.safetensors','krea2_ink.safetensors'],samplers:['euler','euler_ancestral'],defaults:{image:{model:'studio.safetensors'},video:{loras:[]}},listings:[
+  catalog={models:['studio.safetensors',kreaModel,homofidelisModel],loras:['ceramic.safetensors','krea2_ink.safetensors'],samplers:['euler','euler_ancestral'],defaults:{image:{model:'studio.safetensors'},video:{loras:[]}},listings:[
    {id:'a',kind:'checkpoints',name:'studio.safetensors',baseModel:'SDXL',images:[]},
    {id:'b',kind:'loras',name:'ceramic.safetensors',baseModel:'SDXL',images:[]},
    {id:'c',kind:'loras',name:'krea2_ink.safetensors',baseModel:'Krea 2',images:[]},
@@ -30,6 +30,10 @@ const assert=require('node:assert/strict'),path=require('node:path');
  if(!await p.locator('#addLora').isVisible())await p.getByRole('button',{name:'LoRAs',exact:true}).click();await p.locator('#addLora').click();await p.waitForSelector('.modelCard');
  assert.equal(await p.locator('.modelCard').count(),1);assert.match(await p.locator('.modelCard').innerText(),/krea2_ink/);
  await p.locator('[data-model-add]').click();await p.locator('#modalClose').click();
+ await p.locator('[data-setting=model]').selectOption('HomoFidelis_Krea2_Turbo_BF16_v1.safetensors');
+ assert.equal(await p.evaluate(()=>state.settings.image.model),await p.evaluate(()=>homofidelisModel));
+ assert.equal(await p.locator('textarea[data-setting=positive]').inputValue(),'An ink drawing of a teapot.');
+ assert.equal(await p.locator('textarea[data-setting=negative]').count(),0);
  await p.locator('[data-setting=model]').selectOption('studio.safetensors');
  assert.deepEqual(await p.evaluate(()=>({settings:state.settings.image,inputs:state.inputs.image})),await p.evaluate(()=>original));
  if(!await p.locator('#addLora').isVisible())await p.getByRole('button',{name:'LoRAs',exact:true}).click();await p.locator('#addLora').click();await p.waitForSelector('.modelCard');assert.equal(await p.locator('.modelCard').count(),1);assert.match(await p.locator('.modelCard').innerText(),/ceramic/);
@@ -47,7 +51,7 @@ const assert=require('node:assert/strict'),path=require('node:path');
  await p.evaluate(()=>{state.imageFamilies.sdxl.settings.seed='1';state.settings.image.seed='1';acceptSubmission({kind:'image',count:2,requestId:'late',settings:{model:'studio.safetensors',seed:'1',increment:true}},{batch:'late'});});
  assert.equal(await p.evaluate(()=>state.settings.image.seed),'1','Late SDXL receipt must not increment the active Krea seed');
  assert.equal(await p.evaluate(()=>state.imageFamilies.sdxl.settings.seed),'3');
- await p.evaluate(()=>{heartbeat=poll=syncSettings=()=>{};connected=true;catalog={models:['studio.safetensors',kreaModel],loras:[],listings:[]};navigate('image');});
+ await p.evaluate(()=>{heartbeat=poll=syncSettings=()=>{};connected=true;catalog={models:['studio.safetensors',kreaModel,homofidelisModel],loras:[],listings:[]};navigate('image');});
  await p.setViewportSize({width:1440,height:1000});
  assert(await p.locator('.kreaSettings').evaluate(el=>el.scrollWidth<=el.clientWidth+1));
  assert.deepEqual(errors,[]);console.log('Krea: independent settings/inputs, browser isolation, fixed defaults, quick-edit separation, backup and relaunch passed.');

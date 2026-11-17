@@ -24,7 +24,7 @@ function browserItems(view){
   return (view.remote?view.remote.map(item=>local.find(x=>String(x.versionId)===String(item.versionId))||item):local).filter(item=>resourceAllowed(item,view.kind)&&!embeddingCompatibility(item,view.kind).blocked);
  }
  const names=view.type==='checkpoints'?(catalog?.models||[]):view.type==='video'?(catalog?.videoModels||[]).map(x=>x.model):(catalog?.loras||[]);
- return [...new Set(names)].filter(n=>!view.only||n===view.only).map(name=>listing(view.type==='video'||name===kreaModel?'diffusion_models':view.type,name)||{name,title:name===kreaModel?'Krea 2 Turbo · BF16':name,kind:view.type,status:'pending',images:[]}).filter(item=>view.type!=='loras'||resourceAllowed(item,view.kind)).filter(item=>view.type!=='loras'||view.only||!!item.archived===!!view.archived);
+ return [...new Set(names)].filter(n=>!view.only||n===view.only).map(name=>listing(view.type==='video'||(view.type==='checkpoints'&&imageFamily(name)==='krea2')?'diffusion_models':view.type,name)||{name,title:view.type==='checkpoints'?imageModelLabel(name):name,kind:view.type,status:'pending',images:[]}).filter(item=>view.type!=='loras'||resourceAllowed(item,view.kind)).filter(item=>view.type!=='loras'||view.only||!!item.archived===!!view.archived);
 }
 async function openModelBrowser(type,only=null,promptKey=null){
  if(!connected)return toast('Connect to the PC to browse your models.');

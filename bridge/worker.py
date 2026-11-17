@@ -188,7 +188,7 @@ async def catalogue():
 
 def video_models_on_disk():
     folder = ROOT/'models/diffusion_models'
-    return tuple((folder/name).is_file() for name in (EROS_BETA7, H3_REF2VA, image_models.KREA_MODEL)) + tuple(
+    return tuple((folder/name).is_file() for name in (EROS_BETA7, H3_REF2VA, *image_models.KREA_MODELS)) + tuple(
         (ROOT/'models'/name).is_file() for name in ('text_encoders/'+image_models.KREA_ENCODER,'vae/'+image_models.KREA_VAE))
 
 
@@ -204,7 +204,7 @@ async def load_catalogue():
         return field[0] if isinstance(field[0], list) else field[1].get('options', [])
     CATALOG = dict(defaults=WF.defaults(), models=choices('CheckpointLoaderSimple', 'ckpt_name'),
                    loras=choices('LoraLoader', 'lora_name'),samplers=choices('KSampler','sampler_name'),videoSamplers=choices('KSamplerSelect','sampler_name'))
-    CATALOG['imageProfiles']=[image_models.profile(obj,choices)]
+    CATALOG['imageProfiles']=[image_models.profile(obj,choices,model) for model in image_models.KREA_MODELS]
     for profile in CATALOG['imageProfiles']:
         if not profile['missing']: CATALOG['models'].append(profile['model'])
     CATALOG['remacriSupported']=('ImageUpscaleWithModel' in obj and 'UpscaleModelLoader' in obj
@@ -904,7 +904,7 @@ async def api(request):
                     j['etaSeconds']=None
                 else:
                     j['progress'],j['current_node']=TRACKER.sample()
-        return web.json_response(dict(protocol=20,build='0.1.0-beta.119',jobs=jobs, active=ACTIVE, preview=bool(PREVIEW), previewRevision=PREVIEW_REV,ownedComfy=bool(OWNED),queueEtaSeconds=total_eta))
+        return web.json_response(dict(protocol=20,build='0.1.0-beta.120',jobs=jobs, active=ACTIVE, preview=bool(PREVIEW), previewRevision=PREVIEW_REV,ownedComfy=bool(OWNED),queueEtaSeconds=total_eta))
     if path.startswith('preview/'):
         job=str(uuid.UUID(path[8:]))
         after=int(request.query.get('after','-1'))
@@ -1031,7 +1031,7 @@ async def api(request):
             image_models.normalize(s)
             listings=MODELS.snapshot()['items']
             selected=next((x for x in listings if x.get('kind')=='checkpoints' and x['name']==s['model']),{})
-            target='krea2' if s['model']==image_models.KREA_MODEL else image_models.resource_family(ROOT,selected) or 'sdxl'
+            target='krea2' if s['model'] in image_models.KREA_MODELS else image_models.resource_family(ROOT,selected) or 'sdxl'
             for lora in s.get('loras',[]):
                 if not lora.get('enabled',True): continue
                 item=next((x for x in listings if x.get('kind')=='loras' and x['name']==lora['name']),dict(kind='loras',name=lora['name']))

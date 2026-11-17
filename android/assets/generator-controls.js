@@ -1,8 +1,10 @@
 'use strict';
 const kreaModel='krea2_turbo_bf16.safetensors';
-const imageFamily=model=>model===kreaModel?'krea2':'sdxl';
-const isKrea=(s=state.settings.image)=>s?.model===kreaModel;
-function kreaDefaults(){return structuredClone(catalog?.imageProfiles?.find(p=>p.model===kreaModel)?.defaults||{model:kreaModel,width:1024,height:1024,steps:8,cfg:1,sampler:'euler',scheduler:'simple',seed:'1',increment:true,denoise:1,positive:'',negative:'',loras:[],scale:0,batch:1});}
+const homofidelisModel='HomoFidelis_Krea2_Turbo_BF16_v1.safetensors';
+const imageProfile=model=>catalog?.imageProfiles?.find(profile=>profile.model===model);
+const imageFamily=model=>imageProfile(model)?.family||([kreaModel,homofidelisModel].includes(model)?'krea2':'sdxl');
+const isKrea=(s=state.settings.image)=>imageFamily(s?.model)==='krea2';
+function kreaDefaults(model=kreaModel){return structuredClone(imageProfile(model)?.defaults||{model,width:1024,height:1024,steps:8,cfg:1,sampler:'euler',scheduler:'simple',seed:'1',increment:true,denoise:1,positive:'',negative:'',loras:[],scale:0,batch:1});}
 function normalizeImageSettings(s){if(isKrea(s)){Object.assign(s,{steps:8,cfg:1,sampler:'euler',scheduler:'simple',negative:''});delete s.clipSkip;}return s;}
 function stashImageSettings(){
  if(!state.settings.image)return;
@@ -15,7 +17,7 @@ function selectImageModel(model){
  const old=state.settings.image;if(!old||old.model===model)return;
  if(imageFamily(old.model)!==imageFamily(model)){
   stashImageSettings();const saved=state.imageFamilies[imageFamily(model)];
-  state.settings.image=normalizeImageSettings(structuredClone(saved?.settings||(model===kreaModel?kreaDefaults():catalog.defaults.image)));
+  state.settings.image=normalizeImageSettings(structuredClone(saved?.settings||(imageFamily(model)==='krea2'?kreaDefaults(model):catalog.defaults.image)));
   state.inputs.image=structuredClone(saved?.inputs||{});promptExpanded={};presetName='';
  }
  state.settings.image.model=model;delete state.settings.image.replayOf;persist('image');
@@ -38,7 +40,7 @@ function resourceAllowed(item,kind){
  const target=kind==='video'?'h3':resourceFamily(listing('checkpoints',state.settings.image?.model))||'sdxl';
  return !source||!target||source===target;
 }
-function imageModelLabel(name){return name===kreaModel?'Krea 2 Turbo · BF16':modelLabel('checkpoints',name);}
+function imageModelLabel(name){return imageProfile(name)?.label||(name===kreaModel?'Krea 2 Turbo · BF16':name===homofidelisModel?'HomoFidelis Krea 2 Turbo · BF16':modelLabel('checkpoints',name));}
 function kreaSamplingFields(){return '<div class="kreaSettings"><strong>Turbo · 8 steps</strong><small>Euler · simple schedule · guidance off</small><small>These recommended settings are fixed for Krea 2 Turbo.</small></div>';}
 const pixelBudget=768*1152;
 const stepLimit=kind=>kind==='image'?50:20;

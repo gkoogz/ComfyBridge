@@ -11,6 +11,12 @@ verifies published SHA-256 values, and never overwrites a different existing
 model. Downloads total about 35.4 GB: Turbo BF16, Qwen3-VL-4B BF16 and Qwen Image
 VAE. It prefers Hugging Face Xet if installed and otherwise uses resumable HTTP.
 
+The optional HomoFidelis v1 BF16 fine-tune uses the same encoder, VAE and Turbo
+settings. Install `HomoFidelis_Krea2_Turbo_BF16_v1.safetensors` in
+`models/diffusion_models`, then choose **HomoFidelis Krea 2 Turbo · BF16** in
+Image. The two Krea models share the Krea prompt and LoRAs when switching.
+[Publisher's files](https://civitai.red/models/2867077?modelVersionId=3239084)
+
 ## Independent editors
 
 `state.imageFamilies` holds separate SDXL-family and Krea snapshots, including

@@ -114,7 +114,7 @@ class Workflows:
         loras = s.get('loras', [])
         if len(loras) > 100:
             raise ValueError('At most 100 LoRAs can be used in one job.')
-        if kind == 'image' and s.get('model') == image_models.KREA_MODEL:
+        if kind == 'image' and s.get('model') in image_models.KREA_MODELS:
             return image_models.build(s, prefix)
         if kind == 'image':
             if not 1 <= int(s.get('clipSkip',abs(int(self.widgets('image',18)[0])))) <= 24:

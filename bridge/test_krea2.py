@@ -27,6 +27,14 @@ class KreaTests(unittest.TestCase):
         self.assertNotIn('CLIPSetLastLayer',[n['class_type'] for n in g.values()])
         self.assertEqual(s['steps'],40,'Graph building must not mutate caller settings')
 
+    def test_homofidelis_uses_its_own_weights_and_shared_krea_components(self):
+        wf=Workflows.__new__(Workflows)
+        g=wf.build('image',{**im.KREA_DEFAULTS,'model':im.HOMOFIDELIS_BF16,'steps':32},'test/variant')
+        self.assertEqual(g['4']['inputs']['unet_name'],im.HOMOFIDELIS_BF16)
+        self.assertEqual(g['18']['inputs']['clip_name'],im.KREA_ENCODER)
+        self.assertEqual(g['19']['inputs']['vae_name'],im.KREA_VAE)
+        self.assertEqual(g['3']['inputs']['steps'],8)
+
     def test_image_and_mask_use_krea_vae(self):
         for mask in (None,'ComfyBridge/mask.png'):
             g=im.build({**im.KREA_DEFAULTS,'upload':'ComfyBridge/source.png','mask':mask,'denoise':.6},'test')
