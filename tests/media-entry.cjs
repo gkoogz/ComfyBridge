@@ -36,5 +36,5 @@ const assert=require('node:assert/strict'),path=require('node:path');
   await p.mouse.move(r.x+r.width*.2,r.y+r.height*.25);await p.mouse.down();await p.mouse.move(r.x+r.width*.2+dx,r.y+r.height*.25,{steps:3});await p.mouse.up();await p.waitForSelector('.civitaiViewer',{state:'detached'});
   assert.equal(await p.locator('#workspace').evaluate(w=>w.scrollTop),await p.evaluate(()=>savedScroll));assert(await card.isVisible());
  }
- assert.equal(await p.locator('.browseFluid').evaluate(c=>getComputedStyle(c).opacity),'0.8');assert.deepEqual(errors,[]);await p.close();
- }console.log('Media entry: same DOM media, exact starting geometry, uninterrupted video with paused feed copy, toss return, caret stowing/alignment and 80% drips passed at phone/desktop widths.');}finally{await browser.close();}})().catch(e=>{console.error(e);process.exit(1);});
+ assert.equal(await p.locator('.browseFluid').evaluate(c=>getComputedStyle(c).opacity),'1');assert.deepEqual(errors,[]);await p.close();
+ }console.log('Media entry: same DOM media, exact starting geometry, uninterrupted video with paused feed copy, toss return, caret stowing/alignment and 100% drips passed at phone/desktop widths.');}finally{await browser.close();}})().catch(e=>{console.error(e);process.exit(1);});

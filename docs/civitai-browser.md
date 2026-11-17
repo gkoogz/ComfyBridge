@@ -1001,3 +1001,19 @@ Checks: media-metadata (320/390/1400px full-row taps, keyboard and gesture isola
 media-tag-weights (multi-ban, red persistence, undo, failure), social-queue, Browse,
 and the browser backend suite including restart persistence and atomic rejection
 of invalid multi-tag requests. Physical-phone verification remains outstanding.
+
+
+## Beta 110: non-blocking collection membership
+
+Beta 109's row targets were still disabled whenever item membership was unknown.
+The membership read could wait behind API traffic, leaving a dimmed, inert row.
+Rows now remain enabled and use native indeterminate state until known. A
+popup-local choice map preserves explicit add/remove choices over late reads,
+even if the social outbox has already acknowledged them. Membership requests
+are shared within the popup; failed reads do not prevent local durable choices.
+The full-row input remains isolated from drawer gestures. Drip opacity is 1.0.
+
+Checks: Browse delays a membership read while adding then removing, and proves
+the eventual checked response cannot undo removal. Media-metadata exercises
+whole-row touch/keyboard targets with a failed membership service. Social-queue
+and media-entry cover existing durable actions and full-opacity rendering.

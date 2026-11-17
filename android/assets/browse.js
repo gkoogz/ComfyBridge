@@ -873,25 +873,32 @@ const CivitaiBrowser=(()=>{
   function dismiss(){popup.remove();if(collectionPopup===popup)collectionPopup=null;BrowseLoader.refresh();}
   $('.collectionClose',popup).onclick=dismiss;
   popup.onclick=e=>{if(e.target===popup)dismiss();};
+  const choices=new Map();let membershipKnown=Array.isArray(item.collections),membershipRead=null;
   async function refresh(){
    if(account!==boundAccount)throw Error('Civitai account changed. Reopen this menu.');
-   const known=Array.isArray(item.collections),members=membershipIds(item.collections),host=$('.feedCollectionChoices',popup);
-   host.innerHTML=(status?.account===boundAccount?status.collections:knownCollections).map(c=>'<label><input type="checkbox" value="'+c.id+'" '+(!known?'disabled ':'')+(members.includes(String(c.id))?'checked':'')+'><span class="collectionCheck" aria-hidden="true"></span><span>'+esc(c.name)+'</span></label>').join('');
-   $$('input',host).forEach(box=>box.onchange=async()=>{
-    box.disabled=true;
-    try{const result=await action({account:boundAccount,kind:'collect',imageId:item.id,collectionId:box.value,selected:box.checked});const ids=new Set(membershipIds(item.collections));box.checked?ids.add(box.value):ids.delete(box.value);updateItemSocial(item,{collections:result.collections||[...ids].map(collectionId=>({collectionId}))});}
-    catch(error){box.checked=!box.checked;$('p.warning',popup).textContent=error.message;}
-    finally{box.disabled=false;}
+   const members=membershipIds(item.collections),host=$('.feedCollectionChoices',popup);
+   host.innerHTML=(status?.account===boundAccount?status.collections:knownCollections).map(c=>'<label><input type="checkbox" value="'+c.id+'" '+((choices.get(String(c.id))??members.includes(String(c.id)))?'checked':'')+'><span class="collectionCheck" aria-hidden="true"></span><span>'+esc(c.name)+'</span></label>').join('');
+   $$('input',host).forEach(box=>{
+    box.indeterminate=!membershipKnown&&!choices.has(box.value);
+    box.onchange=async()=>{
+     const prior=choices.get(box.value),selected=box.checked;choices.set(box.value,selected);
+     try{const result=await action({account:boundAccount,kind:'collect',imageId:item.id,collectionId:box.value,selected});updateItemSocial(item,{collections:result.collections});}
+     catch(error){if(prior===undefined)choices.delete(box.value);else choices.set(box.value,prior);box.checked=!selected;box.indeterminate=!membershipKnown&&!choices.has(box.value);$('p.warning',popup).textContent=error.message;}
+    };
    });
    const anchor=$('.newCollectionAnchor',popup);
    $('.newCollection',popup).onclick=()=>{const existing=$('.browseCollectionForm',popup);if(existing){$('input',existing).focus();return;}createCollection(anchor,collections=>{knownCollections=collections;return refresh();},boundAccount);};
-   if(!known){
-    const result=await api('browse/memberships/'+item.id);
+   if(!membershipKnown){
+    membershipRead??=api('browse/memberships/'+item.id);
+    const result=await membershipRead;
     if(!popup.isConnected||account!==boundAccount)return;
     if(result.account!==boundAccount)throw Error('Civitai account changed. Reopen this menu.');
-    // This lookup only changes memberships, never reactions or other social state.
-    updateItemSocial(item,overlaySocial({...item,collections:result.collections}));
-    if(Array.isArray(item.collections))return refresh();
+    if(!Array.isArray(result.collections))throw Error('Collection status is unavailable. Your choices can still be saved.');
+    // Explicit choices win even if the local outbox has already sent them while this read waited.
+    const ids=new Set(membershipIds(overlaySocial({...item,collections:result.collections}).collections));
+    for(const [id,selected] of choices)selected?ids.add(id):ids.delete(id);
+    membershipKnown=true;updateItemSocial(item,{collections:[...ids].map(collectionId=>({collectionId}))});
+    return refresh();
    }
   }
   try{await refresh();}catch(error){if(popup.isConnected)$('p.warning',popup).textContent=error.message;}
