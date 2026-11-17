@@ -1,0 +1,48 @@
+const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
+const assert=require('node:assert/strict'),path=require('node:path');
+(async()=>{const browser=await chromium.launch();try{for(const width of [390,1400]){
+ const p=await browser.newPage({viewport:{width,height:900}}),errors=[];p.on('pageerror',e=>errors.push(e.message));
+ await p.route('https://bridge.test/**',r=>r.fulfill({path:path.join(__dirname,'../android/assets',new URL(r.request().url()).pathname.slice(1)||'index.html')}));
+ await p.route('**/model-preview/**',r=>r.fulfill({contentType:'image/svg+xml',body:'<svg xmlns="http://www.w3.org/2000/svg" width="300" height="400"><rect width="300" height="400" fill="#527c78"/></svg>'}));
+ await p.addInitScript(()=>window.Native={configuration:()=>JSON.stringify({paired:false,fingerprint:'topbar'}),notificationRoute:()=>''});
+ await p.goto('https://bridge.test');await p.waitForSelector('#connect');
+ await p.evaluate(()=>{
+  heartbeat=poll=syncSettings=()=>{};connected=true;window.synced=false;
+  const item=id=>({id:String(id),creatorId:String(id+20),credit:'Potter '+id,type:'image',width:300,height:400,path:`model-preview/browse/1/${id}/thumb`,stats:{},reactions:[],tags:[],resources:[]});
+  api=async(route,body)=>{
+   if(route==='browse/status')return {account:'1',username:'Example',collections:[],followingIds:[],bans:[],importState:{complete:true}};
+   if(route==='browse/social')return {account:'1',items:window.synced?[]:[{key:'follow:99',kind:'follow',creatorId:'99',selected:true,state:'pending',firstAt:Date.now()/1000}]};
+   if(route==='browse/feed')return {account:'1',items:body.channel==='mix'||body.channel.startsWith('creator:')?Array.from({length:12},(_,i)=>item(i+1)):[],nextCursor:null};
+   if(route.startsWith('browse/detail/'))return {account:'1',item:item(Number(route.split('/').pop())),collections:[]};return {};
+  };navigate('browse');
+ });
+ await p.waitForFunction(()=>document.querySelectorAll('.browseTile:not(.cardPending)').length===12);
+ await p.waitForSelector('#browseSync:not([hidden])');
+ assert.equal(await p.locator('#browseSync span').textContent(),'1');
+ assert.equal(await p.locator('#main #browseSync').count(),0);
+ const pos=await p.evaluate(()=>['statusDot','browseSync','browseRefresh'].map(id=>document.getElementById(id).getBoundingClientRect().x));
+ assert(pos[0]<pos[1]&&pos[1]<pos[2]);
+ const height=await p.locator('#workspace').evaluate(w=>w.scrollHeight);
+ await p.locator('#workspace').evaluate(w=>w.scrollTop=500);
+ await p.waitForFunction(()=>document.body.classList.contains('browseHeaderHidden'));
+ await p.waitForTimeout(190);
+ assert(await p.locator('#workspace>header').evaluate(h=>h.getBoundingClientRect().bottom<=document.querySelector('#workspace').getBoundingClientRect().top+1));
+ assert.equal(await p.locator('#workspace').evaluate(w=>w.scrollHeight),height,'Hiding chrome must not resize feed');
+ assert.equal(await p.locator('#browseSync i').evaluate(e=>getComputedStyle(e).animationPlayState),'paused');
+ await p.locator('#workspace').evaluate(w=>w.scrollTop-=35);
+ await p.waitForFunction(()=>!document.body.classList.contains('browseHeaderHidden'));
+ await p.locator('#browseTop').click();await p.waitForFunction(()=>document.querySelector('#workspace').scrollTop===0);
+ await p.locator('.feedAuthor').first().click();await p.waitForSelector('.subjectFilters');
+ await p.waitForSelector('.browseTile:not(.cardPending)');
+ await p.locator('#workspace').evaluate(w=>w.scrollTop=500);
+ await p.waitForFunction(()=>document.body.classList.contains('browseHeaderHidden'));
+ await p.evaluate(()=>navigate('image'));
+ assert.equal(await p.locator('#browseTop').isVisible(),false);
+ assert.equal(await p.locator('#browseSync').isVisible(),false);
+ assert.equal(await p.evaluate(()=>document.body.classList.contains('browseHeaderHidden')),false);
+ await p.evaluate(()=>{navigate('browse');window.synced=true;CivitaiBrowser.launchWarm();});
+ await p.waitForSelector('#browseSync.synced');
+ assert.equal(await p.locator('#browseSync span').textContent(),'✓');
+ await p.waitForFunction(()=>document.querySelector('#browseSync').hidden);
+ assert.deepEqual(errors,[]);await p.close();
+}console.log('Browse top bar: directional hide/show, stable feed geometry, center scroll-to-top, subfeeds, route reset, sync count ordering and completion passed at phone/desktop widths.');}finally{await browser.close();}})().catch(e=>{console.error(e);process.exit(1);});

@@ -795,3 +795,23 @@ insertion during movement, prompt insertion after scroll-end, offscreen motion
 culling, footer pausing and no repeated reaction rebuilds. Cache/navigation tests
 wait for actual card readiness before simulating scrolling. These browser checks
 do not measure physical-device frame times; that remains a runtime check.
+
+## Beta 99: Browse top bar and compact sync status
+
+The shared header translates away after 24 px of downward travel beyond the
+first 80 px, and returns after 8 px upward or near the top. Direction changes
+reset the travel threshold to avoid jitter. It changes no document geometry;
+root-page navigation restores normal header behavior. Keyboard focus reveals
+the bar. Its central identity area is an accessible scroll-to-top button;
+menu, connection, sync and refresh controls remain separate. Reduced-motion
+preferences disable the slide transition and smooth scrolling.
+
+The header's sync indicator uses the existing durable local/server outbox,
+shows the pending count, then a green check for 1.4 seconds on completion.
+Account changes reset completion history. No extra polling or upstream calls
+were added. Pending/retry details are in its accessible label and tooltip.
+The ring pauses while the bar is hidden, the app is backgrounded or the media
+viewer covers it. The previous feed paragraph is no longer created.
+
+`tests/browse-topbar.cjs` covers phone and desktop sizes, scroll direction,
+stable geometry, subfeeds, other-page isolation and sync completion.

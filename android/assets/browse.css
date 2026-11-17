@@ -237,3 +237,17 @@ body[data-page=browse] #workspace{overscroll-behavior-y:contain}
 
 /* Invisible loading indicators must not keep the compositor spinning. */
 #browseMore:not(.motionVisible) .spinner,.browseBackgrounded .browsePuller .spinner,.civitaiViewerOpen #browseMore .spinner{animation-play-state:paused}
+/* Browse chrome: transform only, preserving the scrolling content's geometry. */
+#headerIdentity{display:contents}
+body[data-page=browse] #workspace>header{gap:8px;transition:transform .16s ease-out}
+body[data-page=browse].browseHeaderHidden #workspace>header{transform:translateY(-100%);pointer-events:none}
+body[data-page=browse] #headerIdentity{display:flex;align-items:center;justify-content:space-between;gap:8px;flex:1;min-width:0;position:relative;align-self:stretch}
+body[data-page=browse] #browseHello{margin-left:auto;max-width:52%;min-width:0}
+#browseTop{position:absolute;inset:0;width:100%;padding:0;border:0;background:transparent;border-radius:6px;min-height:0}
+#browseTop:focus-visible{outline:2px solid var(--mint);outline-offset:2px}
+#browseSync{position:relative;display:grid;place-items:center;flex:none;width:30px;height:30px;font-size:11px;line-height:1;font-variant-numeric:tabular-nums}
+#browseSync>i{position:absolute;inset:0;border:1.5px solid #8d9da433;border-top-color:var(--mint);border-radius:50%;animation:spin 1.1s linear infinite}
+#browseSync.synced{font-size:21px;color:var(--mint)}#browseSync.synced>i{display:none}
+body:not([data-page=browse]) #browseSync{display:none}
+.browseHeaderHidden #browseSync>i,.browseHeaderHidden #browseRefresh.refreshing svg,.browseBackgrounded #browseSync>i,.civitaiViewerOpen #browseSync>i{animation-play-state:paused}
+@media(prefers-reduced-motion:reduce){body[data-page=browse] #workspace>header{transition:none}#browseSync>i{animation:none}}

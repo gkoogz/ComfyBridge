@@ -4,6 +4,16 @@ const CivitaiBrowser=(()=>{
  let account='',status=null,feed=[],strip=[],cursor='',stripCursor='',channel='',busy=false,stripBusy=false,session=0,timer,observer,viewer=null,lastStatus=0;
  let view={kind:'mix'}, history=[], feedEnded=false, collectionPopup=null;
  let backLayer=null;
+ let headerTop=0,headerTravel=0,headerDirection=0;
+ function showBrowseHeader(){document.body.classList.remove('browseHeaderHidden');headerTop=$('#workspace').scrollTop;headerTravel=0;headerDirection=0;}
+ function trackBrowseHeader(top){
+  const delta=top-headerTop;headerTop=top;
+  if(viewer||backLayer||$('#drawer').classList.contains('open'))return;
+  if(top<=12){showBrowseHeader();return;}
+  const direction=Math.sign(delta);if(!direction)return;
+  if(direction!==headerDirection){headerDirection=direction;headerTravel=0;}headerTravel+=Math.abs(delta);
+  if(headerTravel>=(direction>0?24:8))document.body.classList.toggle('browseHeaderHidden',direction>0&&top>80);
+ }
  // Keep scroll events cheap; admit rendering/maintenance at a settling boundary.
  const scrollWork=new Map();let workFrame=0,workTimer=0,lastScroll=-Infinity,scrollSpeed=0,scrollTopSample=0,scrollCheckFrame=0;
  function scrollMoving(){return typeof page!=='undefined'&&page==='browse'&&performance.now()-lastScroll<(scrollSpeed<.08?48:100);}
@@ -617,6 +627,7 @@ const CivitaiBrowser=(()=>{
 
  }
  async function render(){
+  showBrowseHeader();
   clearBackLayer();
   const stale=activityAge()>=7200000;markActivity();
   if(suspended&&!stale&&suspended.scope===scope()){
@@ -652,6 +663,7 @@ const CivitaiBrowser=(()=>{
   schedule();
  },15000);}
  function suspend(){
+  showBrowseHeader();
   clearBackLayer();
   close();collectionPopup?.remove();collectionPopup=null;
   if(!$('.civitaiBrowse'))return;
@@ -712,6 +724,7 @@ const CivitaiBrowser=(()=>{
   return Number(item.stats?.[key.toLowerCase()+'CountAllTime']??item.stats?.[key.toLowerCase()+'Count']??0);
  }
  function saveView(){
+  showBrowseHeader();
   observer?.disconnect();
   const main=$('#main');
   history.push({view,feed,cursor,feedEnded,emptyPages,scroll:$('#workspace').scrollTop,nodes:[...main.childNodes]});
@@ -719,6 +732,7 @@ const CivitaiBrowser=(()=>{
   session++;busy=false;stripBusy=false;
  }
  function back(){
+  showBrowseHeader();
   clearBackLayer();
   if(collectionPopup){collectionPopup.remove();collectionPopup=null;return true;}
   if(!history.length)return false;
@@ -955,11 +969,14 @@ const CivitaiBrowser=(()=>{
  scrollHost.addEventListener('scroll',()=>{
   if(page!=='browse')return;
   const now=performance.now(),top=scrollHost.scrollTop;scrollSpeed=Math.abs(top-scrollTopSample)/Math.max(1,now-lastScroll);lastScroll=now;scrollTopSample=top;
+  trackBrowseHeader(top);
   cancelArrivalMotion();
   if(!scrollCheckFrame)scrollCheckFrame=requestAnimationFrame(()=>{scrollCheckFrame=0;checkBottom();});
   afterScroll('scroll-maintenance',()=>{warm();refreshCachedFeed();});
  },{passive:true});
  scrollHost.addEventListener('scrollend',()=>{lastScroll=-Infinity;scrollSpeed=0;clearTimeout(workTimer);workTimer=0;scheduleScrollWork();},{passive:true});
+ document.querySelector('#browseTop').onclick=()=>{showBrowseHeader();scrollHost.scrollTo({top:0,behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth'});};
+ document.querySelector('#workspace > header').addEventListener('focusin',showBrowseHeader);
  const pullerMotion=new IntersectionObserver(entries=>entries.forEach(e=>e.target.classList.toggle('motionVisible',e.isIntersecting)),{root:scrollHost});
  async function loadStrip(replace=false){
   replace=replace===true;
@@ -1012,8 +1029,21 @@ const CivitaiBrowser=(()=>{
   for(const item of allItems())Object.assign(item,overlaySocial(item));
   if(status?.account===account){const ids=new Set((status.followingIds||[]).map(String));for(const r of socialRows())if(r.kind==='follow')r.selected?ids.add(String(r.creatorId)):ids.delete(String(r.creatorId));status.followingIds=[...ids];status.follows=ids.size;}
   paintSocial();
-  let el=$('#browseSync');if(!el&&$('#browseError')){el=document.createElement('p');el.id='browseSync';el.className='muted';el.setAttribute('role','status');$('#browseError').after(el);}
-  if(el){const rows=socialRows(),failed=rows.some(r=>r.error||Date.now()/1000-r.firstAt>600);el.hidden=!rows.length;el.textContent=rows.length?rows.length+' change'+(rows.length===1?'':'s')+(failed?' saved · waiting to retry sync':' saved · sync within 10 minutes'):'';}
+  paintSyncIndicator();
+ }
+ let syncCount=0,syncAccount='',syncDoneTimer;
+ function paintSyncIndicator(){
+  const el=$('#browseSync'),rows=socialRows(),count=rows.length;
+  if(syncAccount!==account){clearTimeout(syncDoneTimer);syncCount=0;syncAccount=account;el.hidden=true;el.classList.remove('synced');}
+  if(count){
+   clearTimeout(syncDoneTimer);el.hidden=false;el.classList.remove('synced');$('span',el).textContent=count;
+   const retry=rows.some(r=>r.error||Date.now()/1000-r.firstAt>600);
+   el.setAttribute('aria-label',count+' changes saved'+(retry?', waiting to retry sync':', awaiting sync'));el.title=el.getAttribute('aria-label');
+  }else if(syncCount){
+   el.hidden=false;el.classList.add('synced');$('span',el).textContent='✓';el.setAttribute('aria-label','Changes synced');el.title='Changes synced';
+   clearTimeout(syncDoneTimer);syncDoneTimer=setTimeout(()=>{el.hidden=true;el.classList.remove('synced');},1400);
+  }
+  syncCount=count;
  }
  function socialSoon(delay=100){clearTimeout(socialTimer);socialTimer=setTimeout(pumpSocial,delay);}
  function queueSocial(data){
