@@ -41,7 +41,7 @@
 #drawerBridge .metric small{font-size:10px;margin:0 0 0 4px}
 #drawerBridge .metric .meter{margin-top:3px}
 #drawerBridge .historyCard{margin:6px 0 0;padding:6px 8px;font-size:12px}
-#drawerBridge .queueRows{overscroll-behavior-y:auto}
+#drawerBridge .queueRows{max-height:208px;overscroll-behavior-y:contain}
 #drawerBridge .jobRecall{width:25px}
 #drawer nav{flex:none;display:grid;grid-template-columns:1fr;gap:3px;padding:6px 8px max(6px,env(safe-area-inset-bottom));border-top:1px solid var(--line);background:#111b21}
 #drawer nav button{display:flex;align-items:center;gap:12px;min-width:0;min-height:clamp(46px,6dvh,56px);margin:0;padding:6px 12px;border-radius:10px;text-align:left;font-size:16px}
@@ -70,3 +70,5 @@ body[data-page=notepad] main{max-width:none;padding:0 12px 64px}
 #addSticky{position:fixed;right:15px;bottom:15px;border-radius:24px;padding:11px 18px;z-index:11;box-shadow:0 3px 14px #0005}
 
 #noteText{touch-action:pan-y pinch-zoom}
+
+#drawerBridge .foldQueueRows,.desktop #desktopBridge .foldQueueRows{max-height:176px;overscroll-behavior-y:contain}

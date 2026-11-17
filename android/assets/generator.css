@@ -132,3 +132,22 @@ body:is([data-page=image],[data-page=video]) .modeRow{margin:2px 0 7px}
 #videoModel button[aria-pressed=true]{background:#223b31;color:var(--mint);border-color:var(--mint)}
 #videoModel button[aria-disabled=true]{opacity:.5}
 .soundToggle{min-height:44px;margin:4px 0 8px}.soundToggle strong,.soundToggle small{display:block}.soundToggle strong{color:var(--text);font-size:14px}
+
+/* Compact LoRAs keep a dedicated, control-free scrolling gutter. */
+.foldBody .lora{grid-template-columns:60% minmax(0,1fr) 36px;column-gap:8px}
+.foldBody .lora .loraHeader{grid-column:1/3;grid-row:1;padding-right:150px}
+.loraName{min-width:0;overflow-wrap:anywhere;flex:1;font-size:13px}
+.loraNumber{grid-column:2;grid-row:2}.loraNumber input[type=number]{width:100%}
+.loraSlider{grid-row:2}
+.loraActions{grid-column:1/3;grid-row:1;justify-self:end;display:flex;justify-content:flex-end;gap:8px}
+.loraActions .seeListing,.loraActions .loraRemove{height:36px;min-height:36px;border:1px solid #4b5e67;border-radius:9px;background:var(--panel2)}
+.loraActions .seeListing{padding:0 10px;font-size:12px}
+.loraNote{grid-row:3}
+.promptActions .savedPrompts{background:var(--mint);color:#10251d;font-size:12px;padding:0 8px}
+.savedPromptItem{padding:12px 0;border-bottom:1px solid #ffffff20;margin-bottom:12px}
+.savedPromptItem p{white-space:pre-wrap;overflow-wrap:anywhere;margin:6px 0}
+#savedPromptText{width:100%;margin-top:6px}
+#carousel .thumb.inflightThumb{width:auto!important;min-width:0;flex:none;height:120px}
+#carousel .inflightThumb img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain}
+.foldRecent .foldLive{position:relative;height:55.2px;width:auto!important;flex:none}.foldLive .foldThumb{position:absolute;inset:0;width:100%;height:100%;object-fit:contain}
+.watchGeneration .watchPixels{width:100%;height:100%;object-fit:contain;position:absolute;inset:0}

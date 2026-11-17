@@ -7,6 +7,8 @@ const liveJob=id=>jobs.find(j=>j.id===id);
 const currentGeneration=(kind=page)=>{const j=liveJob(active);return j?.kind===kind&&liveStatus(j.status)?j:null;};
 const nextGeneration=(kind=page)=>currentGeneration(kind)||jobs.filter(j=>j.kind===kind&&liveStatus(j.status))
  .sort((a,b)=>a.queuePosition-b.queuePosition||a.created-b.created)[0];
+const selectedGeneration=(kind=page)=>{const selected=liveSelection?.kind===kind?liveJob(liveSelection.id):null;return selected&&liveStatus(selected.status)?selected:nextGeneration(kind);};
+function generationAspect(job){const s=liveSelection?.id===job?.id?liveSelection:job;return (Number(job?.width||s?.width)||1)+' / '+(Number(job?.height||s?.height)||1);}
 function stopFrames(){
  if(frameStream)frameStream.controller.abort();
  frameStream=null;
@@ -83,10 +85,12 @@ function renderLiveGeneration(box){
  if(box.dataset.live!==view.id||!$('.watchGeneration',box)){
   box.dataset.live=view.id;
   box.innerHTML='<div class="asset watchGeneration"><img class="watchPixels" alt="Live '+kind+' preview" hidden><span class="previewBusy" role="status" aria-label="Generation in progress"><i class="spinner" aria-hidden="true"></i></span><small class="watchCaption" role="status"></small><button class="skipImage" hidden>Skip '+kind+'</button><button class="retryImage" hidden>Retry download</button></div>';
+  box.append(resultActions({kind,id:view.id,job:view.id},true));
   $('.watchPixels',box).dataset.frameJob=view.id;
   $('.skipImage',box).onclick=()=>skipLiveGeneration(view);
   $('.retryImage',box).onclick=()=>{view.error='';renderLiveGeneration(box);};
  }
+ $('.watchGeneration',box).style.aspectRatio=generationAspect(job||view);
  const skip=$('.skipImage',box),retry=$('.retryImage',box);
  skip.hidden=!(connected&&(window.Desktop||job?.owner===info().device)&&job?.id===active&&job.status==='running'&&imagePreviewProtocol);
  skip.disabled=view.skip;skip.textContent=view.skip?'Skipping…':'Skip '+kind;
@@ -131,7 +135,7 @@ async function finishLiveGeneration(view,item){
   const box=$('#result');if(!box)return;
   if(item.kind==='image'){
    const host=document.createElement('div');host.className='asset';host.dataset.id=item.id;host.dataset.hash=item.local;
-   host.append(img);const actions=document.createElement('div');actions.className='resultActions';actions.append(makeVideoButton(item),ratingButtons(item));box.replaceChildren(host,actions);refreshRatings();
+   host.append(img);box.replaceChildren(host,resultActions(item));refreshRatings();
   }else mountResult(item,poster);
   delete box.dataset.live;
   box.dataset.latest=library.find(j=>j.kind===item.kind&&!j.archived)?.id||item.id;

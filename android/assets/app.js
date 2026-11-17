@@ -182,7 +182,7 @@ function renderBridge(){
  const codeValue=$('#code')?.value||'';
  const retry=connected&&!catalog&&!catalogLoading&&!!serviceNote;
  const buttonText=connected?'Disconnect':wanted?'Cancel reconnect':enroll?'Pair & connect':'Connect to bridge';
- $('#drawerConnection').innerHTML=`<button class="green connectbutton" id="connect">${buttonText}</button>`;
+ $('#drawerConnection').innerHTML=`<button class="${connected?'stop':'green'} connectbutton" id="connect">${buttonText}</button>`;
  $('#pairFieldsHost').innerHTML=(enroll?`<div class="pairFields"><p>Use the address and pairing code shown in the Windows tray panel.</p><label for="host">PC address</label><input id="host" type="url" value="${esc(host)}" placeholder="Address shown in the PC panel" autocapitalize="off" spellcheck="false"><label for="code">Six-digit pairing code</label><input id="code" type="text" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="off" placeholder="000000" value="${esc(codeValue)}"></div>`:
   `<p class="pairHost">${esc(cfg.host)}</p>`)+
   `<div id="pairError" role="alert" ${bridgeError?'':'hidden'}>${esc(bridgeError)}</div>`+
@@ -233,7 +233,7 @@ function renderGenerator(){
  if(kind==='video'&&!ext&&!s.exactFrames)s.frames=5+17*Math.max(0,Math.ceil((s.frames-5)/17));
  if(textVideo)[s.width,s.height]=videoSize(s,0);
  if(!inp.data)s.denoise=1;
- $('#main').innerHTML=`<div class="gentoolbar">${generationControls(s.batch)}<div class="progressrow" id="progressRow" hidden><img class="preview" id="livePreview" alt="Generation preview"><div class="progress"><i id="progressFill"></i><span id="progressText"></span></div></div><div class="statusmessage" id="jobMessage"></div></div><div id="genError"></div>${window.Desktop?'':'<div id="generatorQueue"></div>'}<div class="row spread modeRow"><p class="eyebrow">${kind==='image'?'A STILL, A STORY':'VIDEO STUDIO'}</p><span class="pill" id="mode">${kind==='video'&&hasCharacterReference(s,inp)?(ext?'EXTEND WITH CHARACTER':'CHARACTER → VIDEO'):ext?(inp.finalFrame?.data||s.finalFrame?'EXTEND → FINAL FRAME':'EXTEND VIDEO'):textVideo?(inp.finalFrame?.data||s.finalFrame?'TEXT → FINAL FRAME':'TEXT → VIDEO'):kind==='video'?(inp.finalFrame?.data||s.finalFrame?'FIRST → FINAL FRAME':'IMAGE → VIDEO'):inp.mask?'INPAINT':inp.data?'IMAGE → IMAGE':'TEXT → IMAGE'}</span></div>${kind==='video'?videoFrameFields(s,inp)+characterReferenceField(s,inp):imageSourceField(inp)}<section class="card"><h2>Canvas & model</h2>${kind==='image'?canvasInputs(s):`${textVideo?canvasInputs(s,32)+'<div class="field scaleField"><label for="textVideoResolution">Resolution</label><div id="resolutionInfo"></div><input id="textVideoResolution" class="scaleRange" type="range" aria-label="Video resolution"><small>Red starts above 768 × 1152 pixels.</small></div>' :`<div class="field scaleField"><div class="row spread"><label for="videoScale">Scale from source</label><strong id="scaleValue"></strong></div><div id="resolutionInfo"></div><input id="videoScale" class="scaleRange" type="range" data-setting="scale" step="1"><div class="row spread"><small id="scaleBounds"></small><button type="button" id="originalScale" class="textbutton">Original · 0%</button></div></div>`}<div class="field"><div class="row spread"><label for="videoSeconds">${ext?'Time to add':'Video length'}</label><strong id="secondsValue"></strong></div><input id="videoSeconds" type="range" min="1" max="20" step="0.25"></div><div class="grid2 field"><div><label>${ext?'Frames to add':'Frames'}</label><input type="number" data-setting="frames" min="1" max="${ext?3570:3592}" value="${s.frames}"></div><div><label>FPS</label><input type="number" data-setting="fps" step="any" ${ext?'disabled':''} min="1" max="120" value="${s.fps}"></div></div><div id="durationInfo" aria-label="Video duration"></div><label class="togglelabel soundToggle"><input type="checkbox" id="videoSound" ${s.sound!==false?'checked':''}><span><strong>Include sound</strong><small>${ext?'Off saves a silent copy of the entire extension.':'Generate a soundtrack with the video.'}</small></span></label>`}<div class="field"><label>${kind==='video'?'Video model':'Checkpoint'}</label>${kind==='video'?`<div id="videoModelControls">${videoModelField(s)}</div>`:`<div class="checkpointPicker"><select data-setting="model">${[...new Set([s.model,...(catalog?.models||[])])].map(m=>`<option value="${esc(m)}" ${m===s.model?'selected':''}>${esc(modelLabel('checkpoints',m))}</option>`).join('')}</select><button type="button" id="checkpointBrowser">Checkpoint Browser</button></div>`}</div></section><section class="card"><div class="row spread"><h2>LoRAs</h2><button id="addLora" class="textbutton">＋ Add</button></div><div id="loras"></div></section>${promptField('positive','Positive prompt')}${promptField('negative','Negative prompt')}<section class="card"><h2>Generation settings</h2>${slider('steps','Steps',1,maxSteps)}${kind==='image'?slider('cfg','CFG',0,20,.1)+slider('denoise','Denoise'+(!inp.data?' · locked for text to image':''),0,1,.01,!inp.data):''}<div class="field"><label>Seed</label><input type="text" inputmode="numeric" data-setting="seed" value="${esc(s.seed)}"></div><div class="seedActions"><button id="randomSeed" type="button" class="seedRandom">Randomize</button><label class="togglelabel"><input type="checkbox" id="increment" ${s.increment?'checked':''}>Increment seed after each generation</label></div></section><section class="card" id="latestPanel"><div class="sectionline"><h2>Latest result</h2><button id="toLibrary" class="textbutton">Library ↗</button></div><div class="resultbox" id="result"></div><div class="carousel" id="carousel"></div></section>`;
+ $('#main').innerHTML=`<div class="gentoolbar">${generationControls(s.batch)}<div class="progressrow" id="progressRow" hidden><img class="preview" id="livePreview" alt="Generation preview"><div class="progress"><i id="progressFill"></i><span id="progressText"></span></div></div><div class="statusmessage" id="jobMessage"></div></div><div id="genError"></div>${window.Desktop?'':'<div id="generatorQueue"></div>'}<div class="row spread modeRow"><p class="eyebrow">${kind==='image'?'A STILL, A STORY':'VIDEO STUDIO'}</p><span class="pill" id="mode">${kind==='video'&&hasCharacterReference(s,inp)?(ext?'EXTEND WITH CHARACTER':'CHARACTER → VIDEO'):ext?(inp.finalFrame?.data||s.finalFrame?'EXTEND → FINAL FRAME':'EXTEND VIDEO'):textVideo?(inp.finalFrame?.data||s.finalFrame?'TEXT → FINAL FRAME':'TEXT → VIDEO'):kind==='video'?(inp.finalFrame?.data||s.finalFrame?'FIRST → FINAL FRAME':'IMAGE → VIDEO'):inp.mask?'INPAINT':inp.data?'IMAGE → IMAGE':'TEXT → IMAGE'}</span></div>${kind==='video'?videoFrameFields(s,inp)+characterReferenceField(s,inp):imageSourceField(inp)}<section class="card"><h2>Canvas & model</h2>${kind==='image'?canvasInputs(s):`${textVideo?canvasInputs(s,32)+'<div class="field scaleField"><label for="textVideoResolution">Resolution</label><div id="resolutionInfo"></div><input id="textVideoResolution" class="scaleRange" type="range" aria-label="Video resolution"><small>Red starts above 768 × 1152 pixels.</small></div>' :`<div class="field scaleField"><div class="row spread"><label for="videoScale">Scale from source</label><strong id="scaleValue"></strong></div><div id="resolutionInfo"></div><input id="videoScale" class="scaleRange" type="range" data-setting="scale" step="1"><div class="row spread"><small id="scaleBounds"></small><button type="button" id="originalScale" class="textbutton">Original · 0%</button></div></div>`}<div class="field"><div class="row spread"><label for="videoSeconds">${ext?'Time to add':'Video length'}</label><strong id="secondsValue"></strong></div><input id="videoSeconds" type="range" min="1" max="20" step="0.25"></div><div class="grid2 field"><div><label>${ext?'Frames to add':'Frames'}</label><input type="number" data-setting="frames" min="1" max="${ext?3570:3592}" value="${s.frames}"></div><div><label>FPS</label><input type="number" data-setting="fps" step="any" ${ext?'disabled':''} min="1" max="120" value="${s.fps}"></div></div><div id="durationInfo" aria-label="Video duration"></div><label class="togglelabel soundToggle"><input type="checkbox" id="videoSound" ${s.sound!==false?'checked':''}><span><strong>Include sound</strong><small>${ext?'Off saves a silent copy of the entire extension.':'Generate a soundtrack with the video.'}</small></span></label>`}<div class="field"><label>${kind==='video'?'Video model':'Checkpoint'}</label>${kind==='video'?`<div id="videoModelControls">${videoModelField(s)}</div>`:`<div class="checkpointPicker"><select data-setting="model">${[...new Set([s.model,...(catalog?.models||[])])].map(m=>`<option value="${esc(m)}" ${m===s.model?'selected':''}>${esc(modelLabel('checkpoints',m))}</option>`).join('')}</select><button type="button" id="checkpointBrowser">Checkpoint Browser</button></div>`}</div></section><section class="card"><div class="row spread"><h2>LoRAs</h2><button id="addLora" class="textbutton">＋ Add</button></div><div id="loras"></div></section>${promptField('positive','Positive prompt')}${promptField('negative','Negative prompt')}<section class="card"><h2>Generation settings</h2>${samplingFields(kind,s)}${slider('steps','Steps',1,maxSteps)}${kind==='image'?slider('cfg','CFG',0,20,.1)+slider('denoise','Denoise'+(!inp.data?' · locked for text to image':''),0,1,.01,!inp.data):''}<div class="field"><label>Seed</label><input type="text" inputmode="numeric" data-setting="seed" value="${esc(s.seed)}"></div><div class="seedActions"><button id="randomSeed" type="button" class="seedRandom">Randomize</button><label class="togglelabel"><input type="checkbox" id="increment" ${s.increment?'checked':''}>Increment seed after each generation</label></div></section><section class="card" id="latestPanel"><div class="sectionline"><h2>Latest result</h2><button id="toLibrary" class="textbutton">Library ↗</button></div><div class="resultbox" id="result"></div><div class="carousel" id="carousel"></div></section>`;
  $('#upload').onchange=e=>loadStartingMedia(e.target);$('#clearUpload').onclick=()=>{state.inputs[kind]=kind==='video'?videoReferenceInputs(inp):{};delete s.extension;delete s.sourceMedia;delete s.sourceOrigin;delete s.replayOf;s.upload=null;s.mask=null;s.scale=0;if(kind==='video'&&s.textCanvas)Object.assign(s,s.textCanvas);if(kind==='image'){s.width=1024;s.height=1536;s.denoise=1;if(s.aspectLock)s.aspectLock=[s.width,s.height];}persist();renderGenerator();};
  if($('#maskButton'))$('#maskButton').onclick=openMask;if($('#clearMask'))$('#clearMask').onclick=()=>{delete inp.mask;delete s.mask;persist();renderGenerator();};
  if(kind==='video'){
@@ -244,7 +244,7 @@ function renderGenerator(){
  }
  if(kind==='video')$('#videoSound').onchange=e=>{s.sound=e.target.checked;persist(kind);};
  $('#increment').onchange=e=>{s.increment=e.target.checked;persist();};
- $$('[data-setting]').forEach(el=>el.oninput=()=>{let key=el.dataset.setting;s[key]=['model','seed'].includes(key)?el.value:Number(el.value);$$(`[data-setting="${key}"]`).forEach(other=>{if(other!==el)other.value=el.value;});if(kind==='video'&&['frames','fps'].includes(key))updateVideo(false);persist();});
+ $$('[data-setting]').forEach(el=>el.oninput=()=>{let key=el.dataset.setting;s[key]=['model','seed','sampler'].includes(key)?el.value:Number(el.value);$$(`[data-setting="${key}"]`).forEach(other=>{if(other!==el)other.value=el.value;});if(kind==='video'&&['frames','fps'].includes(key))updateVideo(false);persist();});
  $('#batchButton').onclick=()=>setBatchMenu($('#batchMenu').hidden);$$('[data-batch]').forEach(el=>el.onclick=()=>{s.batch=+el.dataset.batch;$('#batchLabel').textContent=s.batch+' in batch';setBatchMenu(false);persist();generate();});
  $('#play').onclick=generate;$('#toLibrary').onclick=()=>navigate('library');$('#addLora').onclick=()=>openModelBrowser('loras');if($('#checkpointBrowser'))$('#checkpointBrowser').onclick=()=>openModelBrowser('checkpoints');
  if(kind==='video')bindVideoModelButtons();
@@ -407,15 +407,36 @@ async function clearVideoReference(key){
   persist('video');renderGenerator();
  }catch(error){toast(error.message);}
 }
-function promptField(key,label){return `<section class="card"><div class="promptlabel"><label>${label}</label><button data-expand="${key}" class="textbutton" aria-label="Expand ${label}">⛶</button></div><div class="prompttools"><select data-prompt-library="${key}"><option value="">Saved prompts…</option>${state.prompts.map((p,i)=>`<option value="${i}">${esc(p.name)}</option>`).join('')}</select><button data-save-prompt="${key}" aria-label="Save prompt">＋</button><button data-delete-prompt="${key}" class="danger" aria-label="Delete selected prompt">×</button></div><textarea class="promptEntry" rows="5" data-setting="${key}" placeholder="${key==='negative'?'What should the model avoid?':'Describe your idea…'}">${esc(state.settings[page][key]??'')}</textarea><div class="promptActions"><span class="quickActions" data-quick-actions="${key}"></span><button type="button" class="textbutton promptChat" data-chat-prompt="${key}">Chat about this ↗</button><button type="button" class="textbutton promptHeight" data-prompt-height="${key}" aria-expanded="false" aria-label="Show all ${label}">⌄</button></div><div class="quickPanel" data-quick-panel="${key}"></div>${page==='video'&&key==='negative'?'<small>Optional. Adding text uses extra sampling time. Leave blank for the standard H3 workflow.</small>':''}</section>`;}
+function samplingFields(kind,s){
+ if(!catalog?.samplers)return '<small>Connect to the updated PC bridge to load sampling controls.</small>';
+ const fallback=kind==='image'?catalog?.defaults?.image?.sampler:(s.model===erosModel?'euler':hasCharacterReference(s)?'res_multistep':catalog?.defaults?.video?.sampler);
+ const selected=s.sampler||fallback||'euler',choices=catalog?.[kind==='image'?'samplers':'videoSamplers']||[];
+ return '<div class="field"><label>Sampling method</label><select data-setting="sampler">'+[...new Set([selected,...choices])].map(x=>'<option value="'+esc(x)+'" '+(x===selected?'selected':'')+'>'+esc(x==='euler_ancestral'?'Euler a':x.replaceAll('_',' '))+'</option>').join('')+'</select></div>'+(kind==='image'?'<div class="field"><label>Clip skip</label><input type="number" data-setting="clipSkip" min="1" max="24" step="1" value="'+esc(s.clipSkip??catalog?.defaults?.image?.clipSkip??1)+'"></div>':'');
+}
+function promptField(key,label){return `<section class="card"><div class="promptlabel"><label>${label}</label><button data-expand="${key}" class="textbutton" aria-label="Expand ${label}">⛶</button></div><textarea class="promptEntry" rows="5" data-setting="${key}" placeholder="${key==='negative'?'What should the model avoid?':'Describe your idea…'}">${esc(state.settings[page][key]??'')}</textarea><div class="promptActions"><button type="button" class="savedPrompts green" data-saved-prompts="${key}">Saved Prompts</button><span class="quickActions" data-quick-actions="${key}"></span><button type="button" class="textbutton promptChat" data-chat-prompt="${key}">Chat about this ↗</button><button type="button" class="textbutton promptHeight" data-prompt-height="${key}" aria-expanded="false" aria-label="Show all ${label}">⌄</button></div><div class="quickPanel" data-quick-panel="${key}"></div>${page==='video'&&key==='negative'?'<small>Optional. Adding text uses extra sampling time. Leave blank for the standard H3 workflow.</small>':''}</section>`;}
 function wirePrompts(){
  bindQuickEdits();
  $$('[data-chat-prompt]').forEach(b=>b.onclick=()=>chatAboutPrompt(b.dataset.chatPrompt));
  $$('textarea[data-setting]').forEach(el=>el.oninput=()=>{state.settings[page][el.dataset.setting]=el.value;persist();});
  $$('[data-expand]').forEach(b=>b.onclick=()=>openPrompt(b.dataset.expand));
- $$('[data-save-prompt]').forEach(b=>b.onclick=async()=>{let name=await askName('Save prompt');if(!name)return;state.prompts.push({name,text:state.settings[page][b.dataset.savePrompt]});persist('prompts');renderGenerator();});
- $$('[data-prompt-library]').forEach(el=>el.onchange=()=>{if(el.value==='')return;let key=el.dataset.promptLibrary;state.settings[page][key]=state.prompts[+el.value].text;$(`textarea[data-setting="${key}"]`).value=state.settings[page][key];sizePrompt($(`textarea[data-setting="${key}"]`),true);persist();});
- $$('[data-delete-prompt]').forEach(b=>b.onclick=()=>{let sel=$(`[data-prompt-library="${b.dataset.deletePrompt}"]`);if(sel.value==='')return toast('Choose a saved prompt first.');state.prompts.splice(+sel.value,1);persist('prompts');renderGenerator();});
+ $$('[data-saved-prompts]').forEach(b=>b.onclick=()=>openSavedPrompts(b.dataset.savedPrompts));
+}
+function openSavedPrompts(key){
+ const kind=page;
+ openModal('Saved Prompts','<div id="savedPromptList"></div><label for="savedPromptText">New prompt</label><textarea id="savedPromptText" rows="5" placeholder="Text to save…"></textarea>','<button class="green" id="savePromptText">Save Prompt</button>');
+ const paint=()=>{
+  $('#savedPromptList').innerHTML=state.prompts.length?state.prompts.map((p,i)=>'<div class="savedPromptItem"><strong>'+esc(p.name||'Prompt')+'</strong><p>'+esc(p.text)+'</p><div class="row"><button class="green" data-insert-saved="'+i+'">Insert</button><button class="danger" data-delete-saved="'+i+'">Delete</button></div></div>').join(''):'<small>No saved prompts yet.</small>';
+  $$('[data-insert-saved]').forEach(b=>b.onclick=()=>{
+   const text=state.prompts[+b.dataset.insertSaved].text.trim(),settings=state.settings[kind],old=String(settings[key]||'').trimEnd();
+   if(!text)return;
+   settings[key]=old?old+(/[,;:]$/.test(old)?' ':', ')+text:text;persist(kind);
+   if(page===kind){const field=$('textarea[data-setting="'+key+'"]');if(field){field.value=settings[key];sizePrompt(field,true);}}
+   toast('Prompt inserted');
+  });
+  $$('[data-delete-saved]').forEach(b=>b.onclick=()=>{state.prompts.splice(+b.dataset.deleteSaved,1);persist('prompts');paint();});
+ };
+ $('#savePromptText').onclick=()=>{const field=$('#savedPromptText'),text=field.value.trim();if(!text)return;state.prompts.push({name:text.split('\n')[0].slice(0,70),text});persist('prompts');field.value='';paint();};
+ paint();
 }
 const erosModel='10Eros_Max_h3_8stepTURBO_beta7_int8HQ.safetensors';
 function openPrompt(key){
@@ -520,21 +541,15 @@ function renderLoras(){
   }
  }
  $('#loras').innerHTML=list.length?list.map((l,i)=>`<div class="lora" data-lora="${i}" role="group" aria-label="${esc(modelLabel('loras',l.name))}">
- <div class="row loraHeader"><input type="checkbox" data-enable="${i}" ${l.enabled?'checked':''} ${l.locked?'disabled':''} aria-label="Enable LoRA">${l.locked?`<span class="lockedname">▣ ${esc(modelLabel('loras',l.name))}</span>`:`<select data-lora-name="${i}">${[...new Set([l.name,...(catalog?.loras||[])])].map(n=>`<option value="${esc(n)}" ${n===l.name?'selected':''} ${list.some((x,j)=>j!==i&&modelKey(x.name)===modelKey(n))?'disabled':''}>${esc(modelLabel('loras',n))}</option>`).join('')}</select>`}<button type="button" data-see-lora="${i}" class="seeListing">See Listing</button></div>
+ <div class="row loraHeader"><input type="checkbox" data-enable="${i}" ${l.enabled?'checked':''} ${l.locked?'disabled':''} aria-label="Enable LoRA"><span class="loraName">${l.locked?'▣ ':''}${esc(modelLabel('loras',l.name))}</span></div>
+ <div class="loraActions"><button type="button" data-see-lora="${i}" class="seeListing">See Listing</button><button type="button" data-remove-lora="${i}" class="loraRemove danger" ${l.locked?'disabled':''} aria-label="Remove LoRA"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m5 5 10 10M15 5 5 15"/></svg></button></div>
  <div class="loraSlider"><div class="loraMarks" aria-hidden="true">${[-1,0,1].map(n=>`<span style="left:${(n+2)/4*100}%">${n===-1?'−1':n}</span>`).join('')}</div><input type="range" data-strength="${i}" ${l.locked?'disabled':''} min="-2" max="2" step=".1" value="${esc(l.strength)}" aria-label="LoRA strength" title="Drag the handle to adjust strength"></div>
  <div class="loraNumber"><input type="number" data-strength="${i}" ${l.locked?'disabled':''} min="-20" max="20" step="any" value="${esc(l.strength)}" aria-label="LoRA strength" title="Precise strength; may exceed the slider range"></div>
- <div class="loraActions"><button type="button" data-remove-lora="${i}" class="loraRemove danger" ${l.locked?'disabled':''} aria-label="Remove LoRA"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m5 5 10 10M15 5 5 15"/></svg></button><div class="loraReorder" role="group" aria-label="Reorder LoRA"><button type="button" data-move-lora="${i}" data-direction="-1" ${l.locked||i===0||list[i-1]?.locked?'disabled':''} aria-label="Move LoRA up"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m5 12 5-5 5 5"/></svg></button><button type="button" class="loraGrip" data-drag-lora="${i}" ${l.locked?'disabled':''} aria-label="Drag to reorder LoRA" title="Drag to reorder"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 5h12M4 10h12M4 15h12"/></svg></button><button type="button" data-move-lora="${i}" data-direction="1" ${l.locked||i===list.length-1||list[i+1]?.locked?'disabled':''} aria-label="Move LoRA down"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m5 8 5 5 5-5"/></svg></button></div></div>
+
  ${l.locked?'<small class="loraNote">Required turbo LoRA · fixed strength</small>':''}</div>`).join(''):page==='video'&&state.settings.video.model===erosModel?'<small>Eros Turbo is built in. Add optional LoRAs here.</small>':'<small>No LoRAs added.</small>';
  $$('[data-see-lora]').forEach(b=>b.onclick=()=>openModelBrowser('loras',list[+b.dataset.seeLora].name));
- $$('[data-enable]').forEach(e=>e.onchange=()=>{list[+e.dataset.enable].enabled=e.checked;persist();});$$('[data-lora-name]').forEach(e=>e.onchange=()=>{list[+e.dataset.loraName].name=e.value;persist();});
+ $$('[data-enable]').forEach(e=>e.onchange=()=>{list[+e.dataset.enable].enabled=e.checked;persist();});
  $$('[data-remove-lora]').forEach(button=>button.onclick=()=>{const i=+button.dataset.removeLora;if(list[i].locked)return;list.splice(i,1);persist();renderLoras();});
- $$('[data-move-lora]').forEach(button=>button.onclick=()=>{
-  const from=+button.dataset.moveLora,to=from+Number(button.dataset.direction);
-  if(!list[to]||list[from].locked||list[to].locked)return;
-  [list[from],list[to]]=[list[to],list[from]];persist();renderLoras();
-  $('#loras [data-move-lora="'+to+'"][data-direction="'+button.dataset.direction+'"]').focus({preventScroll:true});
- });
- bindLoraReorder(list);
  $$('[data-strength]').forEach(el=>{
   const i=Number(el.dataset.strength);
   el.oninput=()=>{
@@ -686,6 +701,13 @@ function acceptSubmission(payload,accepted){
  s.batch=1;
  if(payload.settings.increment&&String(s.seed)===String(payload.settings.seed))s.seed=((BigInt(s.seed)+BigInt(payload.count))%(2n**64n)).toString();
  persist(kind);Native.watchBatch?.(accepted.batch);
+ const id=accepted.ids?.[0]||accepted.jobs?.[0]?.id;
+ if(id){
+  const dimensions=payload.settings;
+  if(!jobs.some(j=>j.id===id))jobs.unshift({id,kind,batch:accepted.batch,status:'pending',created:Date.now()/1000,width:dimensions.width,height:dimensions.height});
+  liveSelection={id,kind,width:dimensions.width,height:dimensions.height,skip:false,busy:false,error:''};
+  if(page===kind){const panel=$('#latestPanel');if(panel?.classList.contains('folded'))$('.foldToggle',panel).click();renderResults();}
+ }
 }
 async function resolvePendingSubmission(kind){
  if(submitting)throw Error('The current submission is still being sent. Please try again when it finishes.');
@@ -696,7 +718,7 @@ async function resolvePendingSubmission(kind){
   // which have finished; retry with the exact original idempotency key if absent.
   const receipt=await api('batch/'+payload.requestId);
   if(session!==epoch)throw Error('PC connection changed; the saved submission is kept.');
-  const accepted=receipt.jobs?.length?{batch:payload.requestId}:await api('generate',payload);
+  const accepted=receipt.jobs?.length?{batch:payload.requestId,jobs:receipt.jobs}:await api('generate',payload);
   if(session!==epoch)throw Error('PC connection changed; the saved submission is kept.');
   acceptSubmission(payload,accepted);
  }catch(e){throw Error('Could not confirm the previous batch: '+e.message+'. Its saved request is kept for retry.');}
@@ -826,7 +848,7 @@ function refreshCarouselSelection(){
 const recentResults=()=>library.filter(x=>x.kind===page&&!x.archived);
 const carouselItems=()=>recentResults().slice(0,20);
 function latestResultSummary(){
- const live=nextGeneration(page);
+ const live=selectedGeneration(page);
  const thumbs=carouselItems().map(item=>{
   const src=media(item.id,true);
   const time=item.kind==='video'&&item.duration>0?'<small>'+esc(duration(item.duration))+'</small>':'';
@@ -834,7 +856,7 @@ function latestResultSummary(){
  });
  if(live){
   const preview=frames.get(live.id)?.url;
-  thumbs.unshift('<div class="foldResult foldLive" aria-label="Generation in progress"><img class="foldThumb" data-frame-job="'+esc(live.id)+'" '+(preview?'src="'+esc(preview)+'"':'hidden')+' alt=""><i class="spinner" aria-hidden="true"></i></div>');
+  thumbs.unshift('<div class="foldResult foldLive" style="aspect-ratio:'+generationAspect(live)+'" aria-label="Generation in progress"><img class="foldThumb" data-frame-job="'+esc(live.id)+'" '+(preview?'src="'+esc(preview)+'"':'hidden')+' alt=""><i class="spinner" aria-hidden="true"></i></div>');
  }
  return thumbs.length?'<div class="foldRecent">'+thumbs.join('')+'</div>':{hint:'No results yet'};
 }
@@ -854,14 +876,14 @@ function renderCarousel(){
   }).join('');
   wireMedia(carousel);
  }
- const live=nextGeneration(page);
+ const live=selectedGeneration(page);
  const pending=!!live;
  let tile=carousel.querySelector('.inflightThumb');
  if(!pending){tile?.remove();}
  else{
   if(!tile){tile=document.createElement('button');tile.className='thumb inflightThumb';tile.innerHTML='<img hidden alt=""><i class="spinner"></i>';carousel.prepend(tile);}
   const image=tile.querySelector('img');
-  tile.disabled=false;tile.dataset.liveJob=live.id;tile.setAttribute('aria-label','View live '+live.kind+' preview');
+  tile.disabled=false;tile.style.aspectRatio=generationAspect(live);tile.dataset.liveJob=live.id;tile.setAttribute('aria-label','View live '+live.kind+' preview');
   tile.onclick=()=>selectLiveGeneration(live.id);
   if(imagePreviewProtocol){
    bindFrame(image,live.id);

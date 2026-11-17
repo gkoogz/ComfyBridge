@@ -41,6 +41,8 @@ const assert=require('node:assert/strict'),path=require('node:path');
    await fold.click();
    await tile.click();assert.equal(await tile.getAttribute('aria-current'),'true');
    assert(await p.locator('#result .previewBusy').isVisible());assert(await p.locator('#result .watchPixels').isHidden());
+   const actionCount=kind==='video'?3:2;assert.equal(await p.locator('#result .resultActions button').count(),actionCount);assert(await p.locator('#result .resultActions button').evaluateAll(bs=>bs.every(b=>b.disabled)));
+   const pendingHeight=await p.locator('#result .resultActions').evaluate(e=>e.getBoundingClientRect().height);
    await p.evaluate(kind=>{active='live-'+kind;jobs[0].status='running';frames.set(active,{revision:1,url:frame1});paintFrame(active);updateProgress();},kind);
    await p.locator('#result .watchPixels').evaluate(img=>img.decode());
    const center=await p.evaluate(()=>{
@@ -64,6 +66,7 @@ const assert=require('node:assert/strict'),path=require('node:path');
    await p.evaluate(()=>finishDownload());
    await p.waitForFunction(kind=>$('#result .asset')?.dataset.id==='new-'+kind&&liveSelection===null,kind);
    assert.equal(await p.locator('#result .previewBusy').count(),0);
+   assert.equal(await p.locator('#result .resultActions button').count(),actionCount);assert(await p.locator('#result .resultActions button').evaluateAll(bs=>bs.every(b=>!b.disabled)));assert.equal(await p.locator('#result .resultActions').evaluate(e=>e.getBoundingClientRect().height),pendingHeight);
    if(kind==='video'){
     assert(await p.locator('#result video').isVisible());assert(await p.locator('#result .regenerate').isVisible());
     assert.match(await p.locator('#result video').getAttribute('poster'),/^data:image\/jpeg/);

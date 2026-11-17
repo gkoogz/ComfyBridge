@@ -51,7 +51,7 @@ class Workflows:
             loras.append(dict(name=v[0], strength=v[1], clipStrength=v[2], enabled=n.get('mode', 0) == 0))
         v = self.widgets('video', 6)
         return {'image': dict(model=self.widgets('image', 4)[0], width=1024, height=1536,
-                             steps=k[2], cfg=k[3], seed=str(k[0]), increment=True, denoise=1,
+                             steps=k[2], cfg=k[3], sampler=k[4], clipSkip=abs(int(self.widgets('image',18)[0])), seed=str(k[0]), increment=True, denoise=1,
                              positive=self.widgets('image', 6)[0], negative=self.widgets('image', 7)[0],
                              loras=loras, scale=0, batch=1),
                 'video': dict(model=self.widgets('video', 5)[0], width=v[1], height=v[2],
@@ -82,9 +82,11 @@ class Workflows:
         if len(loras) > 100:
             raise ValueError('At most 100 LoRAs can be used in one job.')
         if kind == 'image':
+            if not 1 <= int(s.get('clipSkip',abs(int(self.widgets('image',18)[0])))) <= 24:
+                raise ValueError('Clip skip must be between 1 and 24.')
             node(4, 'CheckpointLoaderSimple', ckpt_name=s['model'])
             model, clip = ['4', 0], ['4', 1]
-            clip = node(18, 'CLIPSetLastLayer', clip=clip, stop_at_clip_layer=self.widgets('image', 18)[0])
+            clip = node(18, 'CLIPSetLastLayer', clip=clip, stop_at_clip_layer=-int(s.get('clipSkip',abs(int(self.widgets('image',18)[0])))))
             for i, l in enumerate(loras):
                 if l.get('enabled', True):
                     strength = float(l['strength'])
@@ -112,7 +114,7 @@ class Workflows:
                 raise ValueError('Denoise must be between 0 and 1.')
             sampler = self.widgets('image', 3)
             latent = node(3, 'KSampler', model=model, positive=pos, negative=neg, latent_image=latent,
-                          seed=seed, steps=steps, cfg=float(s['cfg']), sampler_name=sampler[4], scheduler=sampler[5], denoise=denoise)
+                          seed=seed, steps=steps, cfg=float(s['cfg']), sampler_name=s.get('sampler') or sampler[4], scheduler=sampler[5], denoise=denoise)
             image = node(8, 'VAEDecode', samples=latent, vae=vae)
             node(9, 'SaveImage', images=image, filename_prefix=prefix)
         elif kind == 'video':
@@ -207,7 +209,7 @@ class Workflows:
                 guider = node(9, 'CFGGuider', model=model, positive=cond, negative=avoid, cfg=2.0)
             else:
                 guider = node(9, 'BasicGuider', model=model, conditioning=cond)
-            sampler_name = 'euler' if eros else 'res_multistep' if character else self.widgets('video', 10)[0]
+            sampler_name = s.get('sampler') or ('euler' if eros else 'res_multistep' if character else self.widgets('video', 10)[0])
             sampler = node(10, 'KSamplerSelect', sampler_name=sampler_name)
             noise = node(11, 'RandomNoise', noise_seed=seed)
             sigmas = node(12, 'BasicScheduler', model=model, scheduler='simple', steps=steps, denoise=1.)

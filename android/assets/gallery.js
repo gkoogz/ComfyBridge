@@ -198,7 +198,6 @@ function mountAsset(host,item,isViewer,posterOverride=null){
     await original.decode();
     if(host.isConnected){
      host.replaceChildren(original);original.onclick=e=>mediaTap(e,toggleChrome);
-     if(!isViewer)host.after(makeVideoButton(item));
     }
     return;
    }
@@ -226,12 +225,20 @@ function mountAsset(host,item,isViewer,posterOverride=null){
  }
  load(isViewer||item.kind==='image'&&(connected||!!item.local));
 }
+function resultActions(item,pending=false){
+ const actions=document.createElement('div');actions.className='resultActions';
+ if(item.kind==='video')actions.append(extendVideoButton(item),regenerateButton(item));
+ else actions.append(makeVideoButton(item));
+ actions.append(ratingButtons(item));
+ if(pending){actions.dataset.pending='true';$$('button',actions).forEach(b=>b.disabled=true);}
+ return actions;
+}
 function mountResult(j,posterOverride=null){
  const box=$('#result');if(!box)return;
  let host=$('.asset',box);
  if(host&&host.dataset.id===j.id&&host.dataset.hash===(j.local||'')){refreshRatings();return;}
  box.replaceChildren();host=document.createElement('div');host.dataset.id=j.id;host.dataset.hash=j.local||'';box.append(host);mountAsset(host,j,false,posterOverride);
- const actions=document.createElement('div');actions.className='resultActions';if(j.kind==='video')actions.append(extendVideoButton(j),regenerateButton(j));actions.append(ratingButtons(j));host.after(actions);refreshRatings();
+ host.after(resultActions(j));refreshRatings();
 }
 function renderResults(){
  const box=$('#result');if(!box)return;

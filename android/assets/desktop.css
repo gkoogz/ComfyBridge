@@ -41,10 +41,10 @@
 .desktop #bridgeCommands{display:flex;gap:4px;margin:6px 0}.desktop #bridgeCommands button{flex:1;min-height:29px;padding:4px;font-size:11px;border-radius:7px}
 .desktop #desktopBridge .bridgeStage{display:block;font-size:11px}.desktop #bridgeStage,.desktop #activeTimer{display:block}
 .desktop #desktopBridge .progress{height:23px}.desktop #desktopBridge .progress span{font-size:11px}
-/* Keep five complete 52px entries visible; only the list scrolls afterward. */
-.desktop #desktopBridge #queueList{min-height:322px;flex:1;display:flex}
+/* Keep four complete 52px entries visible; only the list scrolls afterward. */
+.desktop #desktopBridge #queueList{min-height:270px;flex:none;display:flex}
 .desktop #desktopBridge .historyCard{margin:0;padding:8px;flex:1;min-height:0;display:flex;flex-direction:column}
-.desktop #desktopBridge .queueRows{height:0;max-height:none;min-height:260px;overflow:auto;flex:1}
+.desktop #desktopBridge .queueRows{height:208px;max-height:208px;min-height:208px;overflow:auto;flex:none}
 .desktop #desktopBridge #queueList:has(.folded){min-height:0;flex:none}
 .desktop #desktopBridge .historyCard .foldBody:not([hidden]){display:flex;flex:1;flex-direction:column;min-height:0;padding-bottom:0}
 .desktop #desktopBridge .queueJob{gap:5px}.desktop #desktopBridge .jobThumb{width:38px;height:42px;min-width:38px}

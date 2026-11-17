@@ -103,3 +103,11 @@ canvas,input[type=range]{touch-action:none}
 .mediaRating button[aria-pressed=true]{color:#f4788c}.mediaRating button[aria-pressed=true] svg{fill:currentColor}
 
 #carousel .thumb[aria-current=true]::after{content:"";position:absolute;inset:0;border:3px solid var(--mint);border-radius:inherit;pointer-events:none;z-index:2}
+
+/* Stable generator action strip, including while the selected job is running. */
+#result .resultActions{display:flex;justify-content:flex-end;align-items:center;flex-wrap:nowrap;gap:6px;min-height:56px;padding:8px 12px}
+#result .resultActions button{display:inline-flex;align-items:center;justify-content:center;flex:none;height:40px;min-height:40px;margin:0;padding:0 10px;border:1px solid #52636b;border-radius:9px;background:var(--panel2);font-size:12px;line-height:1;color:var(--mint)}
+#result .resultActions .mediaRating{margin:0}
+#result .resultActions .mediaRating button{width:40px;min-width:40px;padding:9px;color:var(--text)}
+#result .resultActions .mediaRating button[aria-pressed=true]{color:#f4788c}
+#result .resultActions button:disabled{color:var(--muted);border-color:var(--line);opacity:.45;cursor:default}

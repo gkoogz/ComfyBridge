@@ -8,7 +8,7 @@ const assert=require('node:assert/strict'),path=require('node:path');
   await p.route('https://desktop.test/**',r=>r.fulfill({path:path.join(__dirname,'../android/assets',new URL(r.request().url()).pathname.slice(1)||'index.html')}));
   await p.route('**/local/**',r=>r.fulfill({contentType:'image/svg+xml',body:'<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300"><rect width="400" height="300" fill="#a3f2cc"/></svg>'}));
   await p.addInitScript(()=>{
-   window.Desktop=true;window.desktopConfiguration={device:'pc',name:'This PC',paired:true,version:'0.1.0-beta.112'};window.calls=[];
+   window.Desktop=true;window.desktopConfiguration={device:'pc',name:'This PC',paired:true,version:'0.1.0-beta.113'};window.calls=[];
    const listeners=[];let on=false;
    const config=()=>({online:on,phones:on?2:0,code:on?'123456':'—',hint:on?'Enter this code on your phone.':'Turn the server on to pair a phone.',addresses:['https://example.test:18764'],address:'https://example.test:18764'});
    window.chrome??={};window.chrome.webview={addEventListener:(name,fn)=>listeners.push(fn),postMessage:msg=>{
@@ -28,7 +28,7 @@ const assert=require('node:assert/strict'),path=require('node:path');
    render();
   });
   assert.equal(await p.locator('[data-nav=bridge]').count(),0);
-  assert.equal(await p.locator('#appVersion').textContent(),'Beta 112');
+  assert.equal(await p.locator('#appVersion').textContent(),'Beta 113');
   await p.locator('[data-nav=browse]').click();
   assert.equal(await p.locator('#pageTitle').textContent(),'Browse');
   await p.locator('[data-nav=image]').click();
@@ -41,13 +41,13 @@ const assert=require('node:assert/strict'),path=require('node:path');
   for(const height of [900,800,744]){
    await p.setViewportSize({width:1440,height});
    const layout=await p.evaluate(()=>{
-    const rail=$('#desktopBridge'),rows=$('#desktopBridge .queueRows'),fifth=rows.children[4],nav=$('#drawer nav');
+    const rail=$('#desktopBridge'),rows=$('#desktopBridge .queueRows'),fourth=rows.children[3],nav=$('#drawer nav');
     rail.scrollTop=rail.scrollHeight;
-    return {visible:rows.getBoundingClientRect().height,fifthBottom:fifth.getBoundingClientRect().bottom,
+    return {visible:rows.getBoundingClientRect().height,fourthBottom:fourth.getBoundingClientRect().bottom,
      bottom:rows.getBoundingClientRect().bottom,navTop:nav.getBoundingClientRect().top,navBottom:nav.getBoundingClientRect().bottom};
    });
-   assert(layout.visible>=260,JSON.stringify({height,...layout}));
-   assert(layout.fifthBottom<=layout.bottom+1&&layout.bottom<=layout.navTop,JSON.stringify({height,...layout}));
+   assert(layout.visible===208,JSON.stringify({height,...layout}));
+   assert(layout.fourthBottom<=layout.bottom+1&&layout.bottom<=layout.navTop,JSON.stringify({height,...layout}));
    assert.equal(layout.navBottom,height);
   }
   await p.setViewportSize({width:1440,height:900});

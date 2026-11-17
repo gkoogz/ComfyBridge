@@ -201,7 +201,7 @@ async def load_catalogue():
         field = obj[cls]['input']['required'][name]
         return field[0] if isinstance(field[0], list) else field[1].get('options', [])
     CATALOG = dict(defaults=WF.defaults(), models=choices('CheckpointLoaderSimple', 'ckpt_name'),
-                   loras=choices('LoraLoader', 'lora_name'))
+                   loras=choices('LoraLoader', 'lora_name'),samplers=choices('KSampler','sampler_name'),videoSamplers=choices('KSamplerSelect','sampler_name'))
     h3_inputs=obj.get('MiniMaxH3ImageToVideo',{}).get('input',{})
     CATALOG['finalFrameSupported']=any('last_frame' in h3_inputs.get(key,{}) for key in ('required','optional'))
     CATALOG['videoModels']=WF.video_models(obj,choices('UNETLoader','unet_name'),choices('CLIPLoader','clip_name'),
@@ -872,7 +872,7 @@ async def api(request):
             DB.execute('UPDATE job_times SET ended=NULL WHERE job=?',(id,))
         return web.json_response(dict(ok=True))
     if path in ('monitor','status') or path.startswith('batch/'):
-        fields='id,batch,owner,kind,status,progress,current_node,error,ordinal,total,created'
+        fields="id,batch,owner,kind,status,progress,current_node,error,ordinal,total,created,json_extract(settings,'$.width') AS width,json_extract(settings,'$.height') AS height"
         if path=='monitor':jobs=rows(f"SELECT {fields} FROM jobs WHERE {LIVE_JOBS} ORDER BY rowid")
         elif path=='status':
             jobs=rows(f"SELECT {fields} FROM jobs WHERE {LIVE_JOBS} OR rowid IN "
@@ -892,7 +892,7 @@ async def api(request):
                     j['etaSeconds']=None
                 else:
                     j['progress'],j['current_node']=TRACKER.sample()
-        return web.json_response(dict(protocol=20,build='0.1.0-beta.112',jobs=jobs, active=ACTIVE, preview=bool(PREVIEW), previewRevision=PREVIEW_REV,ownedComfy=bool(OWNED),queueEtaSeconds=total_eta))
+        return web.json_response(dict(protocol=20,build='0.1.0-beta.113',jobs=jobs, active=ACTIVE, preview=bool(PREVIEW), previewRevision=PREVIEW_REV,ownedComfy=bool(OWNED),queueEtaSeconds=total_eta))
     if path.startswith('preview/'):
         job=str(uuid.UUID(path[8:]))
         after=int(request.query.get('after','-1'))
@@ -1010,6 +1010,8 @@ async def api(request):
             raise ValueError('The bridge queue is full (64 jobs).')
         if kind == 'image' and s['model'] not in cat['models']:
             raise ValueError('The selected checkpoint is not available.')
+        if s.get('sampler') and s['sampler'] not in cat['samplers' if kind=='image' else 'videoSamplers']:
+            raise ValueError('The selected sampling method is not available.')
         locked=None
         if kind=='video':
             s.setdefault('sound', not s.get('replayOf'))
