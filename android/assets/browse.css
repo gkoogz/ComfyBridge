@@ -20,7 +20,7 @@
 .browseFeedHeading small{font-size:10px}
 body[data-page=browse] #main{padding:6px 10px 32px}
 body[data-page=browse] header>.dot{margin-left:0}
-body[data-page=browse] #main{max-width:none;padding:4px 0 28px}
+body[data-page=browse] #main,.browseBackLayer>.browseBackMain{max-width:none;padding:4px 0 28px}
 body[data-page=browse] .civitaiBrowse{max-width:none}
 .browseCollectionHeading{margin:0 8px 4px}
 .browseCarousel{gap:3px;padding-bottom:0;min-height:0}
@@ -320,3 +320,14 @@ header.hasBrowseSubject #headerIdentity{min-height:44px}
 .browseCaption .feedCollectStack{position:relative;flex:none;align-self:center}
 .browseCaption .feedSound{position:absolute;bottom:100%;right:-7px;width:44px;height:44px;padding:10px;color:white;filter:drop-shadow(0 1px 3px #0008);touch-action:pan-y}
 .browseTile .browseVideo{font-variant-numeric:tabular-nums;min-width:45px;text-align:center;pointer-events:none}
+
+/* Match the actual workspace during the incoming history swipe. */
+.browseBackLayer>header{gap:8px}
+/* Only stowing transitions; ordinary scrolling has no lagging spring motion. */
+.browseLoaderSpinner{transition:transform .14s ease-out,opacity .14s ease-out}
+.browseLoaderSpinner.spinnerStowed{transform:translateY(var(--spinner-stow,100px));opacity:0}
+#browseMore.pullEnded{height:100px}
+.pullEnded .browseFluid,.pullEnded .browseFlung,.pullEnded .spinner{display:none}
+.pullEnded .browseLoaderSpinner{position:static;transform:none;opacity:1}
+.pullFailed .browseLoaderSpinner{transform:none;opacity:1}
+@media(prefers-reduced-motion:reduce){.browseLoaderSpinner{transition:none}}

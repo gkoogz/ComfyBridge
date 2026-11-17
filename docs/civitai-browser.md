@@ -905,3 +905,25 @@ position. No per-frame JavaScript or extra metadata API calls are introduced.
 actual playback, looping/countdown, mute, manual pause across scrolling, dialog
 and viewer exclusion, outer tap navigation and full-screen scrub preservation
 at 390px and 1400px. These are browser checks, not physical-phone observations.
+
+## Beta 105: loader midpoint and stable swipe history
+
+The Fetching... spinner is centered between the resting loader ceiling and the
+workspace bottom. Wave spring translation is compensated, keeping spinner motion
+independent. Position follows scroll at animation-frame cadence, separate from
+30fps canvas drawing. At 150px or less available height it slides below the
+viewport; with more room it returns over 140ms. Reduced motion disables this
+transition. Section resizing also recalculates the position.
+
+Exhausted creator/tag feeds show a static You have reached the end :) message.
+A thumbnail download failure is still retryable rather than mislabeled as an end.
+
+History swipe previews use the same full-width main padding and header gap as
+the real Browse workspace. Previously the generic main element's narrower width
+and larger padding changed image heights, making saved scroll offsets display
+the wrong part of the feed until navigation committed.
+
+Checks: browse-loader.cjs measures midpoint, stow threshold, wave independence
+and lifecycle; browse-return-geometry.cjs compares all card positions/sizes before,
+during and after a deep-feed swipe at 390/1400px and checks completed-feed text.
+Existing touch, scheduling, arrival and video tests cover related behavior.

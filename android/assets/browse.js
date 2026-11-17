@@ -57,7 +57,7 @@ const CivitaiBrowser=(()=>{
   const el=document.createElement('section');el.className='browseBackLayer';el.setAttribute('aria-hidden','true');el.inert=true;
   Object.assign(el.style,{left:rect.left+'px',top:rect.top+'px',width:rect.width+'px',height:rect.height+'px'});
   const head=$('header',work).cloneNode(true);$('.subjectHeading',head)?.remove();head.classList.remove('hasBrowseSubject');$$('[id]',head).forEach(n=>n.removeAttribute('id'));
-  const main=document.createElement('main');main.append(...saved.nodes);
+  const main=document.createElement('main');main.className='browseBackMain';main.append(...saved.nodes);
   const subject=!['mix','preferences'].includes(saved.view.kind)?$('.subjectHeading',main):null;
   if(subject){head.append(subject.cloneNode(true));subject.hidden=true;head.classList.add('hasBrowseSubject');}
   el.append(head,main);document.body.append(el);el.scrollTop=saved.scroll;
@@ -896,14 +896,17 @@ const CivitaiBrowser=(()=>{
   }
   try{await refresh();}catch(error){if(popup.isConnected)$('p.warning',popup).textContent=error.message;}
  }
- function pullerHTML(){return '<div id="browseMore" class="browsePuller" role="status" tabindex="0" aria-label="Load more media"><canvas class="browseFluid" aria-hidden="true"></canvas><canvas class="browseFlung" aria-hidden="true"></canvas><div class="browseLoaderSpinner"><i class="spinner" aria-hidden="true"></i><span>Pulling..</span></div></div>';}
+ function pullerHTML(){return '<div id="browseMore" class="browsePuller" role="status" tabindex="0" aria-label="Load more media"><canvas class="browseFluid" aria-hidden="true"></canvas><canvas class="browseFlung" aria-hidden="true"></canvas><div class="browseLoaderSpinner"><i class="spinner" aria-hidden="true"></i><span>Fetching...</span></div></div>';}
  function pendingCards(){const host=$('#browseFeed');return !!(feedBuilds.get(host)?.length||host?.querySelector('.cardPending:not(.cardFailed)'));}
  function paintPuller(){
   const more=$('#browseMore');if(!more)return;
-  const failed=!!$('#browseFeed .cardFailed');more.hidden=feedEnded&&!pendingCards()&&!failed;
-  more.classList.toggle('pullFailed',failed&&!pendingCards()&&!busy);
-  more.querySelector('span').textContent=failed&&!pendingCards()&&!busy?'Media unavailable · tap to retry':'Pulling..';
-  more.onclick=()=>{const failed=$$('#browseFeed .cardFailed');if(failed.length)failed.forEach(prepareFeedCard);else loadFeed();};
+  const pending=pendingCards(),failed=!!$('#browseFeed .cardFailed'),ended=view.kind!=='mix'&&feedEnded&&!pending&&!busy&&!failed;
+  more.hidden=view.kind==='mix'&&feedEnded&&!pending&&!failed;more.classList.toggle('pullEnded',ended);
+  more.classList.toggle('pullFailed',failed&&!pending&&!busy);
+  more.querySelector('span').textContent=ended?'You have reached the end :)':failed&&!pending&&!busy?'Media unavailable · tap to retry':'Fetching...';
+  more.setAttribute('aria-label',ended?'You have reached the end :)':'Load more media');more.tabIndex=ended?-1:0;
+  if(ended||failed&&!pending&&!busy){const spinner=more.querySelector('.browseLoaderSpinner');spinner.style.removeProperty('top');spinner.classList.remove('spinnerStowed');}
+  more.onclick=()=>{if(ended)return;const failed=$$('#browseFeed .cardFailed');if(failed.length)failed.forEach(prepareFeedCard);else loadFeed();};
   more.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();more.click();}};
   BrowseLoader.attach(more,$('#workspace'),()=>page==='browse'&&!viewer&&!backLayer&&!collectionPopup&&!$('#drawer').classList.contains('open'));BrowseLoader.refresh();
  }
@@ -978,7 +981,7 @@ const CivitaiBrowser=(()=>{
    emptyPages=added.length?0:(r.limited?2:emptyPages+1);
    if(r.retryAfter){queueRetry('feed',r.retryAfter);if(!added.length)savedNotice('Showing saved items. Refreshing shortly…');}
    else if(r.limited&&!added.length)savedNotice('Still searching for matching media. Load more continues from here.');
-   else if(!added.length)$('#browseError').textContent='No new media in this page. Tap Pulling.. to try again or refresh.';
+   else if(!added.length&&!feedEnded)$('#browseError').textContent='No new media in this page. Tap Fetching... to try again or refresh.';
   }catch(e){if(ticket===session){emptyPages=2;handleReadError(e,'feed');}}
   finally{if(ticket===session){busy=false;paintPuller();checkBottom();}}
  }

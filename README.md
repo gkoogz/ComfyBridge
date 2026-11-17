@@ -1,6 +1,6 @@
 # ComfyBridge
 
-**[Open the beta 104 release page](https://github.com/gkoogz/ComfyBridge/releases/tag/v0.1.0-beta.104)** · [Download the Android APK](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.104/ComfyBridge-0.1.0-beta.104.apk) · [Download Windows](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.104/ComfyBridge-Windows-0.1.0-beta.104.zip) · [All releases](https://github.com/gkoogz/ComfyBridge/releases)
+**[Open the beta 105 release page](https://github.com/gkoogz/ComfyBridge/releases/tag/v0.1.0-beta.105)** · [Download the Android APK](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.105/ComfyBridge-0.1.0-beta.105.apk) · [Download Windows](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.105/ComfyBridge-Windows-0.1.0-beta.105.zip) · [All releases](https://github.com/gkoogz/ComfyBridge/releases)
 
 <img src="artwork/comfybridge.png" width="128" alt="ComfyBridge white cube and play icon on black">
 

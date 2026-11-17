@@ -13,11 +13,11 @@ const BrowseLoader=(()=>{
   const section=host.closest('.civitaiBrowse'),canvas=host.querySelector('.browseFluid'),flung=host.querySelector('.browseFlung'),spinner=host.querySelector('.browseLoaderSpinner');
   const ctx=canvas.getContext('2d'),fx=flung.getContext('2d'),state={reach:24,speed:1.5};
   const reduced=matchMedia('(prefers-reduced-motion: reduce)'),listeners=[];
-  let width=500,tick=0,frame=0,lastFrame=0,running=false,disposed=false,visible=false,layout=true;
+  let width=500,tick=0,frame=0,positionFrame=0,lastFrame=0,running=false,disposed=false,visible=false,layout=true;
   let sparks=[],stir=0,gesture=null,pull=0,edgeOffset=0,rebound=null,wheelTimer=0,mouseId=null;
   const on=(el,name,fn,options)=>{el.addEventListener(name,fn,options);listeners.push(()=>el.removeEventListener(name,fn,options));};
   const atBottom=()=>workspace.scrollHeight-workspace.clientHeight-workspace.scrollTop<3;
-  const usable=()=>!disposed&&host.isConnected&&!host.hidden&&!host.classList.contains('pullFailed')&&!host.classList.contains('pullCovered')&&!document.hidden&&allowed();
+  const usable=()=>!disposed&&host.isConnected&&!host.hidden&&!host.classList.contains('pullEnded')&&!host.classList.contains('pullFailed')&&!host.classList.contains('pullCovered')&&!document.hidden&&allowed();
   function size(){
    width=host.clientWidth;if(!width)return;
    host.style.setProperty('--loader-height',Math.max(180,workspace.clientHeight-64)+'px');
@@ -28,10 +28,14 @@ const BrowseLoader=(()=>{
   }
   function position(){
    const rect=host.getBoundingClientRect(),view=workspace.getBoundingClientRect();
-   // The waves live at the content edge. Only this spinner follows the viewport.
-   const top=Math.max(65,Math.min(host.clientHeight-82+edgeOffset,view.bottom-rect.top-82-edgeOffset*.3));
-   spinner.style.top=top+'px';layout=false;
+   // Ignore the wave's spring translation: the spinner belongs to the open
+   // viewport area, halfway between the resting content edge and screen bottom.
+   const available=view.bottom-(rect.top+edgeOffset),half=spinner.offsetHeight/2;
+   spinner.style.top=(available/2-half+edgeOffset)+'px';
+   spinner.style.setProperty('--spinner-stow',(available/2+half+20)+'px');
+   spinner.classList.toggle('spinnerStowed',available<=150);layout=false;
   }
+  function queuePosition(){layout=true;if(!positionFrame)positionFrame=requestAnimationFrame(()=>{positionFrame=0;if(!disposed&&host.isConnected&&!host.classList.contains('pullEnded')&&!host.classList.contains('pullFailed'))position();});}
   function clearPull(){
    gesture=null;pull=0;edgeOffset=0;rebound=null;clearTimeout(wheelTimer);
    section?.style.removeProperty('translate');layout=true;
@@ -85,10 +89,10 @@ const BrowseLoader=(()=>{
   on(workspace,'pointerup',e=>{if(e.pointerId===mouseId)release();});on(workspace,'pointercancel',e=>{if(e.pointerId===mouseId)release(true);});
   on(host,'click',e=>{if(rebound||edgeOffset>0){e.preventDefault();e.stopImmediatePropagation();}},true);
   let lastScroll=workspace.scrollTop;
-  on(workspace,'scroll',()=>{const delta=workspace.scrollTop-lastScroll;lastScroll=workspace.scrollTop;layout=true;if(running)stir=Math.min(4,stir+Math.abs(delta)*.015);},{passive:true});
+  on(workspace,'scroll',()=>{const delta=workspace.scrollTop-lastScroll;lastScroll=workspace.scrollTop;queuePosition();if(running)stir=Math.min(4,stir+Math.abs(delta)*.015);},{passive:true});
   on(document,'visibilitychange',refresh);on(reduced,'change',refresh);
   const visibility=new IntersectionObserver(entries=>{visible=entries[0].isIntersecting;refresh();},{root:workspace});visibility.observe(host);
-  const resize=new ResizeObserver(()=>{size();refresh();});resize.observe(workspace);resize.observe(host);
+  const resize=new ResizeObserver(()=>{size();refresh();});resize.observe(workspace);resize.observe(host);if(section)resize.observe(section);
   const mutation=new MutationObserver(refresh);mutation.observe(host,{attributes:true,attributeFilter:['hidden','class']});mutation.observe(document.body,{attributes:true,attributeFilter:['class','data-page']});
   function sprinkle(distance){
    if(!running||!atBottom())return;
@@ -169,7 +173,7 @@ const BrowseLoader=(()=>{
   }
 
   size();refresh();
-  return {host,refresh,dispose(){disposed=true;running=false;cancelAnimationFrame(frame);clearPull();listeners.forEach(off=>off());visibility.disconnect();resize.disconnect();mutation.disconnect();host.classList.remove('fluidRunning');}};
+  return {host,refresh,dispose(){disposed=true;running=false;cancelAnimationFrame(frame);cancelAnimationFrame(positionFrame);clearPull();listeners.forEach(off=>off());visibility.disconnect();resize.disconnect();mutation.disconnect();host.classList.remove('fluidRunning');}};
  }
  return {attach,stop,refresh};
 })();

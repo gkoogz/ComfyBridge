@@ -31,7 +31,7 @@ const assert=require('node:assert/strict'),path=require('node:path');
  assert.equal(await p.locator('.browseTile:visible').count(),0,'No controls or empty image cards before first image decodes');
  assert.equal(await p.locator('#browseFeed').evaluate(e=>e.offsetHeight),0,'Pending images must not add empty scrolling space');
  assert.equal(await p.locator('#browseMore').evaluate(e=>e.tagName),'DIV');
- assert.equal(await p.locator('#browseMore span').textContent(),'Pulling..');
+ assert.equal(await p.locator('#browseMore span').textContent(),'Fetching...');
  assert.equal(await p.evaluate(()=>feedCalls),1,'Hidden pending cards must not trigger unlimited pagination');
  releaseFirst();await p.waitForSelector('.browseTile:visible');
  await p.waitForFunction(()=>!document.querySelector('.cardArriving'));
