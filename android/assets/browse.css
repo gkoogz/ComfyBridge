@@ -310,3 +310,13 @@ header.hasBrowseSubject #headerIdentity{min-height:44px}
 .feedCollectionChoices label:has(input:focus-visible){outline:2px solid var(--mint);outline-offset:2px}
 .feedCollectionChoices input{flex:none;width:20px;height:20px;margin:0}
 @media(max-width:360px){.modelParameter{font-size:12px;gap:4px}}
+/* Feed-only playback: the outer media target still opens the detail viewer. */
+.browseTile.hasFeedVideo .browseMedia{position:relative}
+.browseTile .feedVideo{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;pointer-events:none;opacity:0}
+.browseTile .feedVideo.ready{opacity:1}
+.browseTile .feedVideoToggle{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:64px;height:64px;min-height:64px;padding:19px;border:1px solid #ffffff80;border-radius:50%;background:#15212845;backdrop-filter:blur(5px);color:white;display:grid;place-items:center;touch-action:pan-y;box-shadow:0 1px 8px #0002}
+.feedVideoToggle svg,.feedSound svg{width:100%;height:100%;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;pointer-events:none}
+.feedVideoToggle.loading{opacity:.55}
+.browseCaption .feedCollectStack{position:relative;flex:none;align-self:center}
+.browseCaption .feedSound{position:absolute;bottom:100%;right:-7px;width:44px;height:44px;padding:10px;color:white;filter:drop-shadow(0 1px 3px #0008);touch-action:pan-y}
+.browseTile .browseVideo{font-variant-numeric:tabular-nums;min-width:45px;text-align:center;pointer-events:none}

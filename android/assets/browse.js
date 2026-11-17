@@ -732,6 +732,7 @@ const CivitaiBrowser=(()=>{
    });
    $('.feedCollect',caption).onclick=()=>showCollections(item,boundAccount);
   }
+  if(!small&&item.type==='video')FeedVideo.attach(el,()=>imageBlob(path(item.fullPath)),path(item.fullPath));
   if(small)hydrate(el);else{
    el.classList.add('cardPending');const img=$('.browseMedia img',el);el.cardURL=img.getAttribute('src');img.removeAttribute('src');img.loading='eager';
    queueMicrotask(()=>prepareFeedCard(el));
@@ -950,7 +951,7 @@ const CivitaiBrowser=(()=>{
   }
   visible.forEach(el=>el.classList.add('cardArriving'));
   if(visible.length)setTimeout(()=>{ghost?.remove();more?.classList.remove('pullCovered');visible.forEach(el=>el.classList.remove('cardArriving'));},190);
-  paintPuller();checkBottom();
+  FeedVideo.refresh();paintPuller();checkBottom();
  }
  function scheduleFeedBuild(host){afterScroll('feed-build',()=>{
   if(!host?.isConnected)return;const queue=feedBuilds.get(host)||[],fragment=document.createDocumentFragment();

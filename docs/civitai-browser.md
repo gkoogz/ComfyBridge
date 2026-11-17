@@ -885,3 +885,23 @@ social queue are reused without extra directory calls.
 Checks: `media-metadata.cjs` at 320/390/1400px, `social-header.cjs`, `browse.cjs`,
 `model-gallery.cjs` and `browse-download.cjs`. Phone screenshots are emulated,
 not physical-device observations.
+
+## Beta 104: visible feed video playback
+
+`feed-video.js` controls feed cards only. Thumbnail decoding still gates card
+admission and layout. Visible clips reuse the existing full-media byte cache,
+autoplay muted and loop. Time remaining is event-driven (no polling timer).
+The center 64px glass target handles pause/play; the surrounding media button
+still opens details. Sound is above Collect; unmuting one clip mutes others.
+Carousel thumbnails and full-screen native scrub controls remain separate.
+
+IntersectionObserver pauses clips outside the viewport. Backgrounding, leaving
+Browse or opening a viewer/dialog also pauses playback. Offscreen decoder
+sources are released after 30 seconds; history retains pause, mute and playback
+position. No per-frame JavaScript or extra metadata API calls are introduced.
+
+`tests/feed-video.cjs` uses the neutral four-second teal/sine MP4 fixture in
+`tests/fixtures/feed-video.mp4` (FFmpeg lavfi color + sine, H.264/AAC). It exercises
+actual playback, looping/countdown, mute, manual pause across scrolling, dialog
+and viewer exclusion, outer tap navigation and full-screen scrub preservation
+at 390px and 1400px. These are browser checks, not physical-phone observations.
