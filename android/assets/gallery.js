@@ -225,12 +225,39 @@ function mountAsset(host,item,isViewer,posterOverride=null){
  }
  load(isViewer||item.kind==='image'&&(connected||!!item.local));
 }
+const resultIcon=(path)=>'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="'+path+'"/></svg>';
+function compactMediaAction(button,label,icon){button.setAttribute('aria-label',label);button.title=label;button.innerHTML=icon;button.classList.add('compactMediaAction');return button;}
+function saveMediaButton(item,message=toast){
+ const button=provenanceButton(window.Desktop?'Save a copy':'Save to camera roll',async()=>{
+  const current=library.find(x=>x.id===item.id)||item;
+  if(!current.local)throw Error(window.Desktop?'The original file is not available.':'Wait for the phone copy to finish downloading.');
+  const saved=await local('export',{id:item.id});
+  message(saved===false?'Save cancelled.':window.Desktop?'Copy saved.':'Saved to DCIM/ComfyBridge in your camera roll.');
+ });button.classList.add('saveMediaAction');return button;
+}
+function archiveMediaButton(item,after=()=>{},message=toast){
+ const button=provenanceButton(item.archived?'Unarchive':'Archive',async()=>{
+  const current=library.find(x=>x.id===item.id)||item;
+  await api('archive',{id:item.id,archived:!current.archived});updateItem({...current,archived:!current.archived});after();await syncShelf(true);
+ });button.disabled=!connected||item.source==='missing';button.classList.add('archiveMediaAction');return button;
+}
+function revealMediaButton(item,message=toast){return provenanceButton('Open file location',async()=>{try{await local('reveal',{id:item.id});}catch(e){message(e.message);}});}
 function resultActions(item,pending=false){
  const actions=document.createElement('div');actions.className='resultActions';
- if(item.kind==='video')actions.append(extendVideoButton(item),regenerateButton(item));
- else actions.append(makeVideoButton(item));
- actions.append(ratingButtons(item));
+ const group=document.createElement('div');group.className='resultActionGroup';actions.append(group);
+ const inputs=inputActions(item);
+ if(item.kind==='image'){
+  inputs[0].textContent='i2i';inputs[0].setAttribute('aria-label','Send to i2i');inputs[0].title='Send to image to image';
+  group.append(inputs[1],inputs[0]);
+ }else group.append(...inputs);
+ group.append(regenerateButton(item));
+ group.append(compactMediaAction(saveMediaButton(item),window.Desktop?'Save a copy':'Save to camera roll',resultIcon('M12 3v12m-5-5 5 5 5-5M5 16v5h14v-5')));
+ group.append(compactMediaAction(archiveMediaButton(item,()=>{if(!liveSelection)renderResults();}),item.archived?'Unarchive':'Archive',resultIcon('M4 8h16v13H4zM3 3h18v5H3zM9 12h6')));
+ if(window.Desktop)group.append(compactMediaAction(revealMediaButton(item),'Open file location',resultIcon('M3 6h7l2 3h9v11H3zM16 3h5v5m0-5-7 7')));
+ group.append(ratingButtons(item));
  if(pending){actions.dataset.pending='true';$$('button',actions).forEach(b=>b.disabled=true);}
+ // Start at the right edge on narrow displays; the strip can be swiped to reach every action.
+ requestAnimationFrame(()=>{if(actions.isConnected)actions.scrollLeft=actions.scrollWidth;});
  return actions;
 }
 function mountResult(j,posterOverride=null){
@@ -271,10 +298,9 @@ function openMedia(item){
  footerSize.observe($('.viewerFoot',view));view.releaseFooter=()=>footerSize.disconnect();
  const msg=t=>{if(stillHere())$('#mediaMessage').textContent=t;};view.dataset.id=item.id;
  $('#viewerBack').onclick=()=>closeViewer();$('#viewerBack').focus({preventScroll:true});
- const archive=$('#archiveMedia');archive.disabled=!connected||item.source==='missing';
- archive.onclick=async()=>{archive.disabled=true;try{await api('archive',{id:item.id,archived:!item.archived});updateItem({...current(),archived:!item.archived});if(stillHere())closeViewer();await syncShelf(true);}catch(e){msg(e.message);archive.disabled=false;}};
- $('#saveMedia').onclick=async e=>{const b=e.currentTarget;b.disabled=true;try{if(!current().local)throw Error(window.Desktop?'The original file is not available.':'Wait for the phone copy to finish downloading.');const saved=await local('export',{id:item.id});msg(window.Desktop?(saved?'Copy saved.':'Save cancelled.'):'Saved to DCIM/ComfyBridge in your camera roll.');}catch(err){msg(err.message);}finally{b.disabled=false;}};
- if(window.Desktop){$('#saveMedia').textContent='Save a copy';const reveal=document.createElement('button');reveal.id='revealMedia';reveal.textContent='Open file location';reveal.onclick=async()=>{try{await local('reveal',{id:item.id});}catch(e){msg(e.message);}};$('.viewerActions',view).append(reveal);}
+ const archive=archiveMediaButton(item,()=>{if(stillHere())closeViewer();},msg);archive.id='archiveMedia';$('#archiveMedia').replaceWith(archive);
+ const save=saveMediaButton(item,msg);save.id='saveMedia';$('#saveMedia').replaceWith(save);
+ if(window.Desktop){const reveal=revealMediaButton(item,msg);reveal.id='revealMedia';$('.viewerActions',view).append(reveal);}
  $('#saveMedia').after(...inputActions(item));
  const regenerate=document.createElement('button');
  regenerate.type='button';regenerate.textContent='↗ Regenerate';
@@ -312,7 +338,7 @@ document.addEventListener('pointerdown',e=>{
  if(window.Desktop)return;
  const note=e.target.closest('#noteText');
  const noteSwipe=note&&e.pointerType!=='mouse'&&note.selectionStart===note.selectionEnd;
- if(!e.isPrimary||e.button!==0||viewerClosing||(!noteSwipe&&e.target.closest('input,textarea,select,canvas,.loraSlider,.browseCarousel,.civitaiViewer,.feedCollectionShade,#carousel,#latestPanel .foldSummary,#chatGrab,[contenteditable]')))return;
+ if(!e.isPrimary||e.button!==0||viewerClosing||(!noteSwipe&&e.target.closest('input,textarea,select,canvas,.loraSlider,.browseCarousel,.civitaiViewer,.feedCollectionShade,#carousel,.resultActions,#latestPanel .foldSummary,#chatGrab,[contenteditable]')))return;
  if(e.target.closest('.chatWords')&&window.getSelection()?.type==='Range')return;
  const type=$('#modal').open?'modal':viewerOpen()?'viewer':$('#drawer').classList.contains('open')?'closeDrawer':page==='library'&&archived?'archive':page==='browse'&&typeof CivitaiBrowser!=='undefined'&&CivitaiBrowser.canSwipeBack()?'browseBack':'drawer';
  if(type)drag={id:e.pointerId,type,x:e.clientX,y:e.clientY,t:performance.now(),dx:0,active:false,note:noteSwipe?note:null,queue:e.target.closest('.historyCard')};

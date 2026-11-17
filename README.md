@@ -1,6 +1,6 @@
 # ComfyBridge
 
-**[Open the beta 113 release page](https://github.com/gkoogz/ComfyBridge/releases/tag/v0.1.0-beta.113)** · [Download the Android APK](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.113/ComfyBridge-0.1.0-beta.113.apk) · [Download Windows](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.113/ComfyBridge-Windows-0.1.0-beta.113.zip) · [All releases](https://github.com/gkoogz/ComfyBridge/releases)
+**[Open the beta 114 release page](https://github.com/gkoogz/ComfyBridge/releases/tag/v0.1.0-beta.114)** · [Download the Android APK](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.114/ComfyBridge-0.1.0-beta.114.apk) · [Download Windows](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.114/ComfyBridge-Windows-0.1.0-beta.114.zip) · [All releases](https://github.com/gkoogz/ComfyBridge/releases)
 
 <img src="artwork/comfybridge.png" width="128" alt="ComfyBridge white cube and play icon on black">
 
@@ -9,6 +9,8 @@ An Android remote for an existing Windows ComfyUI installation. The phone edits 
 **Local project:** this PC's canonical checkout is `E:\ComfyBridge`. Source, builds, installed app data, local LLMs and archived work are consolidated there. See [the local folder map](docs/local-layout.md) for private-data exclusions, compatibility links and external ComfyUI dependencies. Run `Start-ComfyBridge.ps1` to open the installed PC panel.
 
 **Working on the project:** agents and contributors should start with [AGENTS.md](AGENTS.md) for the code map, build/test commands, live queue preservation and delivery instructions.
+
+**Beta 114** adds the matching Library actions to Latest Result: image regeneration, i2i, saving to camera roll, archive, and the respective video controls. The button strip sits flush against the media's right edge and remains disabled during generation.
 
 **Beta 113** simplifies LoRA rows with a clear scrolling gutter, moves saved prompts into an append/save/delete popup, exposes installed sampling methods and image clip skip, and automatically selects newly submitted generations with correctly proportioned live previews. See [generator controls](docs/generator-controls.md).
 

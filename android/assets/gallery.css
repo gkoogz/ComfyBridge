@@ -111,3 +111,10 @@ canvas,input[type=range]{touch-action:none}
 #result .resultActions .mediaRating button{width:40px;min-width:40px;padding:9px;color:var(--text)}
 #result .resultActions .mediaRating button[aria-pressed=true]{color:#f4788c}
 #result .resultActions button:disabled{color:var(--muted);border-color:var(--line);opacity:.45;cursor:default}
+
+/* Flush right, including the last button border; overflow stays in this action strip. */
+#result .resultActions{width:100%;padding:8px 0;justify-content:flex-start;overflow-x:auto;overscroll-behavior-x:contain;touch-action:pan-x pan-y;scrollbar-width:thin}
+#result .resultActionGroup{display:flex;align-items:center;gap:4px;width:max-content;flex:none;margin-left:auto}
+#result .resultActions .compactMediaAction{width:40px;min-width:40px;padding:9px}
+#result .resultActions .compactMediaAction svg{width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+#result .resultActions .regenerate{margin:0}

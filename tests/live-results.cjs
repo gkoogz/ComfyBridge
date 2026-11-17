@@ -41,7 +41,7 @@ const assert=require('node:assert/strict'),path=require('node:path');
    await fold.click();
    await tile.click();assert.equal(await tile.getAttribute('aria-current'),'true');
    assert(await p.locator('#result .previewBusy').isVisible());assert(await p.locator('#result .watchPixels').isHidden());
-   const actionCount=kind==='video'?3:2;assert.equal(await p.locator('#result .resultActions button').count(),actionCount);assert(await p.locator('#result .resultActions button').evaluateAll(bs=>bs.every(b=>b.disabled)));
+   const actionCount=kind==='video'?5:6;assert.equal(await p.locator('#result .resultActions button').count(),actionCount);assert(await p.locator('#result .resultActions button').evaluateAll(bs=>bs.every(b=>b.disabled)));
    const pendingHeight=await p.locator('#result .resultActions').evaluate(e=>e.getBoundingClientRect().height);
    await p.evaluate(kind=>{active='live-'+kind;jobs[0].status='running';frames.set(active,{revision:1,url:frame1});paintFrame(active);updateProgress();},kind);
    await p.locator('#result .watchPixels').evaluate(img=>img.decode());
