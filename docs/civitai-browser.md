@@ -863,3 +863,8 @@ Checks: `browse-loader.cjs` (phone/desktop, emulated touch and wheel, separate
 anchors, rebound-only particles, pause/disposal); `feed-arrival.cjs`,
 `scroll-scheduling.cjs`, `browse.cjs` and `android-assets.cjs`. Browser checks do not
 establish physical-phone gesture behavior.
+
+## Beta 102: softer liquid loading edge
+
+Both decorative canvas layers render at 50% opacity, halving the visible opacity
+of the waves, droplets and sparkles. The separate green spinner stays fully visible.
