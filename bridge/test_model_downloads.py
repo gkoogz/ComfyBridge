@@ -41,6 +41,18 @@ class DownloadTests(unittest.TestCase):
         self.assertEqual(plan['status'],'confirm');self.assertEqual(plan['baseModel'],'SDXL')
         self.assertEqual(plan['filename'],'pottery.safetensors');self.assertEqual(plan['bytes'],len(self.payload))
         self.open.assert_not_called();self.assertFalse(self.folder.exists());self.assertFalse(self.downloads.busy())
+    def test_file_id_url_is_preserved_and_download_verified(self):
+        url='https://civitai.com/api/download/models/7?fileId=9'
+        self.raw['files'][0]['downloadUrl']=url
+        self.queue();self.finish()
+        self.assertEqual(self.open.call_args.args[0],url)
+        self.assertEqual((self.folder/'pottery.safetensors').read_bytes(),self.payload)
+        self.assertEqual(self.downloads.status(['7'])['7']['status'],'installed')
+    def test_file_id_mismatch_and_malformed_ids_explain_the_actual_failure(self):
+        for query in ('fileId=10','fileId=0','fileId=abc','fileId=','fileId=9&fileId=9'):
+            self.raw['files'][0]['downloadUrl']='https://civitai.com/api/download/models/7?'+query
+            with self.assertRaisesRegex(ValueError,'different or invalid file'):self.downloads.prepare('7')
+        self.open.assert_not_called()
     def test_verified_file_is_published_and_available_to_other_devices(self):
         self.queue();self.assertTrue(self.downloads.busy());self.finish()
         file=self.folder/'pottery.safetensors';self.assertEqual(file.read_bytes(),self.payload)

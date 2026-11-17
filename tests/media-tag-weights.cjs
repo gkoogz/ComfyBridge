@@ -53,9 +53,12 @@ const assert=require('node:assert/strict'),path=require('node:path');
  const priorScroll=await p.locator('#workspace').evaluate(el=>el.scrollTop);
  if(process.env.BROWSE_SHOTS)await p.screenshot({path:path.join(process.env.BROWSE_SHOTS,'tag-selection-'+width+'.png')});
  await p.locator('.tagSearchSubmit').click();await p.waitForSelector('.subjectFilters');
+ assert.equal(await p.locator('#workspace>header>.subjectHeading').count(),1,'Tag filters dock with Browse header');
+ assert.equal(await p.locator('#main .subjectHeading').count(),0);
  assert.equal(await p.locator('.civitaiViewer').count(),0);assert.match(await p.locator('.subjectHeading h2').textContent(),/Ceramics/);
  assert(await p.evaluate(()=>calls.some(c=>c.route==='browse/feed'&&c.body.channel==='tags:12,13:all')));
  await p.locator('.browseBack').click();assert.equal(await p.locator('#workspace').evaluate(el=>el.scrollTop),priorScroll);
+ assert.equal(await p.locator('#workspace>header>.subjectHeading').count(),0,'For You has no leftover tag heading');
  // Same image in a collection has no recommendation highlight despite shared detail cache.
  await p.locator('.browseThumb .browseMedia').first().click();await p.waitForSelector('.civitaiTag');assert.equal(await p.locator('.civitaiTag.chosenSource').count(),0);assert.equal(await p.locator('.tagSearchSubmit').count(),0);
  await p.locator('.civitaiClose').click();

@@ -815,3 +815,26 @@ viewer covers it. The previous feed paragraph is no longer created.
 
 `tests/browse-topbar.cjs` covers phone and desktop sizes, scroll direction,
 stable geometry, subfeeds, other-page isolation and sync completion.
+
+## Beta 100: docked subfeed controls and download feedback
+
+Creator/tag headings live inside the shared sticky header, as its second row.
+They move with the same hide/reveal transform. Before saving a screen or leaving
+Browse, the heading is parked back in that screen's section; restoring the screen
+docks the same node, retaining handlers and history. Swipe-back preview uses a
+clone while preserving the saved heading. Creator-feed captions omit identity,
+timeout and attribution controls, retaining Like and Collect. Other feeds retain
+their identity controls. Full-screen Follow stays visible as Following with a
+green check and remains toggleable, using the same durable social queue.
+
+LoRA preparation accepts Civitai's `fileId` query parameter only as one positive
+numeric ID matching the file record. Exact version URLs, supported hosts, model
+format, size, scan status and published SHA-256 checks remain required. Rejection
+messages distinguish missing hashes from invalid URLs, size and scan problems.
+The resource button spins immediately during preparation and start; late status
+polls cannot overwrite those local phases. Confirmation still precedes transfer.
+
+Coverage: `browse-topbar.cjs`, `social-header.cjs`, `browse-swipe.cjs`,
+`media-tag-weights.cjs`, `browse-download.cjs`, `lora-library.cjs` and
+`test_model_downloads.py`. Live Silverdream listing metadata confirmed the
+previously rejected fileId URL; actual model download was not used as a test.

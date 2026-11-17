@@ -38,13 +38,16 @@ def filename(value):
     return stem+'.safetensors'
 
 
-def download_url(url, version):
+def download_url(url, version, file_id=None):
     parsed=urllib.parse.urlparse(str(url))
     if not (parsed.scheme=='https' and parsed.hostname in ('civitai.com','civitai.red') and
             parsed.port in (None,443) and not parsed.username and not parsed.password and
             parsed.path=='/api/download/models/'+version):raise ValueError('Civitai did not supply a supported download URL.')
-    query=urllib.parse.parse_qsl(parsed.query)
-    if any(key not in ('type','format','size','fp') for key,_ in query):raise ValueError('Unexpected Civitai download parameters.')
+    query=urllib.parse.parse_qsl(parsed.query,keep_blank_values=True)
+    if any(key not in ('type','format','size','fp','fileId') for key,_ in query):raise ValueError('Unexpected Civitai download parameters.')
+    ids=[value for key,value in query if key=='fileId']
+    if ids and (len(ids)!=1 or not re.fullmatch('[1-9][0-9]{0,18}',ids[0]) or (file_id is not None and ids[0]!=str(file_id))):
+        raise ValueError('Civitai supplied a download URL for a different or invalid file.')
     return parsed._replace(fragment='').geturl()
 
 
@@ -123,18 +126,18 @@ class Downloads:
             raise ValueError('Civitai could not load this LoRA. Try again.') from None
         if not isinstance(raw,dict) or not re.fullmatch('[1-9][0-9]{0,18}',str(raw.get('modelId',''))) or str(raw.get('id'))!=version or str((raw.get('model') or {}).get('type','')).lower() not in LORA_TYPES:
             raise ValueError('This resource is not a downloadable LoRA.')
-        files=[]
+        files=[];rejected=[]
         for file in raw.get('files') or []:
             if str(file.get('type','')).lower()!='model' or not str(file.get('name','')).lower().endswith('.safetensors'):continue
             digest=str((file.get('hashes') or {}).get('SHA256','')).lower()
-            if not re.fullmatch('[a-f0-9]{64}',digest):continue
-            try:name=filename(file['name']);url=download_url(file.get('downloadUrl',''),version)
-            except ValueError:continue
+            if not re.fullmatch('[a-f0-9]{64}',digest):rejected.append('Civitai has not published a valid SHA-256 for this file.');continue
+            try:name=filename(file['name']);url=download_url(file.get('downloadUrl',''),version,file.get('id'))
+            except ValueError as error:rejected.append(str(error));continue
             size=file.get('sizeKB')
-            if type(size) not in (int,float) or not math.isfinite(size) or not 0<size<=MAX_BYTES/1024:continue
-            if file.get('virusScanResult')=='Danger' or file.get('pickleScanResult')=='Danger':continue
+            if type(size) not in (int,float) or not math.isfinite(size) or not 0<size<=MAX_BYTES/1024:rejected.append('The file size is missing, invalid or exceeds the 16 GB limit.');continue
+            if file.get('virusScanResult')=='Danger' or file.get('pickleScanResult')=='Danger':rejected.append('Civitai flagged this file as unsafe.');continue
             files.append((file,name,url,digest,round(size*1024)))
-        if not files:raise ValueError('No downloadable SafeTensor file with a published SHA-256 was found for this LoRA.')
+        if not files:raise ValueError(rejected[0] if rejected else 'This LoRA listing has no downloadable SafeTensor model file.')
         file,name,url,digest,size=next((f for f in files if f[0].get('primary')),files[0])
         existing=self.installed(version,digest)
         if existing:return dict(status='installed',name=existing,versionId=version)

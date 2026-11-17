@@ -4,6 +4,17 @@ const CivitaiBrowser=(()=>{
  let account='',status=null,feed=[],strip=[],cursor='',stripCursor='',channel='',busy=false,stripBusy=false,session=0,timer,observer,viewer=null,lastStatus=0;
  let view={kind:'mix'}, history=[], feedEnded=false, collectionPopup=null;
  let backLayer=null;
+ function parkSubjectHeading(){
+  const head=$('#workspace > header'),subject=$('.subjectHeading',head);
+  if(subject){const section=$('#main .civitaiBrowse');if(section)section.prepend(subject);else subject.remove();}
+  head.classList.remove('hasBrowseSubject');
+ }
+ function dockSubjectHeading(){
+  if(!['mix','preferences'].includes(view.kind)){
+   const subject=$('#main .subjectHeading');if(subject)$('#workspace > header').append(subject);
+  }
+  $('#workspace > header').classList.toggle('hasBrowseSubject',!!$('#workspace > header > .subjectHeading'));
+ }
  let headerTop=0,headerTravel=0,headerDirection=0;
  function showBrowseHeader(){document.body.classList.remove('browseHeaderHidden');headerTop=$('#workspace').scrollTop;headerTravel=0;headerDirection=0;}
  function trackBrowseHeader(top){
@@ -38,16 +49,19 @@ const CivitaiBrowser=(()=>{
   document.querySelectorAll('.pullGhost').forEach(el=>el.remove());
   document.querySelectorAll('.pullCovered').forEach(el=>el.classList.remove('pullCovered'));
  }
- function clearBackLayer(){if(backLayer){const layer=backLayer;backLayer=null;layer.animation?.cancel();layer.el.remove();}}
+ function clearBackLayer(){if(backLayer){const layer=backLayer;backLayer=null;layer.animation?.cancel();if(layer.subject)layer.subject.hidden=false;layer.el.remove();}}
  function canSwipeBack(){return !viewer&&!collectionPopup&&!backLayer&&history.length>0;}
  function beginSwipeBack(){
   if(!canSwipeBack())return false;
   const work=$('#workspace'),saved=history.at(-1),rect=work.getBoundingClientRect();
   const el=document.createElement('section');el.className='browseBackLayer';el.setAttribute('aria-hidden','true');el.inert=true;
   Object.assign(el.style,{left:rect.left+'px',top:rect.top+'px',width:rect.width+'px',height:rect.height+'px'});
-  const head=$('header',work).cloneNode(true);$$('[id]',head).forEach(n=>n.removeAttribute('id'));
-  const main=document.createElement('main');main.append(...saved.nodes);el.append(head,main);document.body.append(el);el.scrollTop=saved.scroll;
-  backLayer={el,saved,ticket:session,width:rect.width};moveSwipeBack(0);return true;
+  const head=$('header',work).cloneNode(true);$('.subjectHeading',head)?.remove();head.classList.remove('hasBrowseSubject');$$('[id]',head).forEach(n=>n.removeAttribute('id'));
+  const main=document.createElement('main');main.append(...saved.nodes);
+  const subject=!['mix','preferences'].includes(saved.view.kind)?$('.subjectHeading',main):null;
+  if(subject){head.append(subject.cloneNode(true));subject.hidden=true;head.classList.add('hasBrowseSubject');}
+  el.append(head,main);document.body.append(el);el.scrollTop=saved.scroll;
+  backLayer={el,saved,subject,ticket:session,width:rect.width};moveSwipeBack(0);return true;
  }
  function moveSwipeBack(dx){if(backLayer)backLayer.el.style.transform='translateX('+(-backLayer.width+Math.min(dx,backLayer.width))+'px)';}
  function endSwipeBack(commit){
@@ -151,7 +165,7 @@ const CivitaiBrowser=(()=>{
   for(const root of [document,...history.flatMap(h=>h.nodes)]){
    $$('.browseTile',root).forEach(el=>{
     const item=el.browseItem;
-    $('.feedFollowing',el).hidden=!following(item);
+    const badge=$('.feedFollowing',el);if(badge)badge.hidden=!following(item);
     const via=$('.viaFollowing',el);if(via)via.hidden=!following({creatorId:item.chosenBy?.via?.id});
     $('.feedCollect',el).classList.toggle('bookmarked',membershipIds(item.collections).length>0);
     $$('[data-feed-react]',el).forEach(b=>{b.innerHTML=reactionLabel(item,b.dataset.feedReact);b.setAttribute('aria-pressed',String((item.reactions||[]).includes(b.dataset.feedReact)));});
@@ -627,11 +641,12 @@ const CivitaiBrowser=(()=>{
 
  }
  async function render(){
+  parkSubjectHeading();
   showBrowseHeader();
   clearBackLayer();
   const stale=activityAge()>=7200000;markActivity();
   if(suspended&&!stale&&suspended.scope===scope()){
-   const saved=suspended;suspended=null;$('#main').replaceChildren(...saved.nodes);
+   const saved=suspended;suspended=null;$('#main').replaceChildren(...saved.nodes);dockSubjectHeading();
    await Promise.resolve();$('#workspace').scrollTop=saved.scroll;
    paintSocial();revealFeedCards($('#browseFeed'));observeMore();schedule();warm();refreshStatus(true).catch(()=>{});openPendingCreator();return;
   }
@@ -663,6 +678,7 @@ const CivitaiBrowser=(()=>{
   schedule();
  },15000);}
  function suspend(){
+  parkSubjectHeading();
   showBrowseHeader();
   clearBackLayer();
   close();collectionPopup?.remove();collectionPopup=null;
@@ -680,21 +696,21 @@ const CivitaiBrowser=(()=>{
   if(!small){
    const caption=document.createElement('div');
    caption.className='browseCaption';
-   caption.innerHTML=button(esc(item.credit||'Creator'),'class="feedAuthor"')+'<span class="feedFollowing" aria-label="Following" '+(following(item)?'':'hidden')+'>✓</span>'+button('<svg viewBox="0 0 24 24"><path d="M9 2h6M12 2v3m6 1 2 2M12 9v5l3 2"/><circle cx="12" cy="14" r="8"/></svg>','class="feedTimeout" aria-label="Silence creator for two hours"')+
+   caption.innerHTML=(view.kind==='creator'?'':button(esc(item.credit||'Creator'),'class="feedAuthor"')+'<span class="feedFollowing" aria-label="Following" '+(following(item)?'':'hidden')+'>✓</span>'+button('<svg viewBox="0 0 24 24"><path d="M9 2h6M12 2v3m6 1 2 2M12 9v5l3 2"/><circle cx="12" cy="14" r="8"/></svg>','class="feedTimeout" aria-label="Silence creator for two hours"'))+
     '<div class="feedReactions">'+button(reactionLabel(item),'data-feed-react="Like" aria-label="Like" aria-pressed="'+(item.reactions||[]).includes('Like')+'"')+'</div>'+
     button('<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h12v18l-6-4-6 4z"/></svg>','class="feedCollect '+(membershipIds(item.collections).length?'bookmarked':'')+'" aria-label="Add to collection"');
    el.append(caption);
-   if(item.chosenBy?.kind==='curation'){
+   if(view.kind!=='creator'&&item.chosenBy?.kind==='curation'){
     const via=document.createElement('div');via.className='feedDiscovery';via.innerHTML=discoveryHTML(item);caption.insertBefore(via,$('.feedTimeout',caption));wireDiscovery(via,item);
    }
-   $('.feedAuthor',caption).onclick=async()=>{
+   $('.feedAuthor',caption)?.addEventListener('click',async()=>{
     try{
      if(!item.creatorId){const detail=await api('browse/detail/'+item.id);Object.assign(item,detail.item);}
      openSubject('creator',item.creatorId,item.credit);
     }catch(error){toast(error.message);}
-   };
+   });
    const boundAccount=account;
-   $('.feedTimeout',caption).onclick=async e=>{
+   $('.feedTimeout',caption)?.addEventListener('click',async e=>{
     const b=e.currentTarget;b.disabled=true;
     try{
      if(!item.creatorId)Object.assign(item,(await fetchDetail(item)).item);
@@ -703,7 +719,7 @@ const CivitaiBrowser=(()=>{
      if(view.kind==='mix'){feed=feed.filter(i=>!isMuted(i));$$('.browseTile').forEach(el=>{if(isMuted(el.browseItem))el.remove();});saveSnapshot();observeMore();}
      toast(item.credit+' silenced in For you for 2 hours');
     }catch(error){toast(error.message);}finally{b.disabled=false;}
-   };
+   });
    $$('[data-feed-react]',caption).forEach(b=>b.onclick=async()=>{
     const reaction=b.dataset.feedReact, selected=(item.reactions||[]).includes(reaction);
     b.disabled=true;
@@ -724,6 +740,7 @@ const CivitaiBrowser=(()=>{
   return Number(item.stats?.[key.toLowerCase()+'CountAllTime']??item.stats?.[key.toLowerCase()+'Count']??0);
  }
  function saveView(){
+  parkSubjectHeading();
   showBrowseHeader();
   observer?.disconnect();
   const main=$('#main');
@@ -736,10 +753,11 @@ const CivitaiBrowser=(()=>{
   clearBackLayer();
   if(collectionPopup){collectionPopup.remove();collectionPopup=null;return true;}
   if(!history.length)return false;
+  parkSubjectHeading();
   observer?.disconnect();session++;busy=false;stripBusy=false;
   const saved=history.pop();
   view=saved.view;feed=saved.feed;cursor=saved.cursor;feedEnded=saved.feedEnded;emptyPages=saved.emptyPages||0;
-  $('#main').replaceChildren(...saved.nodes);
+  $('#main').replaceChildren(...saved.nodes);dockSubjectHeading();
   if(view.kind==='mix'){feed=feed.filter(i=>!isMuted(i));$$('.browseTile').forEach(el=>{if(isMuted(el.browseItem))el.remove();});saveSnapshot();}
   pruneBanned();paintSocial();revealFeedCards($('#browseFeed'));$('#workspace').scrollTop=saved.scroll;
   if(view.kind!=='preferences')observeMore();else paintPreferences();
@@ -768,7 +786,7 @@ const CivitaiBrowser=(()=>{
    $('#browseMore').hidden=false;loadFeed();observeMore();
   });
   $('#browseMore').onclick=loadFeed;
-  $('#workspace').scrollTop=0;loadFeed();observeMore();
+  dockSubjectHeading();$('#workspace').scrollTop=0;loadFeed();observeMore();
  }
  async function openPreferences(){
   saveView();view={kind:'preferences',sort:'weight',filter:'both',search:'',items:[]};
@@ -1115,23 +1133,31 @@ const CivitaiBrowser=(()=>{
   $$('[data-civi-link]',host).forEach(b=>b.onclick=()=>openModelSource(b.dataset.civiLink));
   const buttons=$$('[data-civi-download]',host);if(!buttons.length)return;
   const versions=buttons.map(b=>b.dataset.civiDownload);
+  function paintDownload(b,status){
+   const installed=status==='installed',busy=['preparing','starting','queued','downloading','verifying'].includes(status);
+   b.innerHTML=installed?'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12l4 4L19 6"/></svg>':busy?'<i class="spinner" aria-hidden="true"></i>':'＋';
+   b.disabled=installed||busy||status==='confirming';b.setAttribute('aria-busy',String(busy));
+   b.setAttribute('aria-label',installed?'LoRA already in your library':status==='preparing'?'Checking LoRA download':busy?'Downloading LoRA to your PC':'Download LoRA');
+  }
   async function update(){
    if(!host.isConnected||document.hidden)return;
    try{const r=await api('lora-download/status',{versions});let running=false,finished=false;
-    for(const b of buttons){const s=(r.items||r.statuses||[]).find?.(x=>String(x.versionId)===b.dataset.civiDownload)||r[b.dataset.civiDownload]||{};
+    for(const b of buttons){if(b.dataset.downloadPhase)continue;const s=(r.items||r.statuses||[]).find?.(x=>String(x.versionId)===b.dataset.civiDownload)||r[b.dataset.civiDownload]||{};
      const installed=s.status==='installed',active=['queued','downloading','verifying'].includes(s.status);running ||= active;finished ||= installed&&b.dataset.wasActive==='true';if(active)b.dataset.wasActive='true';if(installed)delete b.dataset.wasActive;
-     b.innerHTML=installed?'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12l4 4L19 6"/></svg>':active?'<i class="spinner"></i>':'＋';b.disabled=installed||active;b.setAttribute('aria-label',installed?'LoRA already in your library':'Download LoRA');
+     paintDownload(b,s.status);
      if(s.error)$('[data-download-status="'+b.dataset.civiDownload+'"]',host).textContent=s.error;
     }if(finished){const listing=await api('model-library');modelListings=listing.items||[];if(catalog){catalog.listings=modelListings;catalog.loras=[...new Set([...(catalog.loras||[]),...modelListings.filter(i=>i.kind==='loras').map(i=>i.name)])];}await ModelPreviews.register(modelListings,listing.nsfwHidden,listing.scanning);}if(running)setTimeout(update,1800);
    }catch(e){for(const b of buttons)b.title=e.message;}
   }
-  buttons.forEach(b=>b.onclick=async()=>{const dest=$('[data-download-status="'+b.dataset.civiDownload+'"]',host);b.disabled=true;
+  buttons.forEach(b=>b.onclick=async()=>{const dest=$('[data-download-status="'+b.dataset.civiDownload+'"]',host);b.dataset.downloadPhase='preparing';paintDownload(b,'preparing');dest.textContent='Checking download…';
    try{const plan=await api('lora-download/prepare/'+b.dataset.civiDownload);
-    if(plan.status!=='confirm'){await update();return;}
+    if(!host.isConnected)return;
+    if(plan.status!=='confirm'){delete b.dataset.downloadPhase;paintDownload(b,plan.status);dest.textContent='';await update();return;}
+    b.dataset.downloadPhase='confirming';paintDownload(b,'confirming');
     dest.innerHTML='<div class="resourceDownloadConfirm"><strong>'+esc(plan.title)+'</strong><p>'+esc([plan.version,plan.baseModel].filter(Boolean).join(' · '))+' · '+esc(modelSize(plan.bytes))+'</p><small>'+esc(plan.filename||'')+'</small><div class="row">'+button('Download to PC','class="green" data-accept-download')+button('Cancel','data-reject-download')+'</div></div>';
-    $('[data-reject-download]',dest).onclick=()=>{dest.replaceChildren();b.disabled=false;};
-    $('[data-accept-download]',dest).onclick=async()=>{try{await api('lora-download/start',{confirmation:plan.confirmation});dest.textContent='Downloading on your PC…';await update();}catch(e){dest.textContent=e.message;b.disabled=false;}};
-   }catch(e){dest.textContent=e.message;b.disabled=false;}
+    $('[data-reject-download]',dest).onclick=()=>{dest.replaceChildren();delete b.dataset.downloadPhase;paintDownload(b,'available');};
+    $('[data-accept-download]',dest).onclick=async()=>{b.dataset.downloadPhase='starting';paintDownload(b,'starting');dest.textContent='Starting download…';try{const result=await api('lora-download/start',{confirmation:plan.confirmation});delete b.dataset.downloadPhase;paintDownload(b,result.status);dest.textContent=result.status==='installed'?'':'Downloading on your PC…';await update();}catch(e){delete b.dataset.downloadPhase;dest.textContent=e.message;paintDownload(b,'available');}};
+   }catch(e){delete b.dataset.downloadPhase;dest.textContent=e.message;paintDownload(b,'available');}
   });update();
  }
  function discoveryHTML(item){
@@ -1150,7 +1176,7 @@ const CivitaiBrowser=(()=>{
   $$('.sourceLora',host).forEach(b=>b.onclick=()=>openModelSource(b.dataset.civiLink));
  }
  function socialHTML(item,collections){
-  return '<div class="socialTop"><div class="civitaiAuthor">'+avatarHTML(item)+button(esc(item.credit||'Unknown creator'),'class="creatorName '+(item.chosenBy?.kind==='creator'&&String(item.chosenBy.id)===String(item.creatorId)?'chosenSource':'')+'" data-civi-link="https://civitai.red/user/'+esc(encodeURIComponent(item.credit||''))+'"')+(item.creatorId?button('Follow','class="viewerFollow" data-follow-only data-follow-creator="'+esc(item.creatorId)+'" '+(following(item)?'hidden':''))+button('Feed','data-creator-feed class="creatorFeed"'):'')+button('↗','data-creator-profile class="creatorProfile" aria-label="Open creator profile"')+(item.chosenBy?.kind==='curation'?discoveryHTML(item):'')+'</div><div class="civitaiReactions">'+button(reactionLabel(item),'data-civi-react="Like" aria-label="Like" aria-pressed="'+(item.reactions||[]).includes('Like')+'"')+button(ribbonIcon,'class="viewerCollect '+(membershipIds(item.collections).length?'bookmarked':'')+'" aria-label="Add to collection"')+'</div></div>'+(item.chosenBy?.kind==='lora'?discoveryHTML(item):'')+'<p class="civitaiActionError warning" role="status"></p>';
+  return '<div class="socialTop"><div class="civitaiAuthor">'+avatarHTML(item)+button(esc(item.credit||'Unknown creator'),'class="creatorName '+(item.chosenBy?.kind==='creator'&&String(item.chosenBy.id)===String(item.creatorId)?'chosenSource':'')+'" data-civi-link="https://civitai.red/user/'+esc(encodeURIComponent(item.credit||''))+'"')+(item.creatorId?button(following(item)?'Following ✓':'Follow','class="viewerFollow '+(following(item)?'selected':'')+'" data-follow-creator="'+esc(item.creatorId)+'" aria-pressed="'+following(item)+'"')+button('Feed','data-creator-feed class="creatorFeed"'):'')+button('↗','data-creator-profile class="creatorProfile" aria-label="Open creator profile"')+(item.chosenBy?.kind==='curation'?discoveryHTML(item):'')+'</div><div class="civitaiReactions">'+button(reactionLabel(item),'data-civi-react="Like" aria-label="Like" aria-pressed="'+(item.reactions||[]).includes('Like')+'"')+button(ribbonIcon,'class="viewerCollect '+(membershipIds(item.collections).length?'bookmarked':'')+'" aria-label="Add to collection"')+'</div></div>'+(item.chosenBy?.kind==='lora'?discoveryHTML(item):'')+'<p class="civitaiActionError warning" role="status"></p>';
  }
  function membershipIds(raw){
   if(!raw)return [];

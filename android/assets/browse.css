@@ -251,3 +251,8 @@ body[data-page=browse] #browseHello{margin-left:auto;max-width:52%;min-width:0}
 body:not([data-page=browse]) #browseSync{display:none}
 .browseHeaderHidden #browseSync>i,.browseHeaderHidden #browseRefresh.refreshing svg,.browseBackgrounded #browseSync>i,.civitaiViewerOpen #browseSync>i{animation-play-state:paused}
 @media(prefers-reduced-motion:reduce){body[data-page=browse] #workspace>header{transition:none}#browseSync>i{animation:none}}
+/* Creator/tag controls share the sticky, sliding header instead of the feed. */
+body[data-page=browse] #workspace>header.hasBrowseSubject,.browseBackLayer>header.hasBrowseSubject{height:auto;flex-wrap:wrap}
+header.hasBrowseSubject>.subjectHeading{flex:0 0 100%;width:100%;min-width:0;padding:2px 0 5px;margin:0}
+header.hasBrowseSubject #headerIdentity{min-height:44px}
+.viewerFollow.selected{color:var(--mint);border-color:var(--mint);background:#1d3b31}
