@@ -39,6 +39,7 @@ def parents(settings, media_jobs):
 
 
 def generation_type(kind, settings):
+    if settings.get('operation')=='remacri4x':return 'Upscale 4× · Remacri'
     if kind == 'video' and settings.get('characterReference'):
         return 'Extend video with character reference' if settings.get('extension') else 'Character reference to video'
     if settings.get('extension'):return 'Extend video + final frame' if settings.get('finalFrame') else 'Extend video'

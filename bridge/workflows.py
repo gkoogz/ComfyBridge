@@ -8,6 +8,7 @@ EROS_BETA7 = '10Eros_Max_h3_8stepTURBO_beta7_int8HQ.safetensors'
 H3_AUDIO_VAE = 'minimax_h3_audio_vae_fp32.safetensors'
 H3_REF2VA = 'minimax_h3_ref2va_pruned_fp8_scaled.safetensors'
 H3_REFERENCE_STEPS = 20
+REMACRI = '4x_foolhardy_Remacri.pth'
 
 
 class Workflows:
@@ -62,7 +63,38 @@ class Workflows:
                 'notices': ['Video gen.json has an invalid numeric scheduler (4) and steps=1. The bridge uses simple / 4 steps for the saved turbo LoRA. The original file is unchanged.',
                             'MiniMax H3 rounds frame count up to 17k+5. Duration uses the actual frame count / FPS.']}
 
+    def prepare_upscale(self, kind, s):
+        """Validate against the actual source, never client-supplied dimensions."""
+        from PIL import Image
+        if kind != 'image' or s.get('operation') != 'remacri4x':
+            raise ValueError('Unknown image operation.')
+        if not (self.root/'models/upscale_models'/REMACRI).is_file():
+            raise ValueError('Remacri is not installed on this PC. Run Setup-Remacri.ps1.')
+        source=(self.root/'input'/str(s.get('upload') or '')).resolve()
+        if not source.is_relative_to((self.root/'input/ComfyBridge').resolve()) or not source.is_file():
+            raise ValueError('Choose a starting image before upscaling.')
+        with Image.open(source) as image:
+            width,height=image.size
+        if width*height*16 > 40_000_000 or max(width,height)*4 > 16384:
+            raise ValueError('4× output must be at most 40 megapixels and 16384 pixels per side. Choose a smaller source.')
+        # Upscaling is its own image recipe; prompt, mask, LoRAs and sampler do not participate.
+        for key in ('mask','extension','finalFrame','characterReference','replayOf'):
+            s.pop(key,None)
+        s.update(width=width*4,height=height*4,sourceWidth=width,sourceHeight=height,
+                 model=REMACRI,loras=[],positive='',negative='',steps=1,cfg=1,denoise=0,
+                 seed='0',increment=False)
+        s.pop('sampler',None)
+
     def build(self, kind, s, prefix, *, recorded_video_strength=None):
+        if s.get('operation'):
+            if kind!='image' or s['operation']!='remacri4x' or not s.get('upload'):
+                raise ValueError('Invalid upscale operation or missing source.')
+            return {
+                '21': {'class_type':'LoadImage','inputs':{'image':s['upload']}},
+                '60': {'class_type':'UpscaleModelLoader','inputs':{'model_name':REMACRI}},
+                '61': {'class_type':'ImageUpscaleWithModel','inputs':{'upscale_model':['60',0],'image':['21',0]}},
+                '9': {'class_type':'SaveImage','inputs':{'images':['61',0],'filename_prefix':prefix}},
+            }
         if kind != 'video' and (s.get('finalFrame') or s.get('characterReference')):
             raise ValueError('Frame and character references are only available for video.')
         g = {}

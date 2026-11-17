@@ -1,6 +1,6 @@
 # ComfyBridge
 
-**[Open the beta 115 release page](https://github.com/gkoogz/ComfyBridge/releases/tag/v0.1.0-beta.115)** · [Download the Android APK](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.115/ComfyBridge-0.1.0-beta.115.apk) · [Download Windows](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.115/ComfyBridge-Windows-0.1.0-beta.115.zip) · [All releases](https://github.com/gkoogz/ComfyBridge/releases)
+**[Open the beta 116 release page](https://github.com/gkoogz/ComfyBridge/releases/tag/v0.1.0-beta.116)** · [Download the Android APK](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.116/ComfyBridge-0.1.0-beta.116.apk) · [Download Windows](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.116/ComfyBridge-Windows-0.1.0-beta.116.zip) · [All releases](https://github.com/gkoogz/ComfyBridge/releases)
 
 <img src="artwork/comfybridge.png" width="128" alt="ComfyBridge white cube and play icon on black">
 
@@ -9,6 +9,8 @@ An Android remote for an existing Windows ComfyUI installation. The phone edits 
 **Local project:** this PC's canonical checkout is `E:\ComfyBridge`. Source, builds, installed app data, local LLMs and archived work are consolidated there. See [the local folder map](docs/local-layout.md) for private-data exclusions, compatibility links and external ComfyUI dependencies. Run `Start-ComfyBridge.ps1` to open the installed PC panel.
 
 **Working on the project:** agents and contributors should start with [AGENTS.md](AGENTS.md) for the code map, build/test commands, live queue preservation and delivery instructions.
+
+**Beta 116** adds Remacri 4x upscaling through the durable image queue, image handoff actions in Library and Latest Result, and reorganized Starting Image controls. See [Remacri upscaling](docs/upscaling.md).
 
 **Beta 115** adds an embedding browser with installed files, Civitai search/downloads, previews, compatibility labels, and positive/negative insertion. Embeddings appear as protected inline strength controls. All model previews share Browse's fullscreen viewer; dragging right on metadata brings the previous screen over it. See [embedding controls](docs/embeddings.md).
 

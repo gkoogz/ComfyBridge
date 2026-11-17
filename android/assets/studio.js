@@ -192,6 +192,13 @@ async function restoreGeneration(job,button,stillHere=()=>true){
     ctx.putImageData(pixels,0,0);inputs.mask=canvas.toDataURL('image/png');
    }
    if(page!==origin||session!==epoch||!stillHere())return;
+     if(settings.operation==='remacri4x'){
+      setStartingImage('image',inputs);
+      for(const key of ['sourceMedia','sourceOrigin'])if(settings[key])state.settings.image[key]=settings[key];
+      persist('image');navigate('image');
+      const panel=$('#upload')?.closest('.foldPanel');if(panel?.classList.contains('folded'))$('.foldToggle',panel).click();
+      toast('Original source loaded. Tap Upscale 4x (Remacri) to repeat.');return;
+     }
    settings.batch=1;
    settings.replayOf=job;
    if(kind==='video' && settings.sound===undefined)settings.sound=false; // older jobs were silent

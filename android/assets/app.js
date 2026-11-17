@@ -236,6 +236,7 @@ function renderGenerator(){
  $('#main').innerHTML=`<div class="gentoolbar">${generationControls(s.batch)}<div class="progressrow" id="progressRow" hidden><img class="preview" id="livePreview" alt="Generation preview"><div class="progress"><i id="progressFill"></i><span id="progressText"></span></div></div><div class="statusmessage" id="jobMessage"></div></div><div id="genError"></div>${window.Desktop?'':'<div id="generatorQueue"></div>'}<div class="row spread modeRow"><p class="eyebrow">${kind==='image'?'A STILL, A STORY':'VIDEO STUDIO'}</p><span class="pill" id="mode">${kind==='video'&&hasCharacterReference(s,inp)?(ext?'EXTEND WITH CHARACTER':'CHARACTER → VIDEO'):ext?(inp.finalFrame?.data||s.finalFrame?'EXTEND → FINAL FRAME':'EXTEND VIDEO'):textVideo?(inp.finalFrame?.data||s.finalFrame?'TEXT → FINAL FRAME':'TEXT → VIDEO'):kind==='video'?(inp.finalFrame?.data||s.finalFrame?'FIRST → FINAL FRAME':'IMAGE → VIDEO'):inp.mask?'INPAINT':inp.data?'IMAGE → IMAGE':'TEXT → IMAGE'}</span></div>${kind==='video'?videoFrameFields(s,inp)+characterReferenceField(s,inp):imageSourceField(inp)}<section class="card"><h2>Canvas & model</h2>${kind==='image'?canvasInputs(s):`${textVideo?canvasInputs(s,32)+'<div class="field scaleField"><label for="textVideoResolution">Resolution</label><div id="resolutionInfo"></div><input id="textVideoResolution" class="scaleRange" type="range" aria-label="Video resolution"><small>Red starts above 768 × 1152 pixels.</small></div>' :`<div class="field scaleField"><div class="row spread"><label for="videoScale">Scale from source</label><strong id="scaleValue"></strong></div><div id="resolutionInfo"></div><input id="videoScale" class="scaleRange" type="range" data-setting="scale" step="1"><div class="row spread"><small id="scaleBounds"></small><button type="button" id="originalScale" class="textbutton">Original · 0%</button></div></div>`}<div class="field"><div class="row spread"><label for="videoSeconds">${ext?'Time to add':'Video length'}</label><strong id="secondsValue"></strong></div><input id="videoSeconds" type="range" min="1" max="20" step="0.25"></div><div class="grid2 field"><div><label>${ext?'Frames to add':'Frames'}</label><input type="number" data-setting="frames" min="1" max="${ext?3570:3592}" value="${s.frames}"></div><div><label>FPS</label><input type="number" data-setting="fps" step="any" ${ext?'disabled':''} min="1" max="120" value="${s.fps}"></div></div><div id="durationInfo" aria-label="Video duration"></div><label class="togglelabel soundToggle"><input type="checkbox" id="videoSound" ${s.sound!==false?'checked':''}><span><strong>Include sound</strong><small>${ext?'Off saves a silent copy of the entire extension.':'Generate a soundtrack with the video.'}</small></span></label>`}<div class="field"><label>${kind==='video'?'Video model':'Checkpoint'}</label>${kind==='video'?`<div id="videoModelControls">${videoModelField(s)}</div>`:`<div class="checkpointPicker"><select data-setting="model">${[...new Set([s.model,...(catalog?.models||[])])].map(m=>`<option value="${esc(m)}" ${m===s.model?'selected':''}>${esc(modelLabel('checkpoints',m))}</option>`).join('')}</select><button type="button" id="checkpointBrowser">Checkpoint Browser</button></div>`}</div></section><section class="card"><div class="row spread"><h2>LoRAs</h2><button id="addLora" class="textbutton">＋ Add</button></div><div id="loras"></div></section>${promptField('positive','Positive prompt')}${promptField('negative','Negative prompt')}<section class="card"><h2>Generation settings</h2>${samplingFields(kind,s)}${slider('steps','Steps',1,maxSteps)}${kind==='image'?slider('cfg','CFG',0,20,.1)+slider('denoise','Denoise'+(!inp.data?' · locked for text to image':''),0,1,.01,!inp.data):''}<div class="field"><label>Seed</label><input type="text" inputmode="numeric" data-setting="seed" value="${esc(s.seed)}"></div><div class="seedActions"><button id="randomSeed" type="button" class="seedRandom">Randomize</button><label class="togglelabel"><input type="checkbox" id="increment" ${s.increment?'checked':''}>Increment seed after each generation</label></div></section><section class="card" id="latestPanel"><div class="sectionline"><h2>Latest result</h2><button id="toLibrary" class="textbutton">Library ↗</button></div><div class="resultbox" id="result"></div><div class="carousel" id="carousel"></div></section>`;
  $('#upload').onchange=e=>loadStartingMedia(e.target);$('#clearUpload').onclick=()=>{state.inputs[kind]=kind==='video'?videoReferenceInputs(inp):{};delete s.extension;delete s.sourceMedia;delete s.sourceOrigin;delete s.replayOf;s.upload=null;s.mask=null;s.scale=0;if(kind==='video'&&s.textCanvas)Object.assign(s,s.textCanvas);if(kind==='image'){s.width=1024;s.height=1536;s.denoise=1;if(s.aspectLock)s.aspectLock=[s.width,s.height];}persist();renderGenerator();};
  if($('#maskButton'))$('#maskButton').onclick=openMask;if($('#clearMask'))$('#clearMask').onclick=()=>{delete inp.mask;delete s.mask;persist();renderGenerator();};
+ if($('#upscaleRemacri'))$('#upscaleRemacri').onclick=()=>generate('remacri4x');
  if(kind==='video'){
   for(const [key,upload,clear] of videoReferenceFields){
    $(upload).onchange=e=>loadVideoReference(key,e.target.files[0]);
@@ -310,13 +311,13 @@ function imageSourceField(input){
    '<div><strong>＋</strong><span>Choose an image</span><br><small>'+(window.Desktop?'Browse files on your PC':'Tap to browse your phone')+'</small></div>'}
    <input type="file" id="upload" accept="image/*" aria-label="Choose starting media">
   </div>
-  <div class="uploadtools">
-   ${input.data?'<div class="sourceDims"><strong>'+input.width+' × '+input.height+'</strong><small>Source · '+aspect(input.width,input.height)+'</small></div>':'<small>Leave empty for text to image</small>'}
-   <div><button id="maskButton" ${input.data?'':'disabled'}>${input.mask?'Edit mask':'◌ Apply mask'}</button>
-    <button id="clearUpload" class="danger" ${input.data?'':'disabled'}>Clear ×</button></div>
+  <div class="uploadtools imageSourceTools">
+   <div class="sourceEditActions"><button id="maskButton" ${input.data?'':'disabled'}>${input.mask?'Edit mask':'Apply Mask'}</button>
+    <button id="upscaleRemacri" ${input.data?'':'disabled'}>Upscale 4x (Remacri)</button></div>
+   <button id="clearUpload" class="danger" ${input.data?'':'disabled'}>Clear</button>
   </div>
+  <div class="imageSourceInfo">${input.data?'<strong>'+input.width+' × '+input.height+'</strong><small>'+aspect(input.width,input.height)+'</small>'+((input.width>1256||input.height>1256)?'<span class="warning">High resolution</span>':''):'<small>Leave empty for text to image</small>'}</div>
   ${input.mask?'<button id="clearMask" class="textbutton danger">Reset mask</button>':''}
-  ${input.data&&(input.width>1256||input.height>1256)?'<div class="warning">ⓘ Large source image · above 1256 × 1256.</div>':''}
  </section>`;
 }
 const ref2vaModel = 'minimax_h3_ref2va_pruned_fp8_scaled.safetensors';
@@ -702,7 +703,7 @@ function acceptSubmission(payload,accepted){
  if(state.pendingByKind?.[kind]?.requestId===payload.requestId)delete state.pendingByKind[kind];
  if(state.pendingRequest?.requestId===payload.requestId)delete state.pendingRequest;
  s.batch=1;
- if(payload.settings.increment&&String(s.seed)===String(payload.settings.seed))s.seed=((BigInt(s.seed)+BigInt(payload.count))%(2n**64n)).toString();
+ if(!payload.settings.operation&&payload.settings.increment&&String(s.seed)===String(payload.settings.seed))s.seed=((BigInt(s.seed)+BigInt(payload.count))%(2n**64n)).toString();
  persist(kind);Native.watchBatch?.(accepted.batch);
  const id=accepted.ids?.[0]||accepted.jobs?.[0]?.id;
  if(id){
@@ -728,9 +729,19 @@ async function resolvePendingSubmission(kind){
  finally{submitting=false;}
 }
 async function stopBatch(batch){try{await api('stop',{batch});toast('Stopping this batch');await poll();}catch(e){toast(e.message);}}
-async function generate(){
+async function generate(operation){
  if(!connected)return toast(window.Desktop?'Turn the server on in the sidebar first.':'Connect to your PC first.');if(submitting)return;
- const kind=page,s=state.settings[kind],inp=structuredClone(state.inputs[kind]),snapshot=structuredClone(s),count=s.batch||1;
+ const upscale=operation==='remacri4x';
+ const kind=page,s=state.settings[kind],inp=structuredClone(state.inputs[kind]),snapshot=structuredClone(s),count=upscale?1:s.batch||1;
+ delete snapshot.operation;
+ if(upscale){
+  if(kind!=='image'||!inp.data)return toast('Choose a starting image first.');
+  if(inp.width*inp.height*16>40000000||Math.max(inp.width,inp.height)*4>16384)return toast('4× output would exceed 40 megapixels or 16384 pixels per side. Choose a smaller source.');
+  if(!catalog?.remacriSupported)return toast('Remacri needs the updated Windows bridge and installed model. Reconnect after updating.');
+  if(pendingSubmission(kind)){try{await resolvePendingSubmission(kind);toast('Previous submission confirmed. Tap Upscale again to start a new job.');}catch(e){toast(e.message);}return;}
+  Object.assign(snapshot,{operation:'remacri4x',width:inp.width*4,height:inp.height*4,increment:false,seed:'0',steps:1,loras:[],positive:'',negative:'',mask:null});
+  delete inp.mask;delete snapshot.replayOf;
+ }
  snapshot.provenanceVersion=1;
  snapshot.steps=limit(Math.round(Number(snapshot.steps))||1,1,s.replayOf?Math.max(stepLimit(kind),s.steps):stepLimit(kind));
  state.pendingByKind??={};if(state.pendingRequest){state.pendingByKind[state.pendingRequest.kind]=state.pendingRequest;delete state.pendingRequest;}
@@ -748,6 +759,7 @@ async function generate(){
   snapshot.upload=null;snapshot.mask=null;
  }
  submitting=true;$('#play').disabled=true;$('#batchButton').disabled=true;$('#runSpinner').hidden=false;
+ const upscaleButton=$('#upscaleRemacri');if(upscaleButton&&upscale){upscaleButton.disabled=true;upscaleButton.innerHTML='<i class="spinner"></i> Queuing…';}
  try{
   if(!payload&&character){
    const eros=snapshot.model===erosModel;
@@ -774,7 +786,7 @@ async function generate(){
     snapshot.characterReference=(await api('upload',{data:inp.characterReference.data})).name;
     if(inp.characterReference.data===state.inputs.video.characterReference?.data)s.characterReference=snapshot.characterReference;
    }
-   if(inp.data===state.inputs[kind].data&&inp.mask===state.inputs[kind].mask){s.upload=snapshot.upload;s.mask=snapshot.mask;}
+   if(!upscale&&inp.data===state.inputs[kind].data&&inp.mask===state.inputs[kind].mask){s.upload=snapshot.upload;s.mask=snapshot.mask;}
    payload={kind,count,settings:snapshot,requestId:crypto.randomUUID()};state.pendingByKind[kind]=payload;persist(kind);
   }
   const accepted=await api('generate',payload);acceptSubmission(payload,accepted);
@@ -782,6 +794,7 @@ async function generate(){
  }catch(e){if(/^HTTP (400|401|403|413)/.test(e.message)){delete state.pendingByKind[kind];persist();}if($('#genError'))$('#genError').textContent=e.message;toast(e.message);}
  finally{
   submitting=false;
+  if(upscaleButton?.isConnected){upscaleButton.disabled=!state.inputs.image.data;upscaleButton.textContent='Upscale 4x (Remacri)';}
   if($('#play')){
    $('#play').disabled=false;
    $('#batchButton').disabled=false;

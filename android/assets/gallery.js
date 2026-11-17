@@ -248,7 +248,7 @@ function resultActions(item,pending=false){
  const inputs=inputActions(item);
  if(item.kind==='image'){
   inputs[0].textContent='i2i';inputs[0].setAttribute('aria-label','Send to i2i');inputs[0].title='Send to image to image';
-  group.append(inputs[1],inputs[0]);
+  group.append(inputs[1],inputs[0],inputs[2]);
  }else group.append(...inputs);
  group.append(regenerateButton(item));
  group.append(compactMediaAction(saveMediaButton(item),window.Desktop?'Save a copy':'Save to camera roll',resultIcon('M12 3v12m-5-5 5 5 5-5M5 16v5h14v-5')));

@@ -111,7 +111,7 @@ def graph_for_replay(db,kind,settings,new_id):
     if not row:
         return None
     previous=json.loads(row[0])
-    keys=('model','loras','positive','negative','width','height','steps','cfg','denoise',
+    keys=('operation','model','loras','positive','negative','width','height','steps','cfg','denoise',
           'sampler','clipSkip','upload','mask','finalFrame','characterReference','frames','fps','extension','exactFrames','sound')
     if any(settings.get(k)!=previous.get(k) for k in keys):
         return None  # An edited recipe should use the newly selected inputs.

@@ -21,6 +21,8 @@ class Progress:
             'VAEDecode': ('Decode video frames' if frames>1 else 'Decode image', 3*pixels*(1+frames*.3)),
             'CreateVideo': ('Assemble frames', 1+frames*.04), 'SaveVideo': ('Encode and save MP4', 2+frames*.15),
             'SaveImage': ('Save image', 1), 'LoraLoader': ('Apply image LoRA', 1),
+            'UpscaleModelLoader': ('Load Remacri', 2),
+            'ImageUpscaleWithModel': ('Upscale 4× · Remacri tiles', 6*pixels),
             'LoraLoaderModelOnly': ('Apply video LoRA', 2), 'LoadImage': ('Read source', .8),
             'ImageScale': ('Scale source', .7), 'ImageToMask': ('Prepare mask', .6),
             'MiniMaxH3AddGuide': ('Encode motion guide', 4*pixels),

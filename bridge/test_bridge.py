@@ -92,6 +92,31 @@ class BridgeTests(unittest.IsolatedAsyncioTestCase):
     async def submit(self,count=1):
         return await self.request('generate',dict(kind='image',count=count,settings=self.settings,requestId=str(uuid.uuid4())))
 
+    async def test_remacri_submission_is_durable_and_idempotent(self):
+        old_root=w.WF.root;w.WF.root=w.ROOT
+        try:
+            model=w.ROOT/'models/upscale_models'/w.REMACRI
+            model.parent.mkdir(parents=True,exist_ok=True);model.touch()
+            w.CATALOG['remacriSupported']=True
+            Image.new('RGB',(1024,1536),'blue').save(w.ROOT/'input/ComfyBridge/upscale.png')
+            settings=dict(self.settings,operation='remacri4x',upload='ComfyBridge/upscale.png',model='irrelevant-checkpoint')
+            payload=dict(kind='image',count=1,settings=settings,requestId=str(uuid.uuid4()))
+            response,first=await self.request('generate',payload)
+            self.assertEqual(response.status,200,first)
+            response,again=await self.request('generate',payload)
+            self.assertEqual(first,again)
+            jobs=w.rows('SELECT * FROM jobs');self.assertEqual(len(jobs),1)
+            saved=json.loads(jobs[0]['settings'])
+            self.assertEqual((saved['width'],saved['height']),(4096,6144))
+            self.assertEqual(saved['model'],w.REMACRI)
+            self.assertTrue((w.ROOT/'input'/saved['upload']).is_file())
+            self.assertIn('/recipes/',saved['upload'])
+            graph=w.recipes.recorded_graph(w.DB,jobs[0]['id'])
+            self.assertEqual(graph['61']['class_type'],'ImageUpscaleWithModel')
+            self.assertNotIn('KSampler',[n['class_type'] for n in graph.values()])
+            self.assertEqual(jobs[0]['status'],'pending')
+        finally:w.WF.root=old_root
+
     async def wait_done(self,count):
         for _ in range(100):
             done=w.rows("SELECT * FROM jobs WHERE status='complete'")

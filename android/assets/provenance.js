@@ -17,6 +17,17 @@ function inputActions(item){
    const response=await fetch('/local/image/'+item.id+'/'+original.local);if(!response.ok)throw Error('The source image is unavailable.');
    const input=await readStartingImage(await response.blob());setStartingImage('image',input);state.settings.image.sourceMedia=item.id;persist('image');navigate('image');
   }));out.push(makeVideoButton(item));
+  out.push(provenanceButton('Upscale',async b=>{
+   b.innerHTML='<i class="spinner"></i> Loading…';
+   try{
+    if(!state.settings.image)throw Error('Wait for image settings to load.');
+    let original=library.find(x=>x.id===item.id)||item;if(!original.local)original=await fetchOriginal(item.id);
+    const response=await fetch('/local/image/'+item.id+'/'+original.local);if(!response.ok)throw Error('The source image is unavailable.');
+    const input=await readStartingImage(await response.blob());setStartingImage('image',input);state.settings.image.sourceMedia=item.id;persist('image');navigate('image');
+    const panel=$('#upload')?.closest('.foldPanel');if(panel?.classList.contains('folded'))$('.foldToggle',panel).click();
+    panel?.scrollIntoView({block:'nearest'});$('#upscaleRemacri')?.focus({preventScroll:true});
+   }finally{b.textContent='Upscale';}
+  }));
  }else out.push(extendVideoButton(item));
  return out;
 }

@@ -33,7 +33,7 @@ from PIL import Image, ImageOps
 
 from queue_progress import LIVE_JOBS, positions, prepare
 from studio import prepare as prepare_studio, mark_skipping
-from workflows import Workflows, EROS_BETA7, H3_AUDIO_VAE, H3_REF2VA, H3_REFERENCE_STEPS
+from workflows import Workflows, EROS_BETA7, H3_AUDIO_VAE, H3_REF2VA, H3_REFERENCE_STEPS, REMACRI
 from progress import Progress
 from queue_eta import QueueEta
 from cancel_recovery import can_recover
@@ -202,6 +202,8 @@ async def load_catalogue():
         return field[0] if isinstance(field[0], list) else field[1].get('options', [])
     CATALOG = dict(defaults=WF.defaults(), models=choices('CheckpointLoaderSimple', 'ckpt_name'),
                    loras=choices('LoraLoader', 'lora_name'),samplers=choices('KSampler','sampler_name'),videoSamplers=choices('KSamplerSelect','sampler_name'))
+    CATALOG['remacriSupported']=('ImageUpscaleWithModel' in obj and 'UpscaleModelLoader' in obj
+        and REMACRI in choices('UpscaleModelLoader','model_name'))
     h3_inputs=obj.get('MiniMaxH3ImageToVideo',{}).get('input',{})
     CATALOG['finalFrameSupported']=any('last_frame' in h3_inputs.get(key,{}) for key in ('required','optional'))
     CATALOG['videoModels']=WF.video_models(obj,choices('UNETLoader','unet_name'),choices('CLIPLoader','clip_name'),
@@ -897,7 +899,7 @@ async def api(request):
                     j['etaSeconds']=None
                 else:
                     j['progress'],j['current_node']=TRACKER.sample()
-        return web.json_response(dict(protocol=20,build='0.1.0-beta.115',jobs=jobs, active=ACTIVE, preview=bool(PREVIEW), previewRevision=PREVIEW_REV,ownedComfy=bool(OWNED),queueEtaSeconds=total_eta))
+        return web.json_response(dict(protocol=20,build='0.1.0-beta.116',jobs=jobs, active=ACTIVE, preview=bool(PREVIEW), previewRevision=PREVIEW_REV,ownedComfy=bool(OWNED),queueEtaSeconds=total_eta))
     if path.startswith('preview/'):
         job=str(uuid.UUID(path[8:]))
         after=int(request.query.get('after','-1'))
@@ -984,6 +986,9 @@ async def api(request):
         if character and kind != 'video':
             raise ValueError('Character reference is only available for video.')
         await asyncio.to_thread(recipes.keep_images,ROOT,s)
+        if s.get('operation'):
+            if count!=1:raise ValueError('Upscaling accepts one image at a time.')
+            await asyncio.to_thread(WF.prepare_upscale,kind,s)
         if s.get('extension'):
             if kind!='video' or s.get('upload') or s.get('mask'):
                 raise ValueError('An extension needs one source video.')
@@ -1013,7 +1018,9 @@ async def api(request):
             return web.json_response(dict(batch=batch,ids=[r['id'] for r in existing]))
         if len(rows("SELECT id FROM jobs WHERE status IN ('pending','running','submitting','cancelling')")) + count > 64:
             raise ValueError('The bridge queue is full (64 jobs).')
-        if kind == 'image' and s['model'] not in cat['models']:
+        if s.get('operation') and not cat.get('remacriSupported'):
+            raise ValueError('Remacri upscaling is not available in ComfyUI. Refresh the PC model catalogue after installing it.')
+        if kind == 'image' and not s.get('operation') and s['model'] not in cat['models']:
             raise ValueError('The selected checkpoint is not available.')
         if s.get('sampler') and s['sampler'] not in cat['samplers' if kind=='image' else 'videoSamplers']:
             raise ValueError('The selected sampling method is not available.')
