@@ -64,6 +64,7 @@ async function setup(p,options={}){
  // A restarted worker receives a fresh cursor and carousel can still continue past cached 20.
  await p.locator('#browseCarousel').evaluate(el=>el.scrollLeft=el.scrollWidth);
  await p.waitForFunction(()=>document.querySelectorAll('.browseThumb').length>=24);
+ await p.waitForFunction(()=>!document.querySelector('#browseFeed .cardPending'));
  await p.locator('#workspace').evaluate(el=>el.scrollTop=el.scrollHeight);
  await p.waitForFunction(()=>calls.some(c=>c.route==='browse/feed'&&c.body.channel==='mix'));
  // Pull-to-refresh keeps old content until replacement results arrive.
@@ -87,15 +88,18 @@ async function setup(p,options={}){
  await p.waitForFunction(()=>document.querySelector('.browseTile').browseItem.path.includes('/2/'));
  assert(await p.locator('.browseTile').evaluateAll(els=>els.every(el=>el.browseItem.path.includes('/2/'))));
  // Old workers can still return expiry: recover without leaving the page stuck.
+ await p.waitForFunction(()=>!document.querySelector('#browseFeed .cardPending'));
  await p.locator('#workspace').evaluate(el=>el.scrollTop=0);
  await p.evaluate(()=>{apiOptions.expireNext=true;document.querySelector('#browseMore').click();});
  await p.waitForFunction(()=>!apiOptions.expireNext);
  await p.waitForTimeout(150);
  assert(!/feed expired/i.test(await p.locator('#browseError').textContent()));
+ await p.waitForFunction(()=>!document.querySelector('#browseFeed .cardPending'));
  await p.evaluate(()=>document.querySelector('#browseMore').click());
  await p.waitForFunction(()=>document.querySelectorAll('.browseTile').length>=24);
  // Resuming before two hours preserves the exact current artist page and position.
  await p.locator('.feedAuthor').first().click();await p.waitForSelector('.subjectFilters');
+ await p.waitForSelector('#browseFeed .browseTile:not(.cardPending)');
  await p.locator('#workspace').evaluate(el=>el.scrollTop=100);
  await p.evaluate(()=>{navigate('image');navigate('browse');});
  await p.waitForFunction(()=>document.querySelector('#workspace').scrollTop===100);

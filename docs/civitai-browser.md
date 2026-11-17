@@ -773,3 +773,25 @@ follow action and pending-state overlay; it disappears immediately on a saved
 follow and stays hidden on reopen. Creator-feed follow/unfollow controls remain
 unchanged. `tests/social-header.cjs` verifies order, queued intent and reopen
 behavior at phone and desktop widths.
+
+## Beta 98: schedule rendering around scrolling
+
+Browse records scroll velocity and waits for native `scrollend`, or 48 ms of
+quiet at low velocity / 100 ms otherwise, before admitting deferred UI work.
+Coalesced tasks run with a 4 ms between-task frame budget. This is not a hard
+execution deadline for a single task. Network pagination retains its 1.5-viewport
+lead while metadata application, cache scans and snapshot writes wait for rest.
+Immediate user actions and durable social-choice writes remain immediate.
+
+Feed metadata builds three cards per scheduled task. Two image workers prepare
+cards, and decoding/source assignment and reveal wait for a scrolling opportunity.
+Ready cards are revealed in order with grouped DOM writes and geometry reads.
+Only cards intersecting the workspace animate; scrolling cancels arrival effects.
+The footer spinner pauses offscreen, behind the viewer and when backgrounded.
+Unchanged social polling no longer repaints every reaction control.
+
+`tests/scroll-scheduling.cjs` checks both phone and desktop widths: deferred
+insertion during movement, prompt insertion after scroll-end, offscreen motion
+culling, footer pausing and no repeated reaction rebuilds. Cache/navigation tests
+wait for actual card readiness before simulating scrolling. These browser checks
+do not measure physical-device frame times; that remains a runtime check.
