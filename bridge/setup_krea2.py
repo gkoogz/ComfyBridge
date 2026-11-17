@@ -70,9 +70,13 @@ def install(root, http=False, workers=4):
         if hf_hub_download and not http:
             os.environ.setdefault('HF_XET_HIGH_PERFORMANCE','1')
             print('Downloading with Hugging Face Xet: '+name,flush=True)
-            hf_hub_download('Comfy-Org/Krea-2',name,revision=REVISION,local_dir=Path(root)/'models')
-            if target.stat().st_size != size or digest(target) != sha:
-                raise ValueError('Downloaded file failed verification: '+str(target))
+            # Keep unverified files outside the folders scanned by ComfyUI.
+            staging = Path(root)/'.comfybridge-downloads'/'krea2'
+            staged = Path(hf_hub_download('Comfy-Org/Krea-2', name, revision=REVISION, local_dir=staging))
+            if staged.stat().st_size != size or digest(staged) != sha:
+                staged.unlink()
+                raise ValueError('Downloaded file failed verification: '+name)
+            staged.rename(target)
             partial.unlink(missing_ok=True)
             print('Installed and verified '+name,flush=True)
             continue
