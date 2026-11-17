@@ -17,8 +17,8 @@ const assert=require('node:assert/strict'),path=require('node:path');
  for(const width of [320,390,1440]){
   await p.setViewportSize({width,height:844});
   await p.evaluate(()=>{const panel=$('#upload').closest('.foldPanel');if(panel.classList.contains('folded'))$('.foldToggle',panel).click();});
-  const layout=await p.evaluate(()=>{const a=$('#maskButton').getBoundingClientRect(),u=$('#upscaleRemacri').getBoundingClientRect(),c=$('#clearUpload').getBoundingClientRect(),d=$('.imageSourceInfo').getBoundingClientRect();return{a:a.top,u:u.top,c:c.top,right:c.right,infoRight:d.right,infoTop:d.top,bottom:c.bottom,overflow:document.documentElement.scrollWidth>innerWidth};});
-  assert.equal(layout.a,layout.u);assert.equal(layout.a,layout.c);assert(Math.abs(layout.right-layout.infoRight)<1);assert(layout.infoTop>=layout.bottom);assert(!layout.overflow);
+  const layout=await p.evaluate(()=>{const a=$('#maskButton').getBoundingClientRect(),u=$('#upscaleRemacri').getBoundingClientRect(),c=$('#clearUpload').getBoundingClientRect(),d=$('.imageSourceInfo').getBoundingClientRect();return{a:a.top,u:u.top,c:c.top,left:a.left,infoLeft:$('.imageSourceInfo strong').getBoundingClientRect().left,infoTop:d.top,bottom:c.bottom,overflow:document.documentElement.scrollWidth>innerWidth};});
+  assert.equal(layout.a,layout.u);assert.equal(layout.a,layout.c);assert(Math.abs(layout.left-layout.infoLeft)<1);assert(layout.infoTop>=layout.bottom);assert(!layout.overflow);
  }
  await p.locator('#upscaleRemacri').click();
  const s=await p.evaluate(()=>({sent,uploads,settings:state.settings.image,selection:liveSelection,mask:state.inputs.image.mask}));

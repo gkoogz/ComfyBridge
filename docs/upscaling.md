@@ -6,7 +6,7 @@ panel. It does not submit work until **Upscale 4x (Remacri)** is pressed.
 
 Starting Image has Apply Mask and Upscale 4x on the left, Clear on the right.
 Resolution, aspect ratio and the high-resolution hint share a compact,
-right-aligned row below. The mask and normal generation settings are preserved;
+left-aligned row below (Beta 117). The mask and normal generation settings are preserved;
 upscaling processes the entire source without applying a mask.
 
 ## Installation
