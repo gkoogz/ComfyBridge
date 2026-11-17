@@ -65,6 +65,7 @@ class SocialOutbox:
                      firstAt=old['firstAt'] if pending else min(self.clock(),max(0,first)),updated=self.clock(),
                      state='pending',retryAt=0,attempted=bool(old and old.get('attempted')),attempts=0,error='')
             self.save(db,account,row)
+            if row['kind']=='collect':self.b.set_collection_delta(db,account,row['collectionId'],row['imageId'],row['selected'])
             db.execute('INSERT OR REPLACE INTO social_sequences VALUES(?,?,?,?)',(account,client,key,seq))
             db.execute('INSERT INTO social_receipts VALUES(?,?,?,?)',(account,request,fingerprint,row['revision']))
         self.learn(account,row);self.wake.set()

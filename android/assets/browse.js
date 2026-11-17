@@ -84,7 +84,7 @@ const CivitaiBrowser=(()=>{
   Native.registerBrowseMedia(account,JSON.stringify(urls));
  }
  const details=new Map(),detailRequests=new Map(),imageRequests=new Map();
- const socialRevisions=new Map();let followRevision=0,banRevision=0;
+ const socialRevisions=new Map();let followRevision=0,banRevision=0,collectionRevision=0;
  let seenScope='',seenPosts=new Set(),pendingSeen=new Set(),seenTimer,seenSending=false,replacingCache=false,cacheCheckAt=0;
  const exposureTimers=new Map();
  function loadSeen(){
@@ -626,13 +626,14 @@ const CivitaiBrowser=(()=>{
  }
  async function refreshStatus(force=false){
   if(!available()||(!force&&Date.now()-lastStatus<14000))return;lastStatus=Date.now();
-  let s;const followTicket=followRevision,banTicket=banRevision;
+  let s;const followTicket=followRevision,banTicket=banRevision,collectionTicket=collectionRevision;
   try{s=await api('browse/status',{cursors:[cursor,stripCursor,...history.map(h=>h.cursor)].filter(Boolean),activityAge:activityAge()/1000});}
   catch(error){if(!/HTTP (404|405)/.test(error.message))throw error;s=await api('browse/status');}
   await scrollOpportunity();if(!available())return;
   if(account===s.account&&followTicket!==followRevision&&status?.followingIds){s.followingIds=status.followingIds;s.follows=status.follows;}
   if(account&&account!==s.account){reset();details.clear();detailQueue=[];muted={};close();clearFeed();$('#browseCarousel')?.replaceChildren();}
   if(account===s.account&&banTicket!==banRevision)s.bans=status?.bans||[];
+  if(account===s.account&&collectionTicket!==collectionRevision&&status?.collectionIndex)s.collectionIndex=status.collectionIndex;
   account=s.account;loadSeen();status=s;paintSocialQueue();socialSoon();acceptTagWeights(s);$('#browseHello').textContent='Hello '+s.username;
   muted=s.timeouts||muted;
   if(!channel||(channel!=='reactions'&&!s.collections.some(c=>'collection:'+c.id===channel)))channel=s.collections.length?'collection:'+s.collections[0].id:'reactions';
@@ -873,33 +874,21 @@ const CivitaiBrowser=(()=>{
   function dismiss(){popup.remove();if(collectionPopup===popup)collectionPopup=null;BrowseLoader.refresh();}
   $('.collectionClose',popup).onclick=dismiss;
   popup.onclick=e=>{if(e.target===popup)dismiss();};
-  const choices=new Map();let membershipKnown=Array.isArray(item.collections),membershipRead=null;
+  const choices=new Map();
   async function refresh(){
    if(account!==boundAccount)throw Error('Civitai account changed. Reopen this menu.');
-   const members=membershipIds(item.collections),host=$('.feedCollectionChoices',popup);
+   const members=membershipIds(overlaySocial(item).collections),host=$('.feedCollectionChoices',popup);
    host.innerHTML=(status?.account===boundAccount?status.collections:knownCollections).map(c=>'<label><input type="checkbox" value="'+c.id+'" '+((choices.get(String(c.id))??members.includes(String(c.id)))?'checked':'')+'><span class="collectionCheck" aria-hidden="true"></span><span>'+esc(c.name)+'</span></label>').join('');
    $$('input',host).forEach(box=>{
-    box.indeterminate=!membershipKnown&&!choices.has(box.value);
     box.onchange=async()=>{
      const prior=choices.get(box.value),selected=box.checked;choices.set(box.value,selected);
      try{const result=await action({account:boundAccount,kind:'collect',imageId:item.id,collectionId:box.value,selected});updateItemSocial(item,{collections:result.collections});}
-     catch(error){if(prior===undefined)choices.delete(box.value);else choices.set(box.value,prior);box.checked=!selected;box.indeterminate=!membershipKnown&&!choices.has(box.value);$('p.warning',popup).textContent=error.message;}
+     catch(error){if(prior===undefined)choices.delete(box.value);else choices.set(box.value,prior);box.checked=!selected;$('p.warning',popup).textContent=error.message;}
     };
    });
    const anchor=$('.newCollectionAnchor',popup);
    $('.newCollection',popup).onclick=()=>{const existing=$('.browseCollectionForm',popup);if(existing){$('input',existing).focus();return;}createCollection(anchor,collections=>{knownCollections=collections;return refresh();},boundAccount);};
-   if(!membershipKnown){
-    membershipRead??=api('browse/memberships/'+item.id);
-    const result=await membershipRead;
-    if(!popup.isConnected||account!==boundAccount)return;
-    if(result.account!==boundAccount)throw Error('Civitai account changed. Reopen this menu.');
-    if(!Array.isArray(result.collections))throw Error('Collection status is unavailable. Your choices can still be saved.');
-    // Explicit choices win even if the local outbox has already sent them while this read waited.
-    const ids=new Set(membershipIds(overlaySocial({...item,collections:result.collections}).collections));
-    for(const [id,selected] of choices)selected?ids.add(id):ids.delete(id);
-    membershipKnown=true;updateItemSocial(item,{collections:[...ids].map(collectionId=>({collectionId}))});
-    return refresh();
-   }
+
   }
   try{await refresh();}catch(error){if(popup.isConnected)$('p.warning',popup).textContent=error.message;}
  }
@@ -1047,7 +1036,9 @@ const CivitaiBrowser=(()=>{
   return [...rows.values()];
  }
  function overlaySocial(item){
-  const out={...item},reactions=[...(item.reactions||[])],members=[...(item.collections||[])],stats={...(item.stats||{})};
+  const indexed=status?.account===account&&status.collectionIndex;
+  const out={...item},reactions=[...(item.reactions||[])],members=indexed?(indexed[String(item.id)]||[]).map(collectionId=>({collectionId})):[...(item.collections||[])],stats={...(item.stats||{})};
+  out.collections=members;
   for(const row of socialRows()){
    if(row.kind==='follow'&&String(row.creatorId)===String(item.creatorId))out.following=row.selected;
    if(String(row.imageId)!==String(item.id))continue;
@@ -1094,6 +1085,7 @@ const CivitaiBrowser=(()=>{
   if(!clientSaved)throw Error('Could not save your change on this device.');
   const payload={...data,account:a,clientId:client.id,clientSeq:client.seq,requestId:crypto.randomUUID(),firstAt:old?.payload.firstAt||Date.now()/1000};
   rows[key]={payload};saveSocial(rows,a);socialSoon();
+  if(data.kind==='collect'){collectionRevision++;if(status?.collectionIndex){const ids=new Set(status.collectionIndex[String(data.imageId)]||[]);data.selected?ids.add(String(data.collectionId)):ids.delete(String(data.collectionId));status.collectionIndex[String(data.imageId)]=[...ids];}}
   const item=allItems().find(i=>String(i.id)===String(data.imageId))||{id:data.imageId};
   const result=overlaySocial(item);
   // Handlers paint immediately in this same microtask, without a bridge roundtrip.

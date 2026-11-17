@@ -89,7 +89,7 @@ class FeedBank:
         except (ValueError,OSError):pass
 
     def response(self, account, state, items):
-        return dict(account=account,items=items,nextCursor='bank',bank=True,bankCount=len(state['items']),
+        return dict(account=account,items=[self.b.collection_item(account,i) for i in items],nextCursor='bank',bank=True,bankCount=len(state['items']),
                     bankTarget=TARGET,filling=bool(state.get('filling')),limited=not items,
                     retryAfter=max(2,min(60,int(state.get('retryAt',0)-time.time())+1)) if not items else 0,
                     sourceReads=0,scanned=0,filtered=0)

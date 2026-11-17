@@ -1017,3 +1017,34 @@ Checks: Browse delays a membership read while adding then removing, and proves
 the eventual checked response cannot undo removal. Media-metadata exercises
 whole-row touch/keyboard targets with a failed membership service. Social-queue
 and media-entry cover existing durable actions and full-opacity rendering.
+
+
+## Beta 111: daily collection index and inclusion-first reconciliation
+
+The account-scoped collection_members table stores membership independently of
+media cache entries. Migration seeds existing positive collection observations
+and known cached memberships; the existing 200-item paginated importer completes
+the initial index, then reconciles once per day. The directory's successful and
+attempted timestamps also enforce a 24-hour interval, including Browse refreshes.
+New collections created here enter the directory immediately.
+
+Each imported page unions additions into the index. Missing entries are counted
+only after a complete collection scan; two distinct completed daily misses are
+required before removal. Completion receipts prevent a crash/replayed completion
+from counting twice. Local deltas after the scan start are protected. Pending
+outbox choices overlay the index until acknowledged. Enqueue writes the index
+delta and durable action in the same SQLite transaction.
+
+Status includes collectionIndex (media ID to collection IDs) for persistent phone
+snapshots. Menus use that cache without a membership request; feed, bank and detail
+responses use the server index. Local changes update the device index immediately,
+and status reads begun before a local edit cannot overwrite it. The old membership
+endpoint remains compatible but reads only local data. Routine detail reads no
+longer call collection.getUserCollectionItemsByItem. Ambiguous upstream write
+receipts still use targeted verification to avoid falsely reporting a saved action.
+
+Tests: collection-cache covers daily throttling/restarts, multi-page import,
+external additions, two-scan removals, partial-scan preservation, replayed completion,
+local changes during scans and account isolation. Social-outbox, browser and bank
+suites retain write reconciliation and queue guarantees. Browser tests verify cached
+membership with no menu lookup plus immediate whole-row toggling.

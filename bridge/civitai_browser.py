@@ -74,7 +74,16 @@ class Browser:
               CREATE TABLE IF NOT EXISTS feed_sessions(account TEXT,id TEXT,channel TEXT,payload TEXT,touched REAL,PRIMARY KEY(account,id));
               CREATE TABLE IF NOT EXISTS feed_exposure(account TEXT,image TEXT,viewed REAL NOT NULL DEFAULT 0,served REAL NOT NULL DEFAULT 0,PRIMARY KEY(account,image));
               CREATE TABLE IF NOT EXISTS api_cache(identity TEXT,route TEXT,key TEXT,payload TEXT,expires REAL,PRIMARY KEY(identity,route,key));
+              CREATE TABLE IF NOT EXISTS collection_members(account TEXT,collection TEXT,image TEXT,present INTEGER,local_updated REAL DEFAULT 0,seen REAL DEFAULT 0,missing INTEGER DEFAULT 0,PRIMARY KEY(account,collection,image));
+              CREATE INDEX IF NOT EXISTS collection_members_image ON collection_members(account,image);
             ''')
+            if not db.execute("SELECT 1 FROM settings WHERE account='' AND key='collection-index-migrated'").fetchone():
+                # Seed from existing durable data before any network refresh.
+                db.execute("INSERT OR IGNORE INTO collection_members(account,collection,image,present) SELECT account,substr(source,12),image,1 FROM observations WHERE source LIKE 'collection:%' AND score>0")
+                for row in db.execute('SELECT account,id,payload FROM media').fetchall():
+                    for member in json.loads(row['payload']).get('collections',[]) or []:
+                        if member.get('collectionId'):db.execute('INSERT OR IGNORE INTO collection_members(account,collection,image,present) VALUES(?,?,?,1)',(row['account'],str(member['collectionId']),row['id']))
+                db.execute("INSERT INTO settings VALUES('','collection-index-migrated','true')")
             db.execute('DELETE FROM api_cache WHERE expires<?',(time.time(),))
             # Upgrade existing sessions as recently offered, not proven viewed.
             for row in db.execute("SELECT account,payload,touched FROM feed_sessions WHERE channel='mix'").fetchall():
@@ -271,7 +280,7 @@ class Browser:
             if not item['avatarPath'] and previous.get('avatarPath'):
                 item['avatarPath']=previous['avatarPath'];item['_urls']['avatar']=previous['_urls']['avatar']
             db.execute('INSERT OR REPLACE INTO media VALUES(?,?,?,?)', (account, image_id, json.dumps(item), time.time()))
-        return self.social.overlay(account,item)
+        return self.collection_item(account,item)
 
     @staticmethod
     def public(item):
@@ -282,7 +291,41 @@ class Browser:
     def stored(self, account, image_id):
         with self.db() as db:
             row = db.execute('SELECT payload FROM media WHERE account=? AND id=?', (account, str(ident(image_id)))).fetchone()
-        return self.social.overlay(account,json.loads(row[0])) if row else None
+        return self.collection_item(account,json.loads(row[0])) if row else None
+
+    def collection_item(self, account, item):
+        with self.db() as db:
+            members=[{'collectionId':int(r[0])} for r in db.execute('SELECT collection FROM collection_members WHERE account=? AND image=? AND present=1',(account,str(item['id'])))]
+        return self.social.overlay(account,dict(item,collections=members))
+
+    def merge_collection_page(self, account, cid, items, stamp):
+        with self.db() as db:
+            db.executemany('''INSERT INTO collection_members(account,collection,image,present,seen) VALUES(?,?,?,1,?)
+                ON CONFLICT(account,collection,image) DO UPDATE SET
+                present=CASE WHEN local_updated>excluded.seen THEN present ELSE 1 END,
+                seen=MAX(seen,excluded.seen),missing=0''',[(account,str(cid),str(i['id']),stamp) for i in items])
+
+    def finish_collection_scan(self, account, cid, stamp):
+        # Only completed scans can detect removals. Two misses favor inclusion.
+        with self.db() as db:
+            key='collection-scan:'+str(cid)
+            old=db.execute('SELECT value FROM settings WHERE account=? AND key=?',(account,key)).fetchone()
+            if old and float(json.loads(old[0]))>=stamp:return
+            db.execute('UPDATE collection_members SET missing=missing+1 WHERE account=? AND collection=? AND present=1 AND seen<? AND local_updated<?',(account,str(cid),stamp,stamp))
+            db.execute('UPDATE collection_members SET present=0 WHERE account=? AND collection=? AND missing>=2 AND local_updated<?',(account,str(cid),stamp))
+            db.execute('INSERT OR REPLACE INTO settings VALUES(?,?,?)',(account,key,json.dumps(stamp)))
+
+    def collection_index(self, account):
+        result={}
+        with self.db() as db:
+            for row in db.execute('SELECT image,collection FROM collection_members WHERE account=? AND present=1',(account,)):
+                result.setdefault(row['image'],[]).append(row['collection'])
+        return result
+
+    def set_collection_delta(self, db, account, cid, iid, selected):
+        db.execute('''INSERT INTO collection_members(account,collection,image,present,local_updated) VALUES(?,?,?,?,?)
+            ON CONFLICT(account,collection,image) DO UPDATE SET present=excluded.present,local_updated=excluded.local_updated,missing=0''',
+            (account,str(cid),str(iid),int(selected),time.time()))
 
     def images(self, account, token, filters, limit=20, meta=True):
         raw = self.call(token, 'image.getInfinite', {'limit':limit, 'browsingLevel':31, 'withMeta':meta, 'withTags':True, 'include':['tagIds','profilePictures'], **filters})
@@ -290,11 +333,11 @@ class Browser:
         return [i for i in items if i], raw.get('nextCursor')
 
     def collections(self, account, token, refresh=False):
-        # Even an explicit Browse refresh trusts this directory for one hour.
+        # Even an explicit Browse refresh trusts this directory for one day.
         # Keep the attempt timestamp durable so failures/restarts cannot hammer it.
         with self.collections_lock:
             old = self.setting(account, 'collections', {})
-            if time.time() - max(old.get('checked', 0),old.get('attempted',0)) < 3600:
+            if time.time() - max(old.get('checked', 0),old.get('attempted',0)) < 86400:
                 return old.get('items', [])
             attempted=time.time()
             self.save(account,'collections',dict(old,attempted=attempted))
@@ -307,13 +350,14 @@ class Browser:
                     if c.get('type') != 'Image' or not c.get('isOwner') or c.get('archivedAt'): continue
                     counts = self.call(token, 'collection.getEntryCount', {'id':ident(c['id'])})
                     items.append(dict(id=ident(c['id']), name=str(c['name']), count=counts.get('ACCEPTED', 0), bookmark=c['id'] in bookmark_ids))
+                ids={c['id'] for c in items}
+                items.extend(dict(c,missing=c.get('missing',0)+1) for c in old.get('items',[]) if c['id'] not in ids and c.get('missing',0)<1)
                 items.sort(key=lambda c:c['count'], reverse=True)
                 self.save(account, 'collections', dict(items=items, checked=time.time(),attempted=attempted))
                 return items
             except (ValueError,OSError):
                 if 'items' in old:return old['items']
-                # Initial discovery is not a refresh of a known directory.
-                self.save(account,'collections',old)
+                # Preserve the attempt time even on first-run failures.
                 raise
 
     def memberships(self, image_id):
@@ -321,10 +365,6 @@ class Browser:
         with self.action_lock:
             item=self.stored(account,iid)
             if not item:raise ValueError('Open this media before bookmarking it.')
-            if not isinstance(item.get('collections'),list) or time.time()-item.get('collectionsChecked',0)>=3600:
-                members=self.call(token,'collection.getUserCollectionItemsByItem',{'imageId':iid})
-                item.update(collections=members,collectionsChecked=time.time())
-                with self.db() as db:db.execute('UPDATE media SET payload=? WHERE account=? AND id=?',(json.dumps(item),account,str(iid)))
             return dict(account=account,collections=self.social.overlay(account,item).get('collections',[]))
 
     def observe(self, account, source, item, score, stamp):
@@ -494,6 +534,7 @@ class Browser:
         with self.db() as db:
             count = db.execute('SELECT COUNT(DISTINCT image) FROM observations WHERE account=?', (account,)).fetchone()[0]
         return dict(account=account, username=me['username'], profile=self.user_url(me['username']), collections=collections,
+                    collectionIndex=self.collection_index(account),
                     followingIds=[str(x) for x in self.setting(account,'follows',[])],
                     timeouts=self.timeouts(account), bans=self.bans(account), importState=state, learned=count, follows=len(self.setting(account, 'follows', [])),**self.tag_weight_snapshot(account))
 
@@ -506,9 +547,10 @@ class Browser:
                 try:self.public_curations(account,token,self.setting(account,'follows',[]))
                 except (Deferred,ValueError):pass
             state = self.setting(account, 'import', {})
-            if state.get('complete') and time.time()-state.get('finished', 0)<86400: return
+            bootstrap=not self.setting(account,'collection-index-complete',False)
+            if state.get('complete') and time.time()-state.get('finished', 0)<86400 and not bootstrap:return
             if not state.get('sources') or state.get('complete'):
-                sources = ['reactions'] + ['collection:'+str(c['id']) for c in self.collections(account, token)]
+                sources = ([] if bootstrap and state.get('complete') else ['reactions']) + ['collection:'+str(c['id']) for c in self.collections(account, token)]
                 state = dict(sources=sources, index=0, cursor=None, processed=0, complete=False, stamp=str(time.time()))
                 follows = self.call(token, 'user.getFollowingUsers')
                 self.save(account, 'follows', [ident(x['id'] if isinstance(x, dict) else x) for x in follows])
@@ -517,6 +559,7 @@ class Browser:
             while self.leases.get(account, 0)>time.monotonic() and self.models.token()==token:
                 if state['index'] >= len(state['sources']):
                     state.update(complete=True, finished=time.time(), label='Preferences up to date')
+                    self.save(account,'collection-index-complete',True)
                     self.save(account, 'import', state);break
                 source=state['sources'][state['index']]
                 filters = {'reactions':list(REACTIONS)} if source=='reactions' else {'collectionId':int(source.split(':')[1])}
@@ -524,6 +567,7 @@ class Browser:
                 if state.get('cursor') is not None: filters['cursor']=state['cursor']
                 state['label']='Learning from your reactions' if source=='reactions' else 'Learning from your collections'
                 with background_work(quiet=True):items, cursor=self.images(account, token, filters, 200, meta=False)
+                if source.startswith('collection:'):self.merge_collection_page(account,source.split(':')[1],items,float(state['stamp']))
                 for item in items:
                     score=max(1,len([r for r in item['reactions'] if r in REACTIONS])) if source=='reactions' else 1
                     self.observe(account, source, item, score, state['stamp'])
@@ -532,6 +576,7 @@ class Browser:
                     raise ValueError('Civitai repeated a page cursor. Import paused; retry later.')
                 state['cursor']=cursor
                 if cursor is None:
+                    if source.startswith('collection:'):self.finish_collection_scan(account,source.split(':')[1],float(state['stamp']))
                     with self.db() as db:
                         db.execute('DELETE FROM observations WHERE account=? AND source=? AND CAST(stamp AS REAL)<?', (account, source, float(state['stamp'])))
                     state['index']+=1
@@ -741,8 +786,8 @@ class Browser:
                             source['items'].append(item)
                             continue
                         recent=(recent+[keys])[-9:]
-                    public=dict(self.public(item),reason=reason,chosenBy=chosen,following=str(item.get('creatorId')) in following)
-                    if channel.startswith('collection:'):public['collections']=[{'collectionId':int(channel.split(':')[1])}]
+                    if channel.startswith('collection:'):self.merge_collection_page(account,channel.split(':')[1],[item],time.time())
+                    public=dict(self.public(self.collection_item(account,item)),reason=reason,chosenBy=chosen,following=str(item.get('creatorId')) in following)
                     state['seen'].append(item['id']);out.append(public)
                 state['empty']=state.get('empty',0)+1 if len(out)==before else 0
             state['seen']=state['seen'][-5000:]
@@ -831,12 +876,11 @@ class Browser:
             item['following']=item['creatorId'] in follows
             if not item.get('tagsKnown') or any(not t.get('name') for t in item['tags']):
                 item['tags']=self.call(token,'tag.getVotableTags',{'type':'image','id':int(image_id)});item['tagsKnown']=True
-            item['collections']=self.call(token,'collection.getUserCollectionItemsByItem',{'imageId':int(image_id)})
-            item['collectionsChecked']=time.time()
+            item['collections']=self.collection_item(account,item)['collections']
         item['socialComplete']=not prefetch
         with self.db() as db:db.execute('UPDATE media SET payload=? WHERE account=? AND id=?',(json.dumps(item),account,image_id))
         snapshot=self.tag_weight_snapshot(account)
-        public=self.public(self.social.overlay(account,item))
+        public=self.public(self.collection_item(account,item))
         public['tags']=[dict(id=t['id'],name=t.get('name',''),weight=snapshot['tagWeights'].get(str(t['id']),0)) for t in item['tags']]
         public['tags'].sort(key=lambda t:(-t['weight'],t['name'].casefold()))
         return dict(account=account,item=public,collections=self.setting(account,'collections',{}).get('items',[]),**snapshot)
@@ -963,6 +1007,7 @@ class Browser:
                     previous=item.get('collections')
                     item.update(collections=memberships,collectionsChecked=time.time())
                     with self.db() as db:db.execute('UPDATE media SET payload=? WHERE account=? AND id=?',(json.dumps(item),account,str(iid)))
+                    with self.db() as db:self.set_collection_delta(db,account,cid,iid,desired)
                     if isinstance(previous,list):
                         was_present=any(int(c.get('collectionId',0))==cid for c in previous)
                         with self.collections_lock:
