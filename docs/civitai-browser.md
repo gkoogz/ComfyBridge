@@ -953,3 +953,25 @@ responses, measures the flush full-width track and nonoverlapping labels, and
 checks real playback/seeking on both viewers at 390/1400px. Related coverage:
 media-controls, feed-arrival, feed-video, library-replay, live-results, desktop
 and prompt-sizing. Browser checks do not establish physical-phone behavior.
+
+
+## Beta 108: media handoff into the viewer
+
+FeedVideo.lift transfers the existing video node into the solo viewer and binds
+its feed record to a paused clone using the same cached media URL. The clone is
+kept decoded during the viewer session; releasing the loan restores normal feed
+visibility playback. Image handoff likewise leaves a feed clone. A 210ms FLIP
+animation starts at the original element bounds and ends at the viewer bounds;
+full-image upgrades wait until it finishes. Reduced-motion skips the flight,
+and scrolling or closing cancels it without retaining stale layout transforms.
+
+The image wrapper exposes the actual contained-picture geometry. Video layout
+centers the player above the metadata peek, keeping the timeline clear. Side
+carets share the close button's visibility states and stow toward their sides;
+their center follows the center playback control. Drip layers use 0.8 opacity.
+
+Regression: tests/media-entry.cjs checks original node identity, starting bounds,
+real video playback continuity, paused feed clones, toss return and scroll
+preservation, caret stowing/alignment, and opacity at phone and desktop widths.
+Existing Browse, shared player, feed video, arrival and loading checks also run.
+These browser checks do not constitute physical-phone verification.

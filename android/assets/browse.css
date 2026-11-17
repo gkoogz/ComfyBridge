@@ -259,7 +259,7 @@ header.hasBrowseSubject #headerIdentity{min-height:44px}
 
 /* Liquid loading edge; the media above and the waves share the same flow position. */
 #browseMore.browsePuller{position:relative;height:var(--loader-height,240px);padding:0;isolation:isolate}
-.browseFluid,.browseFlung{position:absolute;top:0;left:0;width:100%;height:112px;pointer-events:none;opacity:.5}
+.browseFluid,.browseFlung{position:absolute;top:0;left:0;width:100%;height:112px;pointer-events:none;opacity:.8}
 .browseFlung{height:200px}
 .browseLoaderSpinner{position:absolute;top:90px;left:0;right:0;display:flex;flex-direction:column;align-items:center;gap:14px;pointer-events:none}
 .browseLoaderSpinner .spinner{display:block;width:38px;height:38px;border:4px solid #a3f2cc1a;border-top-color:var(--mint);border-right-color:#a3f2cc65;border-radius:50%;box-sizing:border-box;animation:spin 1.1s linear infinite;animation-play-state:paused}
@@ -331,3 +331,16 @@ header.hasBrowseSubject #headerIdentity{min-height:44px}
 .pullEnded .browseLoaderSpinner{position:static;transform:none;opacity:1}
 .pullFailed .browseLoaderSpinner{transform:none;opacity:1}
 @media(prefers-reduced-motion:reduce){.browseLoaderSpinner{transition:none}}
+
+/* The same decoded media travels from the feed into the sheet. */
+.civitaiViewer .imagePicture{display:grid;place-items:center;width:100%;position:relative}
+.civitaiViewer .modelPreviewNavigation{inset:auto 0 auto;top:50%;height:44px;transform:translateY(-50%);overflow:visible}
+.civitaiViewer .modelPreviewNavigation button{transition:transform .18s ease,opacity .18s ease}
+.civitaiViewer:is(.mediaOnly,.tossing) [data-prev]{transform:translateX(calc(-100% - 12px));opacity:0;pointer-events:none}
+.civitaiViewer:is(.mediaOnly,.tossing) [data-next]{transform:translateX(calc(100% + 12px));opacity:0;pointer-events:none}
+.civitaiViewer.entering .civitaiViewerHead,.civitaiViewer.entering .modelPreviewNavigation,.civitaiViewer.entering .videoToggle,.civitaiViewer.entering .videoTimeline{opacity:0;pointer-events:none}
+.civitaiViewer.entering .modelPreviewDetails{opacity:0}
+@media(prefers-reduced-motion:reduce){.civitaiViewer .modelPreviewNavigation button{transition:none}}
+
+.civitaiViewer.entering .modelPreviewHero{pointer-events:none}
+.civitaiViewer .modelPreviewDetails{transition:opacity .12s ease}

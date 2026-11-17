@@ -13,6 +13,7 @@ const FeedVideo=(()=>{
  function eligible(r){return allowed()&&r.visible&&r.card.isConnected&&!r.card.classList.contains('cardPending');}
  function release(r){clearTimeout(r.releaseTimer);r.releaseTimer=0;r.position=r.video.currentTime||r.position||0;r.video.removeAttribute('src');r.video.load();r.video.classList.remove('ready');}
  async function update(r){
+  if(r.loan){r.video.pause();return;}
   if(!eligible(r)){r.video.pause();if(!r.releaseTimer&&r.video.getAttribute('src'))r.releaseTimer=setTimeout(()=>release(r),30000);return;}
   clearTimeout(r.releaseTimer);r.releaseTimer=0;if(r.userPaused){r.video.pause();return;}
   if(!r.video.getAttribute('src')){
@@ -45,13 +46,28 @@ const FeedVideo=(()=>{
   const collect=card.querySelector('.feedCollect'),stack=document.createElement('div');stack.className='feedCollectStack';collect.replaceWith(stack);stack.append(collect);
   const sound=document.createElement('button');sound.type='button';sound.className='feedSound';stack.prepend(sound);
   const r={card,video,toggle,sound,badge:card.querySelector('.browseVideo'),source,fallback,visible:false,userPaused:false};states.set(card,r);records.add(r);
-  toggle.onclick=e=>{e.stopPropagation();r.userPaused=!video.paused;if(r.userPaused)video.pause();else{r.failed=false;update(r);}paint(r);};
-  sound.onclick=e=>{e.stopPropagation();video.muted=!video.muted;if(!video.muted)for(const other of records)if(other!==r){other.video.muted=true;paint(other);}paint(r);};
-  for(const event of ['play','pause','timeupdate','durationchange','loadedmetadata'])video.addEventListener(event,()=>paint(r));
-  video.addEventListener('loadedmetadata',()=>{if(r.position&&Number.isFinite(video.duration)){video.currentTime=Math.min(r.position,video.duration);r.position=0;}});
-  video.addEventListener('loadeddata',()=>{video.classList.add('ready');paint(r);});
-  video.addEventListener('error',()=>{video.classList.remove('ready');paint(r);});
+  toggle.onclick=e=>{e.stopPropagation();r.userPaused=!r.video.paused;if(r.userPaused)r.video.pause();else{r.failed=false;update(r);}paint(r);};
+  sound.onclick=e=>{e.stopPropagation();r.video.muted=!r.video.muted;if(!r.video.muted)for(const other of records)if(other!==r){other.video.muted=true;paint(other);}paint(r);};
+  bind(r);
   paint(r);observer.observe(card);
  }
- return {attach,refresh:schedule};
+ function bind(r){
+  const video=r.video,listeners=[];const on=(name,fn)=>{video.addEventListener(name,fn);listeners.push(()=>video.removeEventListener(name,fn));};
+  for(const event of ['play','pause','timeupdate','durationchange','loadedmetadata'])on(event,()=>paint(r));
+  on('loadedmetadata',()=>{if(r.position&&Number.isFinite(video.duration)){video.currentTime=Math.min(r.position,video.duration);r.position=0;}});
+  on('loadeddata',()=>{video.classList.add('ready');paint(r);});
+  on('error',()=>{video.classList.remove('ready');paint(r);});
+  r.unbind=()=>listeners.forEach(off=>off());
+ }
+ function lift(card){
+  const r=states.get(card);if(!r||r.loan||r.video.readyState<2)return null;
+  const media=r.video,rect=media.getBoundingClientRect(),playing=!media.paused;
+  const copy=media.cloneNode(false);copy.classList.remove('ready');copy.autoplay=false;copy.muted=media.muted;copy.defaultMuted=media.muted;
+  // Reuse the cached byte URL. The second decoder stays paused behind the sheet.
+  clearTimeout(r.releaseTimer);r.releaseTimer=0;r.unbind();r.position=media.currentTime;r.loan=true;r.video=copy;
+  media.replaceWith(copy);bind(r);copy.load();copy.pause();paint(r);
+  media.classList.remove('feedVideo','ready');media.removeAttribute('aria-hidden');
+  return {media,rect,playing,release(){r.loan=false;schedule();}};
+ }
+ return {attach,lift,refresh:schedule};
 })();
