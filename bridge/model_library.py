@@ -423,7 +423,7 @@ class Library:
             safe=[x for x in candidates if safe_preview(x, mature)]
             if mature:safe.sort(key=image_level, reverse=True)
             self.cache_previews(item,safe)
-            if rejected:item['previewWarning']='Civitai rejected the saved API key. Check the gear next to Turn server off on the PC panel.'
+            if rejected:item['previewWarning']='Civitai rejected the saved API key. Open the Civitai status button on the PC panel to update it.'
             elif not item['images']:
                 item['previewNote']='No listing previews were available.' if mature else 'No non-explicit listing previews were available. NSFW previews stay hidden until a Civitai API key is saved on the PC panel.'
         except urllib.error.HTTPError as error:

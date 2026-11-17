@@ -10,7 +10,7 @@ An Android remote for an existing Windows ComfyUI installation. The phone edits 
 
 **Working on the project:** agents and contributors should start with [AGENTS.md](AGENTS.md) for the code map, build/test commands, live queue preservation and delivery instructions.
 
-**Beta 120** adds the HomoFidelis v1 BF16 checkpoint to the Krea 2 Turbo image workflow when installed. On desktop, videos autoplay with the sidebar pinned, narrow windows use a compact navigation rail, and the collection carousel supports mouse dragging.
+**Beta 120** adds the HomoFidelis v1 BF16 checkpoint to the Krea 2 Turbo image workflow when installed. On desktop, videos autoplay with the sidebar pinned, narrow windows use a compact navigation rail, and the collection carousel supports mouse dragging. Each post joins the shorter of the two feed columns, with a separate loading animation below each column. Click a photo in the media pane to view it across the monitor. The compact tray has a fixed size, a circular power button, and a Civitai connection indicator.
 
 **Beta 119** adds resizable Windows studio and tray windows, a responsive desktop workspace, one- or two-column Browse feeds, and a mouse-friendly media details pane. Windows uses the same editor and media components as Android, with platform layout rules in `desktop.css`.
 
@@ -190,7 +190,7 @@ The phone checks the PC on connection, about every five minutes while open, and 
 
 ![Example PC pairing panel and batch progress](docs/pc-panel.png)
 
-A single click opens the compact, rounded panel at the taskbar. **–** hides it; **×** hides it to the tray. Right-click the tray icon to close ComfyBridge; queued jobs continue in the worker. **Turn server off** closes incoming connections and preserves the off state across restart. The gear beside that button saves a Civitai API key on this PC. With a key, checkpoint and LoRA cards can cache mature Civitai sample images. Without one, those cards say that NSFW previews are hidden. The key is not sent to the phone. Create it under Account settings → API Keys, and turn mature content on for that account. Accepted jobs can finish on the PC. The panel shows the connected phone count and generation progress, including the current batch item. **Quit bridge** is in the right-click menu.
+A single click opens the compact, rounded panel at the taskbar. **–** hides it; **×** hides it to the tray. Right-click the tray icon to close ComfyBridge; queued jobs continue in the worker. **Turn server off** closes incoming connections and preserves the off state across restart. The Civitai status button opens the API key settings on this PC. With a key, checkpoint and LoRA cards can cache mature Civitai sample images. Without one, those cards say that NSFW previews are hidden. The key is not sent to the phone. Create it under Account settings → API Keys, and turn mature content on for that account. Accepted jobs can finish on the PC. The panel shows the connected phone count and generation progress, including the current batch item. **Quit bridge** is in the right-click menu.
 
 Use the same Windows account for installation and daily use. Installing over an existing version preserves its configuration, credentials, library, and Android state. Close active phone requests before upgrading. A worker already running finishes with its loaded version; it adopts updated Python code after sleeping and waking again. Keep the Android signing key backed up privately if building your own upgrades.
 

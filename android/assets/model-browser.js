@@ -74,7 +74,7 @@ function paintModelBrowser(view){
  if(note){
   const rejected=(modelListings||[]).map(item=>item.previewWarning).find(Boolean);
   if(rejected){note.hidden=false;note.textContent=rejected;}
-  else if(view.nsfwHidden!==false){note.hidden=false;note.textContent='NSFW previews are hidden. On the PC panel, use the gear next to Turn server off and add a Civitai API key. Turn mature content on for that account.';}
+  else if(view.nsfwHidden!==false){note.hidden=false;note.textContent='NSFW previews are hidden. On the PC panel, select the Civitai status button and add a Civitai API key. Turn mature content on for that account.';}
   else note.hidden=true;
  }
  host.innerHTML=items.map((item,index)=>{
@@ -82,7 +82,7 @@ function paintModelBrowser(view){
   const compatibility=isEmbedding?embeddingCompatibility(item,view.kind):null;
   const selected=isCheckpoint?state.settings[view.kind].model===item.name:!isVideo&&!isEmbedding&&activeLora(view.kind,item.name);
   const gallery=modelSampleGallery(view,item);
-  const previewNote=item.previewWarning||(view.nsfwHidden!==false?'NSFW previews are hidden. Add a Civitai API key with the gear next to Turn server off on the PC panel.':'');
+  const previewNote=item.previewWarning||(view.nsfwHidden!==false?'NSFW previews are hidden. Add a Civitai API key using the Civitai status button on the PC panel.':'');
   const previewHtml='<div class="modelSampleHost" data-sample-gallery="'+esc(gallery.key)+'"></div>'+(previewNote?'<p class="modelNsfwNote">'+esc(previewNote)+'</p>':'');
   return '<article class="modelCard" data-model-index="'+index+'"><div class="modelCardHeading"><div><h2>'+esc(item.title||item.name)+'</h2><small>'+esc([item.version,item.author&&'by '+item.author].filter(Boolean).join(' · '))+'</small></div>'+
    (isCheckpoint?'<label class="modelUse"><input type="checkbox" data-model-use="'+index+'" '+(selected?'checked':'')+'>Use</label>':isVideo||isEmbedding?'':'<div class="modelCardActions"><button class="modelAdd" data-model-add="'+index+'" '+(selected?'disabled':'')+'>'+(selected?'✓ Active':'＋ Add')+'</button><button class="modelArchive" data-model-archive="'+index+'" '+(!item.id?'disabled':'')+'>'+(item.archived?'Unarchive':'Archive')+'</button></div>')+'</div>'+
