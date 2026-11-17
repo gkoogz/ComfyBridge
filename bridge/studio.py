@@ -188,11 +188,18 @@ def settings_sync(db, updates, device):
                     if profile.get('settings',{}).get(kind):
                         seeds[kind]=dict(settings=profile['settings'][kind],inputs=profile.get('inputs',{}).get(kind,{}),
                                          presets=profile.get('presets',{}).get(kind,[]))
+                        if kind=='image': seeds[kind]['families']=profile.get('imageFamilies',{})
                 db.executemany("INSERT OR IGNORE INTO workspace VALUES(?,?,?,?)",
                     ((k,int(previous['modified']*1000),previous['device'],json.dumps(v)) for k,v in seeds.items()))
         for key,change in updates.items():
             if key not in ('image','video','prompts'):
                 raise ValueError('Unknown settings section.')
+            if key=='image' and isinstance(change['value'],dict) and 'families' not in change['value']:
+                # Older phones may still sync while their APK upgrade is pending.
+                prior=db.execute("SELECT payload FROM workspace WHERE section='image'").fetchone()
+                if prior:
+                    previous=json.loads(prior[0])
+                    if isinstance(previous,dict):change['value']['families']=previous.get('families',{})
             db.execute("""INSERT INTO workspace VALUES(?,?,?,?) ON CONFLICT(section) DO UPDATE SET
                 stamp=excluded.stamp,device=excluded.device,payload=excluded.payload
                 WHERE (excluded.stamp,excluded.device)>(workspace.stamp,workspace.device)""",

@@ -43,7 +43,7 @@ const assert=require('node:assert/strict'),path=require('node:path');
   assert.equal(await p.locator('.modelCard').count(),1);assert.match(await p.locator('.modelCard h2').textContent(),/Warm Light/);
   await p.getByRole('button',{name:'Unarchive',exact:true}).click();assert.equal(await p.locator('.modelCard').count(),0);
   await p.locator('#modelArchiveLink').click();assert.equal(await p.locator('.modelCard').count(),2);
-  await p.locator('#modalClose').click();await p.evaluate(()=>navigate('video'));
+  await p.locator('#modalClose').click();await p.evaluate(()=>{const h3={...structuredClone(items[1]),id:'e'.repeat(32),name:'H3-style.safetensors',baseModel:'MiniMax H3',archived:false};items.push(h3);catalog.loras.push(h3.name);navigate('video');});
   await p.getByRole('button',{name:'LoRAs',exact:true}).click();
   await p.locator('#addLora').click();await p.waitForSelector('[data-model-insert]');
   await p.locator('[data-model-insert]').first().click();assert.equal(await p.evaluate(()=>state.settings.video.positive),'A turning bowl, ceramic glaze, warm light');assert.equal(await p.evaluate(()=>saved),'video');

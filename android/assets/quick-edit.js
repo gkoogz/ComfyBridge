@@ -1,6 +1,6 @@
 'use strict';
 let quickSlots={},quickStoreKey='',quickLoading=null,quickPolling=false;
-const quickSlot=(kind,key)=>kind+':'+key;
+const quickSlot=(kind,key)=>kind+(kind==='image'&&isKrea()?':krea2':'')+':'+key;
 const quickTTL=2*60*60*1000;
 function expireQuickEdits(now=Date.now()){
  let changed=false;
@@ -104,10 +104,10 @@ function receiveQuick(q,data){
  else if(['error','missing','discarded'].includes(data.status)){q.phase='error';q.detail=data.detail||'This edit is no longer available. Retry to submit it again.';}
 }
 async function sendQuick(q,kind,key){
- if(q.sending)return;q.sending=true;const scope=quickStoreKey;
+ if(q.sending)return;q.sending=true;const scope=quickStoreKey,slot=Object.keys(quickSlots).find(k=>quickSlots[k]===q);
  try{
   const data=await api('studio/chat/quick-submit',{id:q.id,source:q.source,prompt:q.original,instructions:q.text});
-  if(scope!==quickStoreKey||quickSlots[quickSlot(kind,key)]!==q)return;receiveQuick(q,data);
+  if(scope!==quickStoreKey||quickSlots[slot]!==q)return;receiveQuick(q,data);
  }catch(e){if(scope===quickStoreKey){q.detail=e.message;if(/HTTP 4\d\d/.test(e.message))q.phase='error';}}
  finally{delete q.sending;if(scope===quickStoreKey){quickStore();paintQuickEdit(kind,key);}}
 }
@@ -117,7 +117,7 @@ async function syncQuickEdits(){
   await loadQuickEdits();const scope=quickStoreKey;
   for(const [slot,q] of Object.entries(quickSlots)){
    if(q.phase!=='working'||q.sending)continue;
-   const [kind,key]=slot.split(':');
+   const parts=slot.split(':'),kind=parts[0],key=parts.at(-1);
    try{
     const data=await api('studio/chat/quick-state',{id:q.id});
     if(scope!==quickStoreKey)return;

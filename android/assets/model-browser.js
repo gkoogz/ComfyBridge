@@ -11,6 +11,7 @@ function modelSize(bytes){return bytes?bytes>=1e9?(bytes/1e9).toFixed(2)+' GB':(
 function activeLora(kind,name){return state.settings[kind].loras.some(l=>modelKey(l.name)===modelKey(name));}
 function embeddingCompatibility(item,kind){
  const family=text=>/sdxl|sd xl|pony|illustrious|noob|animagine/i.test(text)?'SDXL':/sd.?1[. _-]|stable.diffusion.v1/i.test(text)?'SD 1.x':/sd.?2[. _-]/i.test(text)?'SD 2.x':/flux/i.test(text)?'Flux':'';
+ if(kind==='image'&&isKrea())return {blocked:true,label:'Textual inversion is not supported by the Krea 2 text encoder'};
  const base=item.baseModel||item.encoderFamily||'',a=family(base),checkpoint=listing('checkpoints',state.settings[kind]?.model),b=family(checkpoint?.baseModel||'');
  if(kind==='video')return {blocked:true,label:(base||'Textual inversion')+' · Not supported by the H3/Eros text encoder'};
  if(a&&b&&a!==b)return {blocked:true,label:base+' · Incompatible with the selected '+b+' checkpoint'};
@@ -20,10 +21,10 @@ function embeddingCompatibility(item,kind){
 function browserItems(view){
  if(view.type==='embeddings'){
   const local=(catalog?.listings||modelListings).filter(x=>x.kind==='embeddings');
-  return view.remote?view.remote.map(item=>local.find(x=>String(x.versionId)===String(item.versionId))||item):local;
+  return (view.remote?view.remote.map(item=>local.find(x=>String(x.versionId)===String(item.versionId))||item):local).filter(item=>resourceAllowed(item,view.kind)&&!embeddingCompatibility(item,view.kind).blocked);
  }
  const names=view.type==='checkpoints'?(catalog?.models||[]):view.type==='video'?(catalog?.videoModels||[]).map(x=>x.model):(catalog?.loras||[]);
- return [...new Set(names)].filter(n=>!view.only||n===view.only).map(name=>listing(view.type==='video'?'diffusion_models':view.type,name)||{name,title:name,kind:view.type,status:'pending',images:[]}).filter(item=>view.type!=='loras'||view.only||!!item.archived===!!view.archived);
+ return [...new Set(names)].filter(n=>!view.only||n===view.only).map(name=>listing(view.type==='video'||name===kreaModel?'diffusion_models':view.type,name)||{name,title:name===kreaModel?'Krea 2 Turbo · BF16':name,kind:view.type,status:'pending',images:[]}).filter(item=>view.type!=='loras'||resourceAllowed(item,view.kind)).filter(item=>view.type!=='loras'||view.only||!!item.archived===!!view.archived);
 }
 async function openModelBrowser(type,only=null,promptKey=null){
  if(!connected)return toast('Connect to the PC to browse your models.');
@@ -99,10 +100,10 @@ function paintModelBrowser(view){
    (item.sourceUrl?'<button class="modelSource" data-model-source="'+index+'">Open '+esc(item.source||'original')+' listing ↗</button>':'<small>Source not confirmed · the local file is still selectable</small>')+'</article>';
  }).join('')||'<p class="muted">No matching models.</p>';
  $$('[data-model-use]',host).forEach(button=>button.onchange=()=>{
-  const item=items[+button.dataset.modelUse],s=state.settings[view.kind];s.model=item.name;delete s.replayOf;persist(view.kind);
+  const item=items[+button.dataset.modelUse];if(view.kind==='image')selectImageModel(item.name);else{const s=state.settings[view.kind];s.model=item.name;delete s.replayOf;persist(view.kind);}
   const select=$('[data-setting="model"]');if(select&&page===view.kind){
-   if(![...select.options].some(option=>option.value===item.name))select.add(new Option(modelLabel('checkpoints',item.name),item.name));
-   for(const option of select.options)option.textContent=modelLabel('checkpoints',option.value);
+   if(![...select.options].some(option=>option.value===item.name))select.add(new Option(imageModelLabel(item.name),item.name));
+   for(const option of select.options)option.textContent=imageModelLabel(option.value);
    select.value=item.name;
   }
   paintModelBrowser(view);toast('Checkpoint selected');

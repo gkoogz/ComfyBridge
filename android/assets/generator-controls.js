@@ -1,4 +1,45 @@
 'use strict';
+const kreaModel='krea2_turbo_bf16.safetensors';
+const imageFamily=model=>model===kreaModel?'krea2':'sdxl';
+const isKrea=(s=state.settings.image)=>s?.model===kreaModel;
+function kreaDefaults(){return structuredClone(catalog?.imageProfiles?.find(p=>p.model===kreaModel)?.defaults||{model:kreaModel,width:1024,height:1024,steps:8,cfg:1,sampler:'euler',scheduler:'simple',seed:'1',increment:true,denoise:1,positive:'',negative:'',loras:[],scale:0,batch:1});}
+function normalizeImageSettings(s){if(isKrea(s)){Object.assign(s,{steps:8,cfg:1,sampler:'euler',scheduler:'simple',negative:''});delete s.clipSkip;}return s;}
+function stashImageSettings(){
+ if(!state.settings.image)return;
+ (state.imageFamilies??={})[imageFamily(state.settings.image.model)]={settings:structuredClone(state.settings.image),inputs:structuredClone(state.inputs.image||{})};
+}
+function replaceImageSettings(settings,inputs={}){
+ stashImageSettings();state.settings.image=normalizeImageSettings(structuredClone(settings));state.inputs.image=structuredClone(inputs);
+}
+function selectImageModel(model){
+ const old=state.settings.image;if(!old||old.model===model)return;
+ if(imageFamily(old.model)!==imageFamily(model)){
+  stashImageSettings();const saved=state.imageFamilies[imageFamily(model)];
+  state.settings.image=normalizeImageSettings(structuredClone(saved?.settings||(model===kreaModel?kreaDefaults():catalog.defaults.image)));
+  state.inputs.image=structuredClone(saved?.inputs||{});promptExpanded={};presetName='';
+ }
+ state.settings.image.model=model;delete state.settings.image.replayOf;persist('image');
+ if(page==='image')renderGenerator();
+}
+function resourceFamily(item){
+ if(item?.family)return item.family;
+ const text=[item?.baseModel,item?.encoderFamily,item?.name].filter(Boolean).join(' ').toLowerCase();
+ if(/krea[ _-]?2/.test(text))return 'krea2';
+ if(/sdxl|sd xl|pony|illustrious|noob|animagine|stable-diffusion-xl/.test(text))return 'sdxl';
+ if(/minimax|h3|eros/.test(text))return 'h3';
+ if(/wan/.test(text))return 'wan';if(/flux/.test(text))return 'flux';
+ if(/sd[ _.-]?1[._ -]|stable.diffusion.v1/.test(text))return 'sd1';
+ if(/sd[ _.-]?2[._ -]|stable.diffusion.v2/.test(text))return 'sd2';return '';
+}
+function resourceAllowed(item,kind){
+ if(kind==='image'&&isKrea())return item.kind!=='embeddings'&&resourceFamily(item)==='krea2';
+ const source=resourceFamily(item);
+ if(source==='krea2')return false;
+ const target=kind==='video'?'h3':resourceFamily(listing('checkpoints',state.settings.image?.model))||'sdxl';
+ return !source||!target||source===target;
+}
+function imageModelLabel(name){return name===kreaModel?'Krea 2 Turbo · BF16':modelLabel('checkpoints',name);}
+function kreaSamplingFields(){return '<div class="kreaSettings"><strong>Turbo · 8 steps</strong><small>Euler · simple schedule · guidance off</small><small>These recommended settings are fixed for Krea 2 Turbo.</small></div>';}
 const pixelBudget=768*1152;
 const stepLimit=kind=>kind==='image'?50:20;
 const playTriangle='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3.5a.75.75 0 0 0-1 .7v15.6a.75.75 0 0 0 1 .7l13-7.9a.7.7 0 0 0 0-1.2Z"/></svg>';
@@ -104,9 +145,10 @@ function installFold(panel,summarize,{scope=page,defaultClosed}={}){
 
 const linkIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 14 4-4m-6 3-1 1a3 3 0 1 0 4 4l3-3a3 3 0 0 0 0-4m2 0 1-1a3 3 0 1 0-4-4l-3 3a3 3 0 0 0 0 4"/></svg>';
 function canvasInputs(s,step=1){
- return '<div class="canvasFields"><label>Width<input type="number" inputmode="numeric" data-setting="width" min="32" max="8192" step="'+step+'" value="'+s.width+'"></label>'+
+ const bounds=isKrea(s)?'min="256" max="2048"':'min="32" max="8192"';
+ return '<div class="canvasFields"><label>Width<input type="number" inputmode="numeric" data-setting="width" '+bounds+' step="'+step+'" value="'+s.width+'"></label>'+
  '<button id="linkAspect" type="button" aria-label="Lock aspect ratio">'+linkIcon+'</button>'+
- '<label>Height<input type="number" inputmode="numeric" data-setting="height" min="32" max="8192" step="'+step+'" value="'+s.height+'"></label></div>'+
+ '<label>Height<input type="number" inputmode="numeric" data-setting="height" '+bounds+' step="'+step+'" value="'+s.height+'"></label></div>'+
  '<div class="ratioLine">Canvas aspect ratio <strong id="canvasRatio"></strong></div>';
 }
 function bindCanvas(s,step=1){
@@ -137,17 +179,18 @@ function bindCanvas(s,step=1){
  function edit(input,companion,key,other,commit){
   let value=input.valueAsNumber;
   if(!Number.isFinite(value)){if(commit)input.value=s[key];return;}
-  let min=32,max=8192,ratio=null;
+  const lower=isKrea(s)?256:32,upper=isKrea(s)?2048:8192;
+  let min=lower,max=upper,ratio=null;
   if(s.aspectLock){
    const [width,height]=s.aspectLock;ratio=key==='width'?width/height:height/width;
-   min=Math.max(min,Math.ceil(32*ratio-1e-8));max=Math.min(max,Math.floor(8192*ratio+1e-8));
+   min=Math.max(min,Math.ceil(lower*ratio-1e-8));max=Math.min(max,Math.floor(upper*ratio+1e-8));
   }
   if(!commit&&(value<min||value>max))return;
   value=limit(Math.round(value/step)*step,Math.ceil(min/step)*step,Math.floor(max/step)*step);
   if(slider&&s[key]!==value)delete s.videoSliderRatio;
   s[key]=value;
   if(commit)input.value=value;
-  if(ratio){s[other]=limit(Math.round(value/ratio/step)*step,32,8192);companion.value=s[other];}
+  if(ratio){s[other]=limit(Math.round(value/ratio/step)*step,lower,upper);companion.value=s[other];}
   refresh();persist();
  }
  for(const [input,companion,key,other] of [[w,h,'width','height'],[h,w,'height','width']]){

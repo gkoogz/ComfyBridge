@@ -6,7 +6,7 @@ async function mapState(x,fn){if(x&&typeof x==='object'){const y=await fn(x);if(
  if(Array.isArray(x))return Promise.all(x.map(v=>mapState(v,fn)));
  const out={};for(const k of Object.keys(x))out[k]=await mapState(x[k],fn);return out;}
  return fn(x);}
-function backupState(){const {settings,presets,prompts,inputs}=state;return {settings,presets,prompts,inputs};}
+function backupState(){const {settings,presets,prompts,inputs,imageFamilies}=state;return {settings,presets,prompts,inputs,imageFamilies};}
 function profileMessage(text){profileStatus=text;if(document.querySelector('#backupStatus'))document.querySelector('#backupStatus').textContent=text;}
 function scheduleBackup(){profileDirty=true;clearTimeout(profileTimer);if(profileReady&&connected)profileTimer=setTimeout(flushProfile,1000);}
 async function flushProfile(){if(profileBusy||!profileReady||!connected||!profileDirty||!Object.keys(state.settings).length)return;profileBusy=true;ModelPreviews.pause();profileDirty=false;const id=epoch;

@@ -3,6 +3,7 @@ import json
 import math
 from pathlib import Path
 from extension import GUIDE_FRAMES, guide_names
+import image_models
 
 EROS_BETA7 = '10Eros_Max_h3_8stepTURBO_beta7_int8HQ.safetensors'
 H3_AUDIO_VAE = 'minimax_h3_audio_vae_fp32.safetensors'
@@ -113,6 +114,8 @@ class Workflows:
         loras = s.get('loras', [])
         if len(loras) > 100:
             raise ValueError('At most 100 LoRAs can be used in one job.')
+        if kind == 'image' and s.get('model') == image_models.KREA_MODEL:
+            return image_models.build(s, prefix)
         if kind == 'image':
             if not 1 <= int(s.get('clipSkip',abs(int(self.widgets('image',18)[0])))) <= 24:
                 raise ValueError('Clip skip must be between 1 and 24.')

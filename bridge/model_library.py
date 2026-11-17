@@ -12,6 +12,7 @@ import sqlite3
 import struct
 import threading
 import time
+from image_models import resource_family
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -29,6 +30,7 @@ SOURCE_INTERVAL = 7 * 86400
 LOCK = threading.Lock()
 # Exact LFS SHA-256 identities checked against the publishers' file listings.
 HF_FILES = {
+    '78bbf8f4165eda19cea3cb06c78089221932a39e2eed8af9da741f942c47ffb3':('Comfy-Org/Krea-2','Krea 2 Turbo','BF16 · 8-step'),
     'a2deb2f5a48911af9cc0a98278aa43f42019e55de954fb450caf933b23d17a4f':('UnplannedAI/NSFW-XL','NSFW-XL','2.1'),
     '8a51ca3f7d290a799d89fefcde4ede60962256955a91dfe4746d3cc07814fd6e':('TenStrip/10Eros-Max','10Eros Max · MiniMax H3','Beta 7 · 8-step Turbo · INT8HQ'),
     '12944c1f7791637e7de12208aef04da82bd26b95271b1b47d817364315ade993':('Comfy-Org/MiniMax-H3','MiniMax H3','FL2VA · pruned FP8 scaled'),
@@ -210,6 +212,7 @@ class Library:
             archived={row['id'] for row in db.execute('SELECT id FROM model_preferences WHERE archived=1')}
         has_token=bool(self.token())
         for item in items:
+            item['family']=resource_family(self.root,item)
             item['archived']=item['id'] in archived
             item['images']=[image for image in item.get('images',[]) if self.preview_allowed(item,image,has_token)]
             for image in item.get('images',[]):
@@ -428,7 +431,7 @@ class Library:
             item['note']='No exact listing was found. This may be a local merge, removed version, or a file hosted elsewhere.' if error.code==404 else f'Source temporarily unavailable (HTTP {error.code}).'
             if error.code==404 and digest in HF_FILES:
                 repo,title,version=HF_FILES[digest]
-                item.update(title=title,version=version,author=repo.split('/')[0],baseModel='SDXL' if repo=='UnplannedAI/NSFW-XL' else 'MiniMax H3',
+                item.update(title=title,version=version,author=repo.split('/')[0],baseModel='Krea 2' if repo=='Comfy-Org/Krea-2' else 'SDXL' if repo=='UnplannedAI/NSFW-XL' else 'MiniMax H3',
                             status='matched',source='Hugging Face',sourceUrl='https://huggingface.co/'+repo,
                             match='Exact SHA-256 match to publisher file',note='',previewNote='No verified non-explicit still previews are available from this repository.')
                 try:

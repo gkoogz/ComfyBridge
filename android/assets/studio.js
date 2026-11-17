@@ -8,7 +8,7 @@ function markEdited(section){
  clearTimeout(settingsTimer);settingsTimer=setTimeout(syncSettings,1800);
 }
 function sectionData(key){
- return key==='prompts'?state.prompts:{settings:state.settings[key],inputs:state.inputs[key],presets:state.presets[key]};
+ return key==='prompts'?state.prompts:{settings:state.settings[key],inputs:state.inputs[key],presets:state.presets[key],...(key==='image'?{families:state.imageFamilies||{}}:{})};
 }
 async function encodeShared(value,session=epoch){
  return mapState(value,async x=>{
@@ -65,7 +65,7 @@ async function syncSettings(){
    const data=await decodeShared(incoming.value);
    if(session!==epoch||(state.sharedClock?.[key]?.stamp||0)!==(clocks[key]?.stamp||0))continue;
    if(key==='prompts')state.prompts=data;
-   else{state.settings[key]=data.settings;state.inputs[key]=data.inputs;state.presets[key]=data.presets;}
+   else{state.settings[key]=data.settings;state.inputs[key]=data.inputs;state.presets[key]=data.presets;if(key==='image'&&data.families)state.imageFamilies=data.families;}
    (state.sharedClock??={})[key]={stamp:incoming.stamp,device:incoming.device};
    (state.sharedAck??={})[key]=incoming.stamp;redraw||=(page===key||key==='prompts')&&['image','video'].includes(page);
   }
@@ -202,7 +202,7 @@ async function restoreGeneration(job,button,stillHere=()=>true){
    settings.batch=1;
    settings.replayOf=job;
    if(kind==='video' && settings.sound===undefined)settings.sound=false; // older jobs were silent
-   state.settings[kind]=settings;state.inputs[kind]=inputs;persist(kind);navigate(kind);
+   if(kind==='image')replaceImageSettings(settings,inputs);else{state.settings[kind]=settings;state.inputs[kind]=inputs;}persist(kind);navigate(kind);
    toast('Generation settings loaded');
   }catch(e){if(page===origin&&stillHere())toast(e.message);}finally{button.disabled=false;}
 }

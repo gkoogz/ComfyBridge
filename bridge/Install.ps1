@@ -16,6 +16,7 @@ foreach($file in 'ComfyBridge.exe','Microsoft.Web.WebView2.Core.dll','Microsoft.
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot $file) -Destination $target -Force
 }
 New-Item -ItemType Directory -Force (Join-Path $target 'desktop-assets') | Out-Null
+foreach($file in 'image_models.py','setup_krea2.py') { Copy-Item -LiteralPath (Join-Path $PSScriptRoot $file) -Destination $target -Force }
 Copy-Item (Join-Path $PSScriptRoot 'desktop-assets/*') (Join-Path $target 'desktop-assets') -Force
 if (-not (Test-Path (Join-Path $target 'config.json'))) { Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'config.json') -Destination $target }
 $studioRoot=(Get-Content -Raw -LiteralPath (Join-Path $target 'config.json')|ConvertFrom-Json).comfyRoot

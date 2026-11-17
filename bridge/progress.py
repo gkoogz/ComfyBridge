@@ -10,7 +10,7 @@ class Progress:
         pixels = max(.1, settings['width'] * settings['height'] / 1048576)
         frames = settings.get('frames', 1) if kind == 'video' else 1
         specs = {
-            'CheckpointLoaderSimple': ('Load checkpoint', 6), 'UNETLoader': ('Load video model', 12),
+            'CheckpointLoaderSimple': ('Load checkpoint', 6), 'UNETLoader': ('Load image model' if kind=='image' else 'Load video model', 12),
             'VAELoader': ('Load VAE', 2), 'CLIPLoader': ('Load text encoder', 4),
             'CLIPTextEncode': ('Encode prompt', 2),
             'MiniMaxH3ImageToVideo': ('Encode first frame and prompt' if settings.get('upload') else 'Encode video prompt', 8+pixels*frames*.2),
@@ -23,7 +23,7 @@ class Progress:
             'SaveImage': ('Save image', 1), 'LoraLoader': ('Apply image LoRA', 1),
             'UpscaleModelLoader': ('Load Remacri', 2),
             'ImageUpscaleWithModel': ('Upscale 4× · Remacri tiles', 6*pixels),
-            'LoraLoaderModelOnly': ('Apply video LoRA', 2), 'LoadImage': ('Read source', .8),
+            'LoraLoaderModelOnly': ('Apply LoRA', 2), 'LoadImage': ('Read source', .8),
             'ImageScale': ('Scale source', .7), 'ImageToMask': ('Prepare mask', .6),
             'MiniMaxH3AddGuide': ('Encode motion guide', 4*pixels),
             'ImageFromBatch': ('Trim guide and excess frames', .3),
