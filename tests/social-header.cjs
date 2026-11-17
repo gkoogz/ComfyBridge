@@ -40,13 +40,15 @@ const assert=require('node:assert/strict'),path=require('node:path');
  assert(await p.locator('.feedDiscovery').evaluate(e=>!!(e.compareDocumentPosition(e.parentElement.querySelector('.feedReactions'))&Node.DOCUMENT_POSITION_FOLLOWING)));
  await p.locator('.browseMedia').first().click();await p.waitForSelector('.civitaiAuthor .creatorAvatar img');
  const follow=p.locator('.viewerFollow');assert(await follow.isVisible());
+ assert.equal(await follow.evaluate(e=>getComputedStyle(e).color),'rgb(255, 255, 255)','Unfollowed creator uses a white Follow button');
  assert(await follow.evaluate(e=>e.previousElementSibling.classList.contains('creatorName')&&e.nextElementSibling.hasAttribute('data-creator-feed')));
  await follow.click();await p.waitForFunction(()=>document.querySelector('.viewerFollow').textContent==='Following ✓');
  assert.equal(await follow.getAttribute('aria-pressed'),'true');assert(await follow.evaluate(b=>b.classList.contains('selected')));
+ assert.notEqual(await follow.evaluate(e=>getComputedStyle(e).color),'rgb(255, 255, 255)','Following uses the green selected style');
  assert(await p.evaluate(()=>Object.keys(localStorage).filter(k=>k.includes(':social:')).flatMap(k=>Object.values(JSON.parse(localStorage[k]))).some(r=>r.payload.kind==='follow'&&r.payload.creatorId==='7'&&r.payload.selected)));
  await p.evaluate(()=>{CivitaiBrowser.close();CivitaiBrowser.open(item,[item]);});
  await p.waitForSelector('.civitaiAuthor');assert.equal(await p.locator('.viewerFollow').textContent(),'Following ✓','Pending follows remain visibly confirmed on reopen');
- const left=await p.locator('.civitaiAuthor').boundingBox(),right=await p.locator('.civitaiReactions').boundingBox();
+ const {left,right}=await p.evaluate(()=>({left:document.querySelector('.civitaiAuthor').getBoundingClientRect().toJSON(),right:document.querySelector('.civitaiReactions').getBoundingClientRect().toJSON()}));
  if(width>500){assert(Math.abs(left.y+left.height/2-right.y-right.height/2)<2);assert(right.x>left.x+left.width);}
  else{assert(right.y>=left.y+left.height);assert(Math.abs(right.x-left.x)<2,'Wrapped actions align left');}
  assert.equal(await p.locator('.civitaiReactions button').count(),2);

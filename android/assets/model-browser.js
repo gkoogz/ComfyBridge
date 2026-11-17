@@ -302,7 +302,7 @@ function paintModelPreview(view){
   '<div class="modelPreviewDetails"><p class="muted">'+esc([image.credit&&'By '+image.credit,image.width&&image.height&&image.width+' × '+image.height,image.created].filter(Boolean).join(' · '))+'</p>'+
   CivitaiBrowser.promptHTML(image)+
   '<h2>Resources</h2><div class="civitaiResourceHost">'+CivitaiBrowser.resourcesHTML(resources)+'</div>'+
-  '<dl class="modelPreviewParameters">'+Object.entries(image.parameters||{}).map(([key,value])=>'<dt>'+esc(key)+'</dt><dd>'+esc(value)+'</dd>').join('')+'</dl>'+
+  '<dl class="modelPreviewParameters">'+CivitaiBrowser.parametersHTML(image.parameters)+'</dl>'+
   '<div class="modelPreviewLinks">'+(image.imageUrl?'<button data-image-source>Open image on Civitai ↗</button>':'')+(gallery.item.sourceUrl?'<button data-listing-source>Open '+esc(gallery.item.source||'original')+' listing ↗</button>':'')+'</div></div>';
  host.scrollTop=scroll;
  if(image.fullPath){

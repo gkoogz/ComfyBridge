@@ -230,9 +230,9 @@ const CivitaiBrowser=(()=>{
  function promptHTML(item,state='loading'){
   return '<div class="civitaiPromptBlocks">'+[['prompt','Prompt'],['negativePrompt','Negative prompt']].map(([key,label])=>{
    if(key==='negativePrompt'&&!item[key])return '';
-   return '<h2>'+label+'</h2><p class="modelPreviewPrompt"'+(!item[key]&&state==='loading'&&!item.generationDataAvailable?' role="status" aria-busy="true"':'')+'>'+esc(item[key]||(item.generationDataAvailable?'No prompt is available in this media’s generation data.':state==='loading'?'Loading prompt details…':'Could not load prompt details.'))+'</p>'+
-    (key==='prompt'&&state==='failed'?button('Retry details','class="retryPromptDetails"'):'')+
-    (item[key]?button(copyIcon,'class="promptCopy" data-copy-prompt="'+key+'" aria-label="Copy '+label.toLowerCase()+'"'):'');
+   return '<section class="civitaiPromptBlock"><div class="civitaiPromptHeading"><h2>'+label+'</h2>'+
+    (item[key]?button(copyIcon,'class="promptCopy" data-copy-prompt="'+key+'" aria-label="Copy '+label.toLowerCase()+'"'):'')+'</div><p class="modelPreviewPrompt"'+(!item[key]&&state==='loading'&&!item.generationDataAvailable?' role="status" aria-busy="true"':'')+'>'+esc(item[key]||(item.generationDataAvailable?'No prompt is available in this media’s generation data.':state==='loading'?'Loading prompt details…':'Could not load prompt details.'))+'</p>'+
+    (key==='prompt'&&state==='failed'?button('Retry details','class="retryPromptDetails"'):'')+'</section>';
   }).join('')+'</div>';
  }
  function wirePromptCopies(host,item){
@@ -867,7 +867,7 @@ const CivitaiBrowser=(()=>{
   if(collectionPopup)collectionPopup.remove();
   const popup=document.createElement('div');
   popup.className='feedCollectionShade';collectionPopup=popup;
-  popup.innerHTML='<section role="dialog" aria-modal="true" aria-label="Collections"><div class="row spread"><strong>Collections</strong>'+button('×','class="collectionClose" aria-label="Close collections"')+'</div><div class="feedCollectionChoices">Loading…</div><div class="newCollectionAnchor"></div><p class="warning" role="status"></p></section>';
+  popup.innerHTML='<section role="dialog" aria-modal="true" aria-label="Collections"><div class="collectionHeading"><strong>Collections</strong>'+button('＋ New collection','class="newCollection"')+button('×','class="collectionClose" aria-label="Close collections"')+'</div><div class="newCollectionAnchor"></div><div class="feedCollectionChoices">Loading…</div><p class="warning" role="status"></p></section>';
   document.body.append(popup);
   function dismiss(){popup.remove();if(collectionPopup===popup)collectionPopup=null;BrowseLoader.refresh();}
   $('.collectionClose',popup).onclick=dismiss;
@@ -883,8 +883,7 @@ const CivitaiBrowser=(()=>{
     finally{box.disabled=false;}
    });
    const anchor=$('.newCollectionAnchor',popup);
-   anchor.innerHTML=button('＋ New collection','class="newCollection"');
-   $('.newCollection',anchor).onclick=()=>createCollection(anchor,collections=>{knownCollections=collections;return refresh();},boundAccount);
+   $('.newCollection',popup).onclick=()=>{const existing=$('.browseCollectionForm',popup);if(existing){$('input',existing).focus();return;}createCollection(anchor,collections=>{knownCollections=collections;return refresh();},boundAccount);};
    if(!known){
     const result=await api('browse/memberships/'+item.id);
     if(!popup.isConnected||account!==boundAccount)return;
@@ -1132,11 +1131,13 @@ const CivitaiBrowser=(()=>{
  }
  function resourcesHTML(resources,chosen={}){return '<ul class="modelPreviewResources civitaiResources">'+[...resources].sort((a,b)=>Number(/checkpoint/i.test(b.type))-Number(/checkpoint/i.test(a.type))).map(r=>{
   const isLora=/lora|locon|lycoris/i.test(r.type),url=r.modelId?'https://civitai.com/models/'+r.modelId+(r.versionId?'?modelVersionId='+r.versionId:''):'';
+  const hasWeight=r.weight!==''&&r.weight!=null;
   return '<li><div class="civitaiResourceRow">'+(url?button(esc(r.name||r.type),'class="resourceName '+(chosen.kind==='lora'&&String(chosen.id)===String(r.versionId)?'chosenSource':'')+'" data-civi-link="'+esc(url)+'"'):'<strong class="resourceName">'+esc(r.name||r.type)+'</strong>')+
    (isLora&&r.versionId?button('＋','class="resourceDownload" data-resource-download="'+esc(r.versionId)+'" data-civi-download="'+esc(r.versionId)+'" aria-label="Download LoRA"'):'')+
-   '<span class="resourceType">'+esc(r.type)+'</span></div>'+(r.version?'<small>'+esc(r.version)+'</small>':'')+((r.weight!==''&&r.weight!=null)?'<small>Strength '+esc(r.weight)+'</small>':'')+'<div data-download-status="'+esc(r.versionId)+'"></div></li>';
+   '<span class="resourceType">'+esc(r.type)+'</span></div>'+((r.version||hasWeight)?'<small class="resourceMeta">'+(r.version?'<span class="resourceVersion">'+esc(r.version)+'</span>':'')+(r.version&&hasWeight?'<span aria-hidden="true">·</span>':'')+(hasWeight?'<span class="resourceStrength">Strength '+esc(r.weight)+'</span>':'')+'</small>':'')+'<div data-download-status="'+esc(r.versionId)+'"></div></li>';
 
  }).join('')+'</ul>';}
+ function parametersHTML(parameters){return Object.entries(parameters||{}).map(([key,value])=>'<div class="modelParameter"><dt>'+esc(key)+'</dt><dd>'+esc(value)+'</dd></div>').join('');}
  async function wireResources(host){
   $$('[data-civi-link]',host).forEach(b=>b.onclick=()=>openModelSource(b.dataset.civiLink));
   const buttons=$$('[data-civi-download]',host);if(!buttons.length)return;
@@ -1271,7 +1272,7 @@ const CivitaiBrowser=(()=>{
    account=result.account;Object.assign(image,result.item);const item=image;
    paintPrompt(item.generationDataAvailable||item.detailVersion===2?'ready':'failed');
    target.innerHTML=socialHTML(item,result.collections);wireSocial(target,item,result.collections);
-   const parameters=$('.modelPreviewParameters',host);if(parameters)parameters.innerHTML=Object.entries(item.parameters||{}).map(([k,val])=>'<dt>'+esc(k)+'</dt><dd>'+esc(val)+'</dd>').join('');
+   const parameters=$('.modelPreviewParameters',host);if(parameters)parameters.innerHTML=parametersHTML(item.parameters);
    const resourceHost=$('.civitaiResourceHost',host);if(resourceHost){resourceHost.innerHTML=resourcesHTML(item.resources,item.chosenBy);wireResources(resourceHost);}
    let tags=$('.civitaiTagHost',host);if(!tags){tags=document.createElement('section');tags.className='civitaiTagHost';$('.modelPreviewDetails',host)?.append(tags);}
    paintTags(tags,item);
@@ -1391,7 +1392,7 @@ const CivitaiBrowser=(()=>{
   const cached=details.get(detailKey(item.id));if(cached)Object.assign(item,cached.result.item);
   close();const el=document.createElement('section');el.className='civitaiViewer';el.setAttribute('role','dialog');el.setAttribute('aria-modal','true');el.setAttribute('aria-label','Civitai media details');
   registerMedia([item]);const v={el,item,list};viewer=v;warm();document.body.append(el);document.body.classList.add('civitaiViewerOpen');
-  el.innerHTML='<div class="civitaiViewerHead">'+button('×','class="civitaiClose" aria-label="Close media"')+'</div><div class="civitaiViewerScroll modelPreviewViewer"><div class="modelPreviewHero">'+imageHTML(item,true)+'<div class="modelPreviewNavigation">'+button('‹','data-prev aria-label="Previous media"')+button('›','data-next aria-label="Next media"')+'</div></div><div class="modelPreviewDetails"><div class="civitaiSocial">'+socialHTML(item,status?.collections||[])+'</div>'+promptHTML(item)+'<h2>Resources</h2><div class="civitaiResourceHost">'+resourcesHTML(item.resources||[],item.chosenBy)+'</div><dl class="modelPreviewParameters">'+Object.entries(item.parameters||{}).map(([k,val])=>'<dt>'+esc(k)+'</dt><dd>'+esc(val)+'</dd>').join('')+'</dl><div class="civitaiTagHost"></div>'+button('Open on Civitai ↗','data-origin')+'</div></div>';
+  el.innerHTML='<div class="civitaiViewerHead">'+button('×','class="civitaiClose" aria-label="Close media"')+'</div><div class="civitaiViewerScroll modelPreviewViewer"><div class="modelPreviewHero">'+imageHTML(item,true)+'<div class="modelPreviewNavigation">'+button('‹','data-prev aria-label="Previous media"')+button('›','data-next aria-label="Next media"')+'</div></div><div class="modelPreviewDetails"><div class="civitaiSocial">'+socialHTML(item,status?.collections||[])+'</div>'+promptHTML(item)+'<h2>Resources</h2><div class="civitaiResourceHost">'+resourcesHTML(item.resources||[],item.chosenBy)+'</div><dl class="modelPreviewParameters">'+parametersHTML(item.parameters)+'</dl><div class="civitaiTagHost"></div>'+button('Open on Civitai ↗','data-origin')+'</div></div>';
   $('.civitaiClose',el).onclick=close;$('.civitaiClose',el).focus();$('[data-origin]',el).onclick=()=>openModelSource(item.imageUrl);
   wirePromptCopies(el,item);
   const position=list.findIndex(i=>i.id===item.id);$('[data-prev]',el).disabled=position<=0;$('[data-next]',el).disabled=position>=list.length-1;
@@ -1413,5 +1414,5 @@ const CivitaiBrowser=(()=>{
  document.addEventListener('keydown',e=>{if(e.key==='Escape'){if(viewer){e.preventDefault();close();}else if(page==='browse'&&back())e.preventDefault();}});
  document.addEventListener('visibilitychange',()=>{document.body.classList.toggle('browseBackgrounded',document.hidden);if(document.hidden)cancelArrivalMotion();else scheduleScrollWork();if(document.hidden){for(const c of mediaControllers.values())c.abort();}if(page==='browse'&&!document.hidden){if(activityAge()>=7200000){render();return;}if(available()){refreshStatus(true).catch(()=>{});warm();}}});
  document.addEventListener('pointerdown',activity,{passive:true});document.addEventListener('keydown',activity,{passive:true});document.addEventListener('wheel',activity,{passive:true});document.addEventListener('touchmove',activity,{passive:true});
- return {render,suspend,connectionChanged,launchWarm,pauseMedia,open,close,back,canSwipeBack,beginSwipeBack,moveSwipeBack,endSwipeBack,isOpen:()=>!!viewer,enrich,peek,resourcesHTML,wireResources,promptHTML,wirePromptCopies};
+ return {render,suspend,connectionChanged,launchWarm,pauseMedia,open,close,back,canSwipeBack,beginSwipeBack,moveSwipeBack,endSwipeBack,isOpen:()=>!!viewer,enrich,peek,resourcesHTML,wireResources,promptHTML,parametersHTML,wirePromptCopies};
 })();

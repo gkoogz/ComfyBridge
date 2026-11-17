@@ -868,3 +868,20 @@ establish physical-phone gesture behavior.
 
 Both decorative canvas layers render at 50% opacity, halving the visible opacity
 of the waves, droplets and sparkles. The separate green spinner stays fully visible.
+
+## Beta 103: compact media details and collection choices
+
+Browse and model-preview media share inline heading/copy controls, reduced prompt
+spacing, compact resource rows (version and strength together) and the same
+two-column parameter renderer. Tag text is 14px with minimal outer padding; vote
+targets remain 32 by 34px. Follow uses a white unselected state and mint selected
+state; chosen-creator labels match its 32px height, padding and corner radius.
+
+Collection creation lives beside the dialog title; the form remains below the
+header and repeated taps focus it. Collection rows are at least 50px tall, shaded,
+and clickable across their full label. Known collections and the existing durable
+social queue are reused without extra directory calls.
+
+Checks: `media-metadata.cjs` at 320/390/1400px, `social-header.cjs`, `browse.cjs`,
+`model-gallery.cjs` and `browse-download.cjs`. Phone screenshots are emulated,
+not physical-device observations.
