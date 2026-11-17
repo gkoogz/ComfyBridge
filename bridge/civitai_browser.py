@@ -56,6 +56,7 @@ class Browser:
         self.network = threading.Lock()
         self.action_lock = threading.RLock()
         self.collections_lock = threading.RLock()
+        self.follows_lock = threading.RLock()
         self.mix_lock = threading.Lock()
         self.media_lock = threading.Lock()
         self.cache_locks=[threading.RLock() for _ in range(64)]
@@ -76,12 +77,24 @@ class Browser:
               CREATE TABLE IF NOT EXISTS api_cache(identity TEXT,route TEXT,key TEXT,payload TEXT,expires REAL,PRIMARY KEY(identity,route,key));
               CREATE TABLE IF NOT EXISTS collection_members(account TEXT,collection TEXT,image TEXT,present INTEGER,local_updated REAL DEFAULT 0,seen REAL DEFAULT 0,missing INTEGER DEFAULT 0,PRIMARY KEY(account,collection,image));
               CREATE INDEX IF NOT EXISTS collection_members_image ON collection_members(account,image);
+              CREATE TABLE IF NOT EXISTS social_members(account TEXT,kind TEXT,subject TEXT,value TEXT,present INTEGER,local_updated REAL DEFAULT 0,seen REAL DEFAULT 0,missing INTEGER DEFAULT 0,PRIMARY KEY(account,kind,subject,value));
             ''')
+            if not db.execute("SELECT 1 FROM settings WHERE account='' AND key='social-index-migrated'").fetchone():
+                for row in db.execute("SELECT account,value FROM settings WHERE key='follows'").fetchall():
+                    for uid in json.loads(row['value']):db.execute("INSERT OR IGNORE INTO social_members(account,kind,subject,value,present) VALUES(?,'follow',?,'',1)",(row['account'],str(uid)))
+                for row in db.execute('SELECT account,id,payload FROM media').fetchall():
+                    try:cached=json.loads(row['payload'])
+                    except (ValueError,TypeError):continue # A broken media cache entry must not block startup.
+                    for reaction in cached.get('reactions',[]) or []:
+                        if reaction in REACTIONS:db.execute("INSERT OR IGNORE INTO social_members(account,kind,subject,value,present) VALUES(?,'reaction',?,?,1)",(row['account'],row['id'],reaction))
+                db.execute("INSERT INTO settings VALUES('','social-index-migrated','true')")
             if not db.execute("SELECT 1 FROM settings WHERE account='' AND key='collection-index-migrated'").fetchone():
                 # Seed from existing durable data before any network refresh.
                 db.execute("INSERT OR IGNORE INTO collection_members(account,collection,image,present) SELECT account,substr(source,12),image,1 FROM observations WHERE source LIKE 'collection:%' AND score>0")
                 for row in db.execute('SELECT account,id,payload FROM media').fetchall():
-                    for member in json.loads(row['payload']).get('collections',[]) or []:
+                    try:cached=json.loads(row['payload'])
+                    except (ValueError,TypeError):continue
+                    for member in cached.get('collections',[]) or []:
                         if member.get('collectionId'):db.execute('INSERT OR IGNORE INTO collection_members(account,collection,image,present) VALUES(?,?,?,1)',(row['account'],str(member['collectionId']),row['id']))
                 db.execute("INSERT INTO settings VALUES('','collection-index-migrated','true')")
             db.execute('DELETE FROM api_cache WHERE expires<?',(time.time(),))
@@ -272,6 +285,8 @@ class Browser:
             db.execute('BEGIN IMMEDIATE')
             row=db.execute('SELECT payload FROM media WHERE account=? AND id=?',(account,image_id)).fetchone()
             previous=json.loads(row[0]) if row else {}
+            for reaction in reactions:
+                if reaction in REACTIONS:db.execute("INSERT OR IGNORE INTO social_members(account,kind,subject,value,present) VALUES(?,'reaction',?,?,1)",(account,image_id,reaction))
             for key in ('collections','collectionsChecked'):
                 if key in previous:item[key]=previous[key]
             if previous.get('detailVersion')==2:
@@ -296,7 +311,48 @@ class Browser:
     def collection_item(self, account, item):
         with self.db() as db:
             members=[{'collectionId':int(r[0])} for r in db.execute('SELECT collection FROM collection_members WHERE account=? AND image=? AND present=1',(account,str(item['id'])))]
-        return self.social.overlay(account,dict(item,collections=members))
+            reactions=[r[0] for r in db.execute("SELECT value FROM social_members WHERE account=? AND kind='reaction' AND subject=? AND present=1",(account,str(item['id'])))]
+        return self.social.overlay(account,dict(item,collections=members,reactions=reactions,following=str(item.get('creatorId')) in {str(i) for i in self.setting(account,'follows',[])}))
+
+    def set_social_delta(self, db, account, kind, subject, value, selected):
+        db.execute('''INSERT INTO social_members(account,kind,subject,value,present,local_updated) VALUES(?,?,?,?,?,?)
+            ON CONFLICT(account,kind,subject,value) DO UPDATE SET present=excluded.present,local_updated=excluded.local_updated,missing=0''',
+            (account,kind,str(subject),value,int(selected),time.time()))
+
+    def merge_social_page(self, account, kind, values, stamp):
+        with self.db() as db:
+            db.executemany('''INSERT INTO social_members(account,kind,subject,value,present,seen) VALUES(?,?,?,?,1,?)
+                ON CONFLICT(account,kind,subject,value) DO UPDATE SET present=CASE WHEN local_updated>excluded.seen THEN present ELSE 1 END,
+                seen=MAX(seen,excluded.seen),missing=0''',[(account,kind,str(subject),value,stamp) for subject,value in values])
+
+    def finish_social_scan(self, account, kind, stamp):
+        with self.db() as db:
+            key='social-scan:'+kind;old=db.execute('SELECT value FROM settings WHERE account=? AND key=?',(account,key)).fetchone()
+            if old and float(json.loads(old[0]))>=stamp:return
+            db.execute('UPDATE social_members SET missing=missing+1 WHERE account=? AND kind=? AND present=1 AND seen<? AND local_updated<?',(account,kind,stamp,stamp))
+            db.execute('UPDATE social_members SET present=0 WHERE account=? AND kind=? AND missing>=2 AND local_updated<?',(account,kind,stamp))
+            db.execute('INSERT OR REPLACE INTO settings VALUES(?,?,?)',(account,key,json.dumps(stamp)))
+            if kind=='follow':
+                ids=[r[0] for r in db.execute("SELECT subject FROM social_members WHERE account=? AND kind='follow' AND present=1",(account,))]
+                db.execute('INSERT OR REPLACE INTO settings VALUES(?,?,?)',(account,'follows',json.dumps(ids)))
+
+    def sync_follows(self, account, token):
+        with self.follows_lock:
+            old=self.setting(account,'follow-sync',{})
+            if time.time()-old.get('attempted',0)<86400:return
+            stamp=time.time();self.save(account,'follow-sync',dict(attempted=stamp))
+            try:
+                raw=self.call(token,'user.getFollowingUsers',fresh=True)
+                self.merge_social_page(account,'follow',[(x.get('id') if isinstance(x,dict) else x,'') for x in raw],stamp)
+                self.finish_social_scan(account,'follow',stamp)
+            except (ValueError,OSError):pass # Keep the cached follows and durable daily retry limit.
+
+    def like_index(self, account):
+        with self.db() as db:
+            result={}
+            for row in db.execute("SELECT subject,value FROM social_members WHERE account=? AND kind='reaction' AND present=1",(account,)):
+                result.setdefault(row['subject'],[]).append(row['value'])
+            return result
 
     def merge_collection_page(self, account, cid, items, stamp):
         with self.db() as db:
@@ -327,8 +383,15 @@ class Browser:
             ON CONFLICT(account,collection,image) DO UPDATE SET present=excluded.present,local_updated=excluded.local_updated,missing=0''',
             (account,str(cid),str(iid),int(selected),time.time()))
 
-    def images(self, account, token, filters, limit=20, meta=True):
+    def images(self, account, token, filters, limit=20, meta=True, social_stamp=None):
         raw = self.call(token, 'image.getInfinite', {'limit':limit, 'browsingLevel':31, 'withMeta':meta, 'withTags':True, 'include':['tagIds','profilePictures'], **filters})
+        if social_stamp is not None:
+            values=[]
+            for image in raw.get('items',[]):
+                reactions=[r.get('reaction') if isinstance(r,dict) else r for r in image.get('reactions',[]) or []]
+                # A reaction-filtered page proves a positive relationship even if its light metadata omits the emoji.
+                values.extend((image['id'],r) for r in reactions or ['Like'] if r in REACTIONS)
+            self.merge_social_page(account,'reaction',values,social_stamp)
         items = [self.remember(account, x) for x in raw.get('items', [])]
         return [i for i in items if i], raw.get('nextCursor')
 
@@ -522,8 +585,7 @@ class Browser:
         # importer is asynchronous; otherwise a well-connected new account would
         # incorrectly get a full page of LoRA filler on its first visit.
         if self.setting(account, 'follows') is None:
-            follows = self.call(token, 'user.getFollowingUsers')
-            self.save(account, 'follows', [ident(x['id'] if isinstance(x, dict) else x) for x in follows])
+            self.sync_follows(account,token)
         with self.lock:
             if active:
                 self.leases[account] = time.monotonic()+45
@@ -535,6 +597,7 @@ class Browser:
             count = db.execute('SELECT COUNT(DISTINCT image) FROM observations WHERE account=?', (account,)).fetchone()[0]
         return dict(account=account, username=me['username'], profile=self.user_url(me['username']), collections=collections,
                     collectionIndex=self.collection_index(account),
+                    likeIndex=self.like_index(account),
                     followingIds=[str(x) for x in self.setting(account,'follows',[])],
                     timeouts=self.timeouts(account), bans=self.bans(account), importState=state, learned=count, follows=len(self.setting(account, 'follows', [])),**self.tag_weight_snapshot(account))
 
@@ -543,30 +606,32 @@ class Browser:
 
     def _import_loop(self, account, token):
         try:
+            if self.leases.get(account,0)>time.monotonic() and self.models.token()==token:self.sync_follows(account,token)
             if self.leases.get(account,0)>time.monotonic() and self.models.token()==token:
                 try:self.public_curations(account,token,self.setting(account,'follows',[]))
                 except (Deferred,ValueError):pass
             state = self.setting(account, 'import', {})
             bootstrap=not self.setting(account,'collection-index-complete',False)
-            if state.get('complete') and time.time()-state.get('finished', 0)<86400 and not bootstrap:return
+            social_bootstrap=not self.setting(account,'like-index-complete',False)
+            if state.get('complete') and time.time()-state.get('finished', 0)<86400 and not bootstrap and not social_bootstrap:return
             if not state.get('sources') or state.get('complete'):
-                sources = ([] if bootstrap and state.get('complete') else ['reactions']) + ['collection:'+str(c['id']) for c in self.collections(account, token)]
+                recent=state.get('complete') and time.time()-state.get('finished',0)<86400
+                sources = (['reactions'] if social_bootstrap or not recent else []) + (['collection:'+str(c['id']) for c in self.collections(account, token)] if bootstrap or not recent else [])
                 state = dict(sources=sources, index=0, cursor=None, processed=0, complete=False, stamp=str(time.time()))
-                follows = self.call(token, 'user.getFollowingUsers')
-                self.save(account, 'follows', [ident(x['id'] if isinstance(x, dict) else x) for x in follows])
                 self.save(account, 'import', state)
             state.pop('error', None)
             while self.leases.get(account, 0)>time.monotonic() and self.models.token()==token:
                 if state['index'] >= len(state['sources']):
                     state.update(complete=True, finished=time.time(), label='Preferences up to date')
                     self.save(account,'collection-index-complete',True)
+                    self.save(account,'like-index-complete',True)
                     self.save(account, 'import', state);break
                 source=state['sources'][state['index']]
                 filters = {'reactions':list(REACTIONS)} if source=='reactions' else {'collectionId':int(source.split(':')[1])}
                 filters['sort']='Newest'
                 if state.get('cursor') is not None: filters['cursor']=state['cursor']
                 state['label']='Learning from your reactions' if source=='reactions' else 'Learning from your collections'
-                with background_work(quiet=True):items, cursor=self.images(account, token, filters, 200, meta=False)
+                with background_work(quiet=True):items, cursor=self.images(account, token, filters, 200, meta=False,social_stamp=float(state['stamp']) if source=='reactions' else None)
                 if source.startswith('collection:'):self.merge_collection_page(account,source.split(':')[1],items,float(state['stamp']))
                 for item in items:
                     score=max(1,len([r for r in item['reactions'] if r in REACTIONS])) if source=='reactions' else 1
@@ -576,6 +641,7 @@ class Browser:
                     raise ValueError('Civitai repeated a page cursor. Import paused; retry later.')
                 state['cursor']=cursor
                 if cursor is None:
+                    if source=='reactions':self.finish_social_scan(account,'reaction',float(state['stamp']))
                     if source.startswith('collection:'):self.finish_collection_scan(account,source.split(':')[1],float(state['stamp']))
                     with self.db() as db:
                         db.execute('DELETE FROM observations WHERE account=? AND source=? AND CAST(stamp AS REAL)<?', (account, source, float(state['stamp'])))
@@ -826,6 +892,7 @@ class Browser:
 
     def _detail(self, image_id, prefetch):
         me, token=self.account();account=me['id'];image_id=str(ident(image_id))
+        if not prefetch and self.setting(account,'follows') is None:self.sync_follows(account,token)
         item=self.stored(account,image_id)
         if not item:
             items,_=self.images(account,token,{'imageId':int(image_id)},1)
@@ -870,9 +937,7 @@ class Browser:
             item['resources']=[dict(versionId=str(r.get('modelVersionId') or ''),modelId=str(r.get('modelId') or ''),
                 name=str(r.get('modelName') or 'Resource'),version=str(r.get('modelVersionName') or ''),type=str(r.get('modelType') or 'Resource'),weight='') for r in raw]
         if not prefetch:
-            follows=self.call(token,'user.getFollowingUsers')
-            follows=[str(x.get('id') if isinstance(x,dict) else x) for x in follows]
-            self.save(account,'follows',follows)
+            follows=[str(x) for x in self.setting(account,'follows',[])]
             item['following']=item['creatorId'] in follows
             if not item.get('tagsKnown') or any(not t.get('name') for t in item['tags']):
                 item['tags']=self.call(token,'tag.getVotableTags',{'type':'image','id':int(image_id)});item['tagsKnown']=True
@@ -956,7 +1021,9 @@ class Browser:
                 if (str(uid) in follows)!=desired:self.call(token,'user.toggleFollow',{'targetUserId':uid},True)
                 follows=current()
                 if (str(uid) in follows)!=desired:raise ValueError('Follow change is not confirmed yet. Refresh before retrying.')
-                self.save(account,'follows',follows);result=dict(ok=True,selected=desired)
+                self.save(account,'follows',follows)
+                with self.db() as db:self.set_social_delta(db,account,'follow',uid,'',desired)
+                result=dict(ok=True,selected=desired)
             else:
                 iid=ident(payload.get('imageId'));item=self.stored(account,iid)
                 if not item:raise ValueError('Open this media before interacting with it.')
@@ -993,6 +1060,7 @@ class Browser:
                     if (reaction in values)!=desired:self.call(token,'reaction.toggle',{'entityId':iid,'entityType':'image','reaction':reaction},True)
                     values=current()
                     if (reaction in values)!=desired:raise ValueError('Reaction is not confirmed yet. Refresh before retrying.')
+                    with self.db() as db:self.set_social_delta(db,account,'reaction',iid,reaction,desired)
                     self.observe(account,'reactions',item,len([r for r in values if r in REACTIONS]),str(time.time()))
                     result=dict(ok=True,reactions=values)
                 elif kind=='collect':

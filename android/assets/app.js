@@ -79,7 +79,11 @@ async function init(){
   label.textContent=beta?'Beta '+beta[1]:'v'+version;label.title=version;label.hidden=false;
  }
  await loadNotes();await loadChat();await initDesktop();if(!window.Desktop)initBridgeDrawer();render();
- if(!window.Desktop)drawer(true);
+ if(!window.Desktop){
+  const savedConnection=info();
+  if(savedConnection.paired&&String(savedConnection.host||'').trim()){wanted=true;nextProbe=0;renderBridge();heartbeat();}
+  else drawer(true);
+ }
  setInterval(heartbeat,2500);document.addEventListener('visibilitychange',()=>{if(!document.hidden){nextProbe=0;nextSync=0;nextSettings=0;heartbeat();if(page==='notepad')syncNotes();}else if(profileDirty)flushProfile();});
  window.openJobAlert=async()=>{const route=window.Native?.notificationRoute();if(!route)return;
   if(!connected&&info().paired&&!connecting&&!wanted){navigate('bridge');await $('#connect').onclick();}

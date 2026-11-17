@@ -66,6 +66,8 @@ class SocialOutbox:
                      state='pending',retryAt=0,attempted=bool(old and old.get('attempted')),attempts=0,error='')
             self.save(db,account,row)
             if row['kind']=='collect':self.b.set_collection_delta(db,account,row['collectionId'],row['imageId'],row['selected'])
+            elif row['kind']=='follow':self.b.set_social_delta(db,account,'follow',row['creatorId'],'',row['selected'])
+            elif row['kind']=='reaction':self.b.set_social_delta(db,account,'reaction',row['imageId'],row['reaction'],row['selected'])
             db.execute('INSERT OR REPLACE INTO social_sequences VALUES(?,?,?,?)',(account,client,key,seq))
             db.execute('INSERT INTO social_receipts VALUES(?,?,?,?)',(account,request,fingerprint,row['revision']))
         self.learn(account,row);self.wake.set()
@@ -136,6 +138,11 @@ class SocialOutbox:
 
     def confirm_cache(self,account,row):
         with self.b.db() as db:
+            latest=db.execute('SELECT payload FROM social_outbox WHERE account=? AND key=?',(account,row['key'])).fetchone()
+            if latest and json.loads(latest[0])['revision']==row['revision']:
+                if row['kind']=='collect':self.b.set_collection_delta(db,account,row['collectionId'],row['imageId'],row['selected'])
+                elif row['kind']=='follow':self.b.set_social_delta(db,account,'follow',row['creatorId'],'',row['selected'])
+                else:self.b.set_social_delta(db,account,'reaction',row['imageId'],row['reaction'],row['selected'])
             if row['kind']=='follow':
                 old=db.execute("SELECT value FROM settings WHERE account=? AND key='follows'",(account,)).fetchone()
                 ids={str(v) for v in json.loads(old[0])} if old else set()

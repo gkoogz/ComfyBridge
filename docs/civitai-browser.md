@@ -1048,3 +1048,37 @@ external additions, two-scan removals, partial-scan preservation, replayed compl
 local changes during scans and account isolation. Social-outbox, browser and bank
 suites retain write reconciliation and queue guarantees. Browser tests verify cached
 membership with no menu lookup plus immediate whole-row toggling.
+
+
+## Beta 112: daily follows/likes and launch reconnect
+
+social_members stores follows and per-image reactions independently of cached
+media. Migration seeds saved follows and existing reaction metadata. Ordinary
+feed data only seeds previously unknown positive reactions; it cannot overwrite
+an explicit local state. Both enqueue and confirmation persist desired states,
+with revision checks preventing an older acknowledgement from reverting a newer
+choice. This also covers queued actions created before the migration.
+
+sync_follows records a durable attempt timestamp before fetching and permits at
+most one daily reconciliation, including failures/restarts. First-use bootstrap
+can establish an absent follow cache; subsequent detail opens use cached follows.
+The daily paginated reaction importer fills the like index without an additional
+per-image lookup. Completed-scan receipts and two-miss removal rules preserve
+additions and partial data, matching collection reconciliation. Local changes
+made after scan start are protected. Only actual queued toggle writes retain
+fresh remote-state verification, necessary for safe ambiguous-response retries.
+
+Status supplies likeIndex for device snapshots alongside followingIds. In-flight
+status reads cannot overwrite a local edit begun after that read. Feed, bank and
+detail payloads get current indexed reactions. Existing social write scheduling
+and daily collection import remain unchanged.
+
+Android init attempts a saved paired host through the existing heartbeat path;
+known connections do not force the sidebar open. Backoff/retry and authentication
+failure handling are reused. Manual disconnect disables retries for that session.
+
+Checks: test_social_cache covers daily limits, failures, restart persistence,
+stale scans, complete reaction import and read-free repeated media opens.
+Social outbox/API-budget suites cover safe writes. launch-connect.cjs checks
+saved pairing, initial failure/retry, manual disconnect and unpaired startup.
+Browser validation does not establish physical-phone behavior.

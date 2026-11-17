@@ -84,7 +84,7 @@ const CivitaiBrowser=(()=>{
   Native.registerBrowseMedia(account,JSON.stringify(urls));
  }
  const details=new Map(),detailRequests=new Map(),imageRequests=new Map();
- const socialRevisions=new Map();let followRevision=0,banRevision=0,collectionRevision=0;
+ const socialRevisions=new Map();let followRevision=0,banRevision=0,collectionRevision=0,likeRevision=0;
  let seenScope='',seenPosts=new Set(),pendingSeen=new Set(),seenTimer,seenSending=false,replacingCache=false,cacheCheckAt=0;
  const exposureTimers=new Map();
  function loadSeen(){
@@ -626,7 +626,7 @@ const CivitaiBrowser=(()=>{
  }
  async function refreshStatus(force=false){
   if(!available()||(!force&&Date.now()-lastStatus<14000))return;lastStatus=Date.now();
-  let s;const followTicket=followRevision,banTicket=banRevision,collectionTicket=collectionRevision;
+  let s;const followTicket=followRevision,banTicket=banRevision,collectionTicket=collectionRevision,likeTicket=likeRevision;
   try{s=await api('browse/status',{cursors:[cursor,stripCursor,...history.map(h=>h.cursor)].filter(Boolean),activityAge:activityAge()/1000});}
   catch(error){if(!/HTTP (404|405)/.test(error.message))throw error;s=await api('browse/status');}
   await scrollOpportunity();if(!available())return;
@@ -634,6 +634,8 @@ const CivitaiBrowser=(()=>{
   if(account&&account!==s.account){reset();details.clear();detailQueue=[];muted={};close();clearFeed();$('#browseCarousel')?.replaceChildren();}
   if(account===s.account&&banTicket!==banRevision)s.bans=status?.bans||[];
   if(account===s.account&&collectionTicket!==collectionRevision&&status?.collectionIndex)s.collectionIndex=status.collectionIndex;
+  if(account===s.account&&likeTicket!==likeRevision&&status?.likeIndex)s.likeIndex=status.likeIndex;
+  if(account===s.account&&s.likeIndex)for(const item of allItems())item.reactions=[...(s.likeIndex[String(item.id)]||[])];
   account=s.account;loadSeen();status=s;paintSocialQueue();socialSoon();acceptTagWeights(s);$('#browseHello').textContent='Hello '+s.username;
   muted=s.timeouts||muted;
   if(!channel||(channel!=='reactions'&&!s.collections.some(c=>'collection:'+c.id===channel)))channel=s.collections.length?'collection:'+s.collections[0].id:'reactions';
@@ -1088,6 +1090,7 @@ const CivitaiBrowser=(()=>{
   if(data.kind==='collect'){collectionRevision++;if(status?.collectionIndex){const ids=new Set(status.collectionIndex[String(data.imageId)]||[]);data.selected?ids.add(String(data.collectionId)):ids.delete(String(data.collectionId));status.collectionIndex[String(data.imageId)]=[...ids];}}
   const item=allItems().find(i=>String(i.id)===String(data.imageId))||{id:data.imageId};
   const result=overlaySocial(item);
+  if(data.kind==='reaction'){likeRevision++;if(status?.likeIndex)status.likeIndex[String(data.imageId)]=result.reactions||[];}
   // Handlers paint immediately in this same microtask, without a bridge roundtrip.
   queueMicrotask(paintSocialQueue);
   return {ok:true,queued:true,selected:data.selected,reactions:result.reactions||[],collections:result.collections||[]};
