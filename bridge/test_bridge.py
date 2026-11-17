@@ -39,7 +39,9 @@ class BridgeTests(unittest.IsolatedAsyncioTestCase):
         defaults = w.WF.defaults()
         self.settings = copy.deepcopy(defaults['image'])
         self.settings['positive'] = 'A blue ceramic sphere'; self.settings['negative'] = ''
-        w.CATALOG = dict(models=[self.settings['model']],loras=[x['name'] for x in self.settings['loras']],defaults=defaults)
+        w.CATALOG = dict(models=[self.settings['model']],loras=[x['name'] for x in self.settings['loras']],defaults=defaults,
+                         samplers=[self.settings['sampler'],'euler','euler_ancestral'],
+                         videoSamplers=['euler','res_multistep',defaults['video'].get('sampler','euler')])
         w.STOPPING.clear(); w.ACTIVE=None; w.PREVIEW=None
         self.calls=[]; self.accepted={}; self.history={}; self.complete=True
         self.desktop=['desktop',str(uuid.uuid4()),{},{}]

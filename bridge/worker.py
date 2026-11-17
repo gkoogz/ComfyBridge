@@ -790,6 +790,8 @@ async def api(request):
         return web.json_response(await asyncio.to_thread(MODEL_DOWNLOADS.prepare,path.split('/')[-1]))
     if path == 'lora-download/start' and request.method=='POST':
         return web.json_response(await asyncio.to_thread(MODEL_DOWNLOADS.start,(await request.json()).get('confirmation')))
+    if path == 'embedding-search' and request.method=='GET':
+        return web.json_response(await asyncio.to_thread(MODELS.search_embeddings,request.query.get('q',''),request.query.get('cursor','')))
     if path == 'model-library':
         return web.json_response(MODELS.snapshot())
     if path == 'browse/preferences' and request.method == 'GET':
@@ -841,8 +843,11 @@ async def api(request):
         except (ValueError,FileNotFoundError):raise web.HTTPNotFound()
     if path.startswith('model-preview/'):
         try:
-            _,identity,index=path.split('/')
-            return web.FileResponse(MODELS.preview(identity,index),headers={'Cache-Control':'private, max-age=86400'})
+            parts=path.split('/')
+            if len(parts) not in (3,4) or len(parts)==4 and parts[3]!='full':raise ValueError('Invalid preview')
+            _,identity,index=parts[:3]
+            file=await asyncio.to_thread(MODELS.preview,identity,index,len(parts)==4)
+            return web.FileResponse(file,headers={'Cache-Control':'private, max-age=86400'})
         except (ValueError,FileNotFoundError):raise web.HTTPNotFound()
     if path.startswith('resume-checkpoint/') and request.method=='POST':
         id=str(uuid.UUID(path.split('/',1)[1]))
@@ -892,7 +897,7 @@ async def api(request):
                     j['etaSeconds']=None
                 else:
                     j['progress'],j['current_node']=TRACKER.sample()
-        return web.json_response(dict(protocol=20,build='0.1.0-beta.114',jobs=jobs, active=ACTIVE, preview=bool(PREVIEW), previewRevision=PREVIEW_REV,ownedComfy=bool(OWNED),queueEtaSeconds=total_eta))
+        return web.json_response(dict(protocol=20,build='0.1.0-beta.115',jobs=jobs, active=ACTIVE, preview=bool(PREVIEW), previewRevision=PREVIEW_REV,ownedComfy=bool(OWNED),queueEtaSeconds=total_eta))
     if path.startswith('preview/'):
         job=str(uuid.UUID(path[8:]))
         after=int(request.query.get('after','-1'))

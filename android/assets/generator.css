@@ -143,7 +143,23 @@ body:is([data-page=image],[data-page=video]) .modeRow{margin:2px 0 7px}
 .loraActions .seeListing,.loraActions .loraRemove{height:36px;min-height:36px;border:1px solid #4b5e67;border-radius:9px;background:var(--panel2)}
 .loraActions .seeListing{padding:0 10px;font-size:12px}
 .loraNote{grid-row:3}
-.promptActions .savedPrompts{background:var(--mint);color:#10251d;font-size:12px;padding:0 8px}
+.promptActions :is(.savedPrompts,.embeddingBrowser){background:transparent;color:var(--mint);border:1px solid #75b798;font-size:12px;padding:0 8px}
+.embeddingEditor{width:100%;min-height:118px;background:#0e151a;border:1px solid var(--line);border-radius:10px;padding:11px;line-height:1.8;white-space:pre-wrap;overflow-wrap:anywhere;overflow:auto;outline:none;user-select:text}
+.embeddingEditor:focus{border-color:var(--mint)}
+.embeddingEditor[hidden]{display:none}
+.embeddingEditor.fullEmbeddingEditor{height:100%;resize:none}
+.embeddingBlock{display:inline-flex;align-items:center;vertical-align:middle;white-space:nowrap;max-width:100%;border:1px solid #709b87;border-radius:8px;background:#173128;color:var(--mint);font-size:13px;line-height:1.3;margin:2px 3px;user-select:none;overflow:hidden}
+.embeddingName{padding:4px 6px;min-width:0;flex:0 1 auto;overflow:hidden;text-overflow:ellipsis}
+.embeddingStrength{font-variant-numeric:tabular-nums;min-width:30px;flex:none;text-align:center}
+.embeddingBlock button{display:inline-grid;place-items:center;padding:0;width:30px;min-width:30px;flex:none;min-height:34px;height:34px;border:0;border-radius:0;background:transparent;color:var(--mint)}
+.embeddingBlock button:last-child{color:var(--red)}
+.embeddingBlock svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2.6;stroke-linecap:round;stroke-linejoin:round}
+.embeddingBlock button:active{background:#ffffff18}
+.embeddingSearchTools{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:10px 0}
+.embeddingCompatibility{display:block;font-size:12px;padding:7px 0;color:var(--mint)}
+.embeddingCompatibility.incompatible{color:var(--red)}
+.embeddingInsertActions{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px}
+.embeddingInsertActions button{color:var(--mint);border-color:#75b798;background:transparent}
 .savedPromptItem{padding:12px 0;border-bottom:1px solid #ffffff20;margin-bottom:12px}
 .savedPromptItem p{white-space:pre-wrap;overflow-wrap:anywhere;margin:6px 0}
 #savedPromptText{width:100%;margin-top:6px}

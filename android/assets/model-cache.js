@@ -11,7 +11,7 @@ class ListingPreviewCache {
    for(const record of all)if(record.scope===options.scope){this.records.set(record.key,record);await this.hydrate(record);}
   }).catch(error=>{this.error='Device preview storage unavailable: '+error.message;throw error;});
  }
- key(item){return (this.options.scope||'local')+'|'+item.kind+':'+item.name;}
+ key(item){return (this.options.scope||'local')+'|'+item.kind+':'+(item.kind==='embedding_remote'?item.id:item.name);}
  imageKey(sample){return sample.source||sample.id||sample.path;}
  visible(sample){return this.allowMature||!sample.mature;}
  open(name){return new Promise((resolve,reject)=>{
@@ -39,7 +39,7 @@ class ListingPreviewCache {
  async register(items,allowMature=this.allowMature,inventoryComplete=true){
   await this.ready;this.pause();this.allowMature=allowMature;this.inventoryComplete=inventoryComplete;this.manifest=new Set();
   for(const item of items){
-   if(!['checkpoints','loras','diffusion_models'].includes(item.kind))continue;
+   if(!['checkpoints','loras','diffusion_models','embeddings','embedding_remote'].includes(item.kind))continue;
    const key=this.key(item);this.manifest.add(key);
    let record=this.records.get(key);
    if(!record){record={key,scope:this.options.scope,item,active:[],desired:[],entries:[],pages:[],installedAt:0,
@@ -184,11 +184,11 @@ const ModelPreviews={
   const config=window.Native?JSON.parse(Native.configuration()):{},scope=config.fingerprint||config.host||(window.Desktop?'desktop':'local');
   if(!this.store||this.scope!==scope){this.store?.close();this.scope=scope;this.store=new ListingPreviewCache({scope,
    canDownload:()=>connected&&!document.hidden&&window.Native?.listingPreviewsAllowed?.()!==false&&this.libraryEpoch===epoch&&!syncing&&!filling&&!originalTransfers.size&&!catalogLoading&&!profileBusy&&!profileLoad&&!(profileReady&&profileDirty)&&!settingsBusy,
-   isViewing:item=>!!modelBrowser&&$('#modal').open&&[modelBrowser.preview?.gallery.item,...browserItems(modelBrowser)].some(x=>x&&x.kind===item.kind&&x.name===item.name),
+   isViewing:item=>!!modelBrowser&&($('#modal').open||!!modelBrowser.preview)&&[modelBrowser.preview?.gallery.item,...browserItems(modelBrowser)].some(x=>x&&x.kind===item.kind&&x.name===item.name),
    changed:()=>{if(typeof modelPreviewCacheChanged==='function')modelPreviewCacheChanged();}});}
   await this.store.ready;return this.store;
  },
- async register(items,nsfwHidden,scanning=false){const store=await this.cache();await store.register(items,nsfwHidden!==true,!scanning);return store;},
+ async register(items,nsfwHidden,scanning=false){const store=await this.cache();const remote=typeof modelBrowser!=='undefined'?modelBrowser?.remote||[]:[];const combined=[...items,...remote.filter(item=>!items.some(old=>old.id===item.id))];await store.register(combined,nsfwHidden!==true,!scanning);return store;},
  async start(data){
   try{await this.register(data.listings||[],data.nsfwHidden,data.scanning);this.wake();}catch{/* Browsing reports a storage failure without preventing generation. */}
  },

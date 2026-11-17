@@ -49,6 +49,18 @@ class GalleryTests(unittest.TestCase):
         self.assertEqual(resource['name'],'Ceramic Detail');self.assertEqual(resource['weight'],'0.6')
         self.assertEqual(first['items'][0]['imageUrl'],'https://civitai.com/images/1')
         self.assertEqual(urllib.parse.parse_qs(urllib.parse.urlparse(self.calls[1][0]).query)['cursor'],['feed:next|opaque'])
+    def test_video_gallery_uses_cached_poster_and_verified_mp4(self):
+        raw=self.sample();raw.update(type='video',url='https://image.civitai.com/token/asset/width=768/clip.mp4')
+        def fetch(url,*args,**kwargs):
+            if '/api/' in url:return json.dumps({'items':[raw],'metadata':{}}).encode()
+            if 'anim=false' in url:return self.image
+            return b'\x00\x00\x00\x18ftypisom'+b'fixture'*8
+        with patch('model_gallery.fetch',side_effect=fetch) as request:
+            page=self.gallery.page(self.id);self.assertEqual(page['items'][0]['type'],'video')
+            poster=self.gallery.preview(self.id,'1','thumb');self.assertEqual(poster.suffix,'.jpg')
+            video=self.gallery.preview(self.id,'1','full');self.assertEqual(video.suffix,'.mp4')
+            count=request.call_count;self.gallery.preview(self.id,'1','full');self.assertEqual(request.call_count,count)
+        with Image.open(poster) as image:self.assertEqual(image.size,(120,240))
 
     def test_empty_page_retains_next_cursor_without_following_untrusted_next_url(self):
         raw=dict(items=[],metadata=dict(nextPage='https://example.test/inject?cursor=opaque%3A2'))

@@ -25,6 +25,7 @@ function setBatchMenu(open){
 let promptExpanded={},promptResizeObserver;
 function sizePrompt(field,expanded){
  const key=field.dataset.setting,button=$('[data-prompt-height="'+key+'"]');
+ field=field._embeddingEditor?.active?field._embeddingEditor.root:field;
  promptExpanded[key]=expanded;
  button.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>';
  button.setAttribute('aria-expanded',String(expanded));
@@ -48,6 +49,7 @@ function bindPromptSizing(){
   field.addEventListener('input',()=>sizePrompt(field,true));
   $('[data-prompt-height="'+key+'"]').onclick=()=>sizePrompt(field,!promptExpanded[key]);
   promptResizeObserver.observe(field);
+  if(field._embeddingEditor){field._embeddingEditor.root.dataset.setting=key;promptResizeObserver.observe(field._embeddingEditor.root);}
  }
 }
 const limit=(n,min,max)=>Math.min(max,Math.max(min,n));

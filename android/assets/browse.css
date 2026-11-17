@@ -361,3 +361,6 @@ header.hasBrowseSubject #headerIdentity{min-height:44px}
 .feedCollectionChoices input:indeterminate+.collectionCheck::after{content:"";width:8px;height:2px;background:var(--muted)}
 
 .feedCollectionChoices label{color:var(--text)}
+
+.civitaiViewer .modelPreviewDetails{touch-action:pan-y pinch-zoom}
+.mediaReturnSurface{position:fixed!important;z-index:220!important;pointer-events:none!important;transition:none!important;visibility:visible!important;background:var(--bg);box-shadow:8px 0 30px #0008}

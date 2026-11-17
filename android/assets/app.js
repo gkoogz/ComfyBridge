@@ -413,11 +413,13 @@ function samplingFields(kind,s){
  const selected=s.sampler||fallback||'euler',choices=catalog?.[kind==='image'?'samplers':'videoSamplers']||[];
  return '<div class="field"><label>Sampling method</label><select data-setting="sampler">'+[...new Set([selected,...choices])].map(x=>'<option value="'+esc(x)+'" '+(x===selected?'selected':'')+'>'+esc(x==='euler_ancestral'?'Euler a':x.replaceAll('_',' '))+'</option>').join('')+'</select></div>'+(kind==='image'?'<div class="field"><label>Clip skip</label><input type="number" data-setting="clipSkip" min="1" max="24" step="1" value="'+esc(s.clipSkip??catalog?.defaults?.image?.clipSkip??1)+'"></div>':'');
 }
-function promptField(key,label){return `<section class="card"><div class="promptlabel"><label>${label}</label><button data-expand="${key}" class="textbutton" aria-label="Expand ${label}">⛶</button></div><textarea class="promptEntry" rows="5" data-setting="${key}" placeholder="${key==='negative'?'What should the model avoid?':'Describe your idea…'}">${esc(state.settings[page][key]??'')}</textarea><div class="promptActions"><button type="button" class="savedPrompts green" data-saved-prompts="${key}">Saved Prompts</button><span class="quickActions" data-quick-actions="${key}"></span><button type="button" class="textbutton promptChat" data-chat-prompt="${key}">Chat about this ↗</button><button type="button" class="textbutton promptHeight" data-prompt-height="${key}" aria-expanded="false" aria-label="Show all ${label}">⌄</button></div><div class="quickPanel" data-quick-panel="${key}"></div>${page==='video'&&key==='negative'?'<small>Optional. Adding text uses extra sampling time. Leave blank for the standard H3 workflow.</small>':''}</section>`;}
+function promptField(key,label){return `<section class="card"><div class="promptlabel"><label>${label}</label><button data-expand="${key}" class="textbutton" aria-label="Expand ${label}">⛶</button></div><textarea class="promptEntry" rows="5" data-setting="${key}" placeholder="${key==='negative'?'What should the model avoid?':'Describe your idea…'}">${esc(state.settings[page][key]??'')}</textarea><div class="promptActions"><button type="button" class="savedPrompts" data-saved-prompts="${key}">Saved Prompts</button><button type="button" class="embeddingBrowser" data-embeddings="${key}">Embeddings</button><span class="quickActions" data-quick-actions="${key}"></span><button type="button" class="textbutton promptChat" data-chat-prompt="${key}">Chat about this ↗</button><button type="button" class="textbutton promptHeight" data-prompt-height="${key}" aria-expanded="false" aria-label="Show all ${label}">⌄</button></div><div class="quickPanel" data-quick-panel="${key}"></div>${page==='video'&&key==='negative'?'<small>Optional. Adding text uses extra sampling time. Leave blank for the standard H3 workflow.</small>':''}</section>`;}
 function wirePrompts(){
  bindQuickEdits();
  $$('[data-chat-prompt]').forEach(b=>b.onclick=()=>chatAboutPrompt(b.dataset.chatPrompt));
  $$('textarea[data-setting]').forEach(el=>el.oninput=()=>{state.settings[page][el.dataset.setting]=el.value;persist();});
+ $$('textarea.promptEntry').forEach(el=>PromptEmbeddings.attach(el));
+ $$('[data-embeddings]').forEach(b=>b.onclick=()=>openModelBrowser('embeddings',null,b.dataset.embeddings));
  $$('[data-expand]').forEach(b=>b.onclick=()=>openPrompt(b.dataset.expand));
  $$('[data-saved-prompts]').forEach(b=>b.onclick=()=>openSavedPrompts(b.dataset.savedPrompts));
 }
@@ -446,6 +448,7 @@ function openPrompt(key){
  back.setAttribute('aria-label','Back to generator');
  editor.value=settings[key]||'';
  editor.oninput=()=>{settings[key]=editor.value;persist(kind);};
+ PromptEmbeddings.attach(editor);
  $('#applyPrompt').onclick=closeModal;
  $('#modal').addEventListener('close',()=>{if(page===kind)renderGenerator();},{once:true});
 }

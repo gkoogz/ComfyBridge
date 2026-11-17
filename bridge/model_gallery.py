@@ -52,7 +52,7 @@ class Gallery:
         return json.loads(row['payload'])
 
     def sample(self, raw, asset, mature, catalogue=None):
-        if not isinstance(raw,dict) or not safe_preview(raw,mature):return None
+        if not isinstance(raw,dict) or raw.get('type','image') not in ('image','video') or not safe_preview(dict(raw,type='image'),mature):return None
         image_id=positive_id(raw.get('id'));url=raw.get('url','')
         if not image_id or not image_source(url):return None
         meta=raw.get('meta') if isinstance(raw.get('meta'),dict) else {}
@@ -76,13 +76,13 @@ class Gallery:
                     if k in meta and isinstance(meta[k],(str,int,float))}
         host='https://civitai.red' if mature else 'https://civitai.com'
         width=raw.get('width');height=raw.get('height')
-        return dict(id=image_id,source=url,assetVersion=positive_id(asset.get('versionId')),path=f'model-preview/gallery/{asset["id"]}/{image_id}/thumb',
+        return dict(id=image_id,type=raw.get('type','image'),source=url,assetVersion=positive_id(asset.get('versionId')),path=f'model-preview/gallery/{asset["id"]}/{image_id}/thumb',
                     fullPath=f'model-preview/gallery/{asset["id"]}/{image_id}/full',
                     width=width if type(width) is int and 0<width<=50000 else 0,
                     height=height if type(height) is int and 0<height<=50000 else 0,
                     credit=str(raw.get('username',''))[:200],created=str(raw.get('createdAt',''))[:80],
                     prompt=str(meta.get('prompt') or '')[:60000],negativePrompt=str(meta.get('negativePrompt') or '')[:60000],
-                    resources=resources,parameters=parameters,mature=not safe_preview(raw),
+                    resources=resources,parameters=parameters,mature=not safe_preview(dict(raw,type='image')),
                     imageUrl=host+'/images/'+image_id,listingUrl=asset.get('sourceUrl','').replace('https://civitai.com/',host+'/'))
 
     def visible(self, sample):
@@ -105,7 +105,7 @@ class Gallery:
                                   (identity,generation,cursor)).fetchone()
             if cached and time.time()-cached['checked']<PAGE_TTL:
                 return self.public_page(json.loads(cached['payload']))
-            params=dict(modelVersionId=version,limit=PAGE_SIZE,type='image',withMeta='true',sort='Most Reactions',
+            params=dict(modelVersionId=version,limit=PAGE_SIZE,withMeta='true',sort='Most Reactions',
                         browsingLevel=BROWSING_MATURE if token else 1)
             if cursor:params['cursor']=cursor
             try:
@@ -152,15 +152,26 @@ class Gallery:
         source=sample['source']
         if not image_source(source):raise ValueError('Invalid preview source')
         key=hashlib.sha256(source.encode()).hexdigest()[:24]
-        dest=self.files/(key+'-'+size+'.jpg')
+        video=sample.get('type')=='video'
+        if video and size=='thumb':
+            parsed=urllib.parse.urlparse(source);parts=parsed.path.split('/')
+            if len(parts)<4:raise ValueError('Video poster unavailable')
+            parts[-2]='anim=false,width=768';parts[-1]=parts[-1].rsplit('.',1)[0]+'.jpeg'
+            source=parsed._replace(path='/'.join(parts)).geturl()
+        dest=self.files/(key+'-'+size+('.mp4' if video and size=='full' else '.jpg'))
         # Serialize downloads so browsing cannot saturate generation traffic or decode RAM.
         with self.images_lock:
             if not dest.is_file():
-                raw=fetch(source,20*1024*1024)
-                with Image.open(io.BytesIO(raw)) as image_file:
-                    if image_file.width*image_file.height>40000000:raise ValueError('Preview exceeds image size limit')
-                    image_file.thumbnail((2048,2048) if size=='full' else (768,768))
-                    tmp=dest.with_suffix('.tmp');image_file.convert('RGB').save(tmp,format='JPEG',quality=90 if size=='full' else 84);tmp.replace(dest)
+                raw=fetch(source,(128 if video and size=='full' else 20)*1024*1024)
+                tmp=dest.with_suffix('.tmp')
+                if video and size=='full':
+                    if raw[4:8]!=b'ftyp':raise ValueError('Civitai returned an unsupported video format')
+                    tmp.write_bytes(raw);tmp.replace(dest)
+                else:
+                    with Image.open(io.BytesIO(raw)) as image_file:
+                        if image_file.width*image_file.height>40000000:raise ValueError('Preview exceeds image size limit')
+                        image_file.thumbnail((2048,2048) if size=='full' else (768,768))
+                        image_file.convert('RGB').save(tmp,format='JPEG',quality=90 if size=='full' else 84);tmp.replace(dest)
             dest.touch();self.trim_cache(dest)
         if not self.visible(sample):raise FileNotFoundError('Preview unavailable')
         return dest
@@ -204,7 +215,7 @@ class Gallery:
         return dict(resources=sample['resources'])
 
     def trim_cache(self, keep):
-        files=sorted(self.files.glob('*.jpg'),key=lambda p:p.stat().st_mtime)
+        files=sorted((p for p in self.files.iterdir() if p.suffix in ('.jpg','.mp4')),key=lambda p:p.stat().st_mtime)
         total=sum(p.stat().st_size for p in files)
         for path in files:
             if total<=CACHE_BYTES:break

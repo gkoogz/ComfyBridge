@@ -41,6 +41,23 @@ class DownloadTests(unittest.TestCase):
         self.assertEqual(plan['status'],'confirm');self.assertEqual(plan['baseModel'],'SDXL')
         self.assertEqual(plan['filename'],'pottery.safetensors');self.assertEqual(plan['bytes'],len(self.payload))
         self.open.assert_not_called();self.assertFalse(self.folder.exists());self.assertFalse(self.downloads.busy())
+    def test_embedding_download_goes_to_embeddings_and_preserves_extension(self):
+        self.raw['model']['type']='TextualInversion';self.raw['files'][0]['name']='pottery token.pt'
+        plan=self.queue();self.assertEqual(plan['filename'],'pottery_token.pt');self.assertTrue(plan['destination'].endswith('embeddings'))
+        self.finish();target=self.root/'models/embeddings/pottery_token.pt'
+        self.assertEqual(target.read_bytes(),self.payload);self.assertFalse(self.folder.exists())
+        self.assertEqual(self.downloads.status(['7'])['7']['status'],'installed')
+        self.assertEqual(self.library.snapshot()['items'][0]['kind'],'embeddings')
+        self.assertEqual(self.enrich.call_args.args[1],'embeddings')
+    def test_embedding_checksum_failure_never_installs(self):
+        self.raw['model']['type']='TextualInversion';self.raw['files'][0]['name']='pottery.safetensors'
+        self.queue();self.payload=b'wrong payload';self.finish()
+        self.assertEqual(self.downloads.status(['7'])['7']['status'],'error')
+        self.assertEqual(list((self.root/'models/embeddings').glob('*.safetensors')),[])
+    def test_embedding_pickle_danger_is_rejected(self):
+        self.raw['model']['type']='TextualInversion';self.raw['files'][0].update(name='pottery.pt',pickleScanResult='Danger')
+        with self.assertRaisesRegex(ValueError,'unsafe'):self.downloads.prepare('7')
+        self.open.assert_not_called()
     def test_file_id_url_is_preserved_and_download_verified(self):
         url='https://civitai.com/api/download/models/7?fileId=9'
         self.raw['files'][0]['downloadUrl']=url

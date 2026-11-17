@@ -161,7 +161,7 @@ def extra_images(version_id, token=''):
 
 
 def roots(root):
-    result={k:[root/'models'/k] for k in ('checkpoints','loras','diffusion_models')}
+    result={k:[root/'models'/k] for k in ('checkpoints','loras','diffusion_models','embeddings')}
     extra=root/'extra_model_paths.yaml'
     if extra.is_file():
         import yaml
@@ -175,20 +175,38 @@ def roots(root):
     return result
 
 
+def embedding_encoder(path):
+    """Read tensor dimensions, never deserialize executable pickle weights."""
+    if path.suffix.lower()!='.safetensors':return ''
+    try:
+        with path.open('rb') as stream:
+            size=struct.unpack('<Q',stream.read(8))[0]
+            if not 2<=size<=1024*1024:return ''
+            header=json.loads(stream.read(size))
+        shapes={key:value.get('shape',[]) for key,value in header.items() if isinstance(value,dict) and key!='__metadata__'}
+        if shapes.get('clip_g',[])[-1:]==[1280] and shapes.get('clip_l',[])[-1:]==[768]:return 'SDXL'
+        dims={shape[-1] for shape in shapes.values() if shape}
+        if dims=={768}:return 'SD 1.x'
+        if dims=={1024}:return 'SD 2.x'
+    except (OSError,ValueError,struct.error,TypeError):pass
+    return ''
+
+
 class Library:
     def __init__(self,root,data):
         self.root=Path(root);self.data=Path(data)/'model-library';self.data.mkdir(parents=True,exist_ok=True)
         self.previews=self.data/'previews';self.previews.mkdir(exist_ok=True)
-        self.running=False;self.last=0
+        self.running=False;self.last=0;self.preview_lock=threading.Lock()
         with self.db() as db:
             db.execute('CREATE TABLE IF NOT EXISTS assets(id TEXT PRIMARY KEY,kind TEXT,name TEXT,stamp TEXT,hash TEXT,checked REAL,payload TEXT)')
             db.execute('CREATE TABLE IF NOT EXISTS model_preferences(id TEXT PRIMARY KEY,archived INTEGER NOT NULL DEFAULT 0)')
+            db.execute('CREATE TABLE IF NOT EXISTS embedding_search(query TEXT PRIMARY KEY,payload TEXT,checked REAL)')
     def db(self):
         db=sqlite3.connect(self.data/'catalog.sqlite',timeout=20);db.row_factory=sqlite3.Row
         db.execute('PRAGMA journal_mode=WAL');return closing_db(db)
     def snapshot(self):
         with self.db() as db:
-            items=[json.loads(row['payload']) for row in db.execute('SELECT payload FROM assets ORDER BY kind,name')]
+            items=[json.loads(row['payload']) for row in db.execute("SELECT payload FROM assets WHERE kind!='embedding_remote' ORDER BY kind,name")]
             archived={row['id'] for row in db.execute('SELECT id FROM model_preferences WHERE archived=1')}
         has_token=bool(self.token())
         for item in items:
@@ -216,7 +234,7 @@ class Library:
         image=item['images'][index]
         suffix='-'+hashlib.sha256(image['source'].encode()).hexdigest()[:16] if image.get('cacheVersion')==2 else ''
         return self.previews/(item['id']+'-'+str(index)+suffix+'.jpg')
-    def preview(self,identity,index):
+    def preview(self,identity,index,full=False):
         if not re.fullmatch('[a-f0-9]{32}',identity) or str(index) not in ('0','1','2'):raise ValueError('Invalid preview')
         with self.db() as db:
             row=db.execute('SELECT payload FROM assets WHERE id=?',(identity,)).fetchone()
@@ -225,6 +243,15 @@ class Library:
         if index>=len(item.get('images',[])) or not self.preview_allowed(item,item['images'][index],bool(self.token())):
             raise FileNotFoundError('Preview unavailable')
         path=self.preview_file(item,index)
+        if full:path=path.with_stem(path.stem+'-full')
+        with self.preview_lock:
+            if not path.is_file() and (full or item['images'][index].get('remote')):
+                source=item['images'][index]['source'];parsed=urllib.parse.urlparse(source)
+                if parsed.scheme!='https' or parsed.hostname not in ('image.civitai.com','image.civitai.red') or parsed.username or parsed.password or parsed.port not in (None,443):raise ValueError('Invalid preview source')
+                raw=fetch(source,20*1024*1024)
+                with Image.open(io.BytesIO(raw)) as img:
+                    if img.width*img.height>40000000:raise ValueError('Preview exceeds image size limit')
+                    img.thumbnail((2048,2048) if full else (768,768));tmp=path.with_suffix('.tmp');img.convert('RGB').save(tmp,format='JPEG',quality=90 if full else 85);tmp.replace(path)
         if not path.is_file():raise FileNotFoundError('Preview unavailable')
         return path
     def token(self):
@@ -271,10 +298,54 @@ class Library:
                         try:self.inspect(path,kind,name,identity,force,refresh_listings=refresh,token=token)
                         except Exception:logging.exception('Could not index model %s',name)
             with self.db() as db:
-                for row in db.execute('SELECT id FROM assets').fetchall():
+                for row in db.execute("SELECT id FROM assets WHERE kind!='embedding_remote'").fetchall():
                     if row['id'] not in seen:db.execute('DELETE FROM assets WHERE id=?',(row['id'],))
             self.last=time.time();self.write_generation(generation)
         finally:self.running=False;LOCK.release()
+    def search_embeddings(self, query, cursor=''):
+        query=str(query).strip()[:200];cursor=str(cursor)
+        if not query or len(cursor)>2048 or any(ord(c)<32 for c in cursor):raise ValueError('Enter an embedding name or keyword.')
+        token=self.token();key=self.auth_generation(token)+':'+query.lower()+':'+cursor
+        with self.db() as db:cached=db.execute('SELECT payload,checked FROM embedding_search WHERE query=?',(key,)).fetchone()
+        if cached and time.time()-cached['checked']<3600:return json.loads(cached['payload'])
+        params=dict(types='TextualInversion',query=query,limit=20,nsfw='true' if token else 'false')
+        if cursor:params['cursor']=cursor
+        raw=json.loads(fetch((MATURE_API if token else API)+'models?'+urllib.parse.urlencode(params),token=token))
+        items=[]
+        for model in raw.get('items',[])[:20]:
+            if str(model.get('type','')).lower() not in ('textualinversion','embedding'):continue
+            for version in (model.get('modelVersions') or [])[:1]:
+                if not str(version.get('id','')).isdigit():continue
+                file=next((f for f in version.get('files',[]) if str(f.get('name','')).lower().endswith(('.safetensors','.pt','.bin'))),None)
+                if not file:continue
+                identity=hashlib.sha256(('embedding_remote:'+str(version['id'])).encode()).hexdigest()[:32]
+                item=dict(id=identity,kind='embedding_remote',name=file['name'],title=str(model.get('name',''))[:300],
+                          version=str(version.get('name',''))[:300],baseModel=str(version.get('baseModel',''))[:100],
+                          author=str((model.get('creator') or {}).get('username',''))[:200],description=plain(model.get('description')),
+                          versionDescription=plain(version.get('description')),bytes=round(float(file.get('sizeKB') or 0)*1024),
+                          sha256=str((file.get('hashes') or {}).get('SHA256','')),keywords=version.get('trainedWords') or [],
+                          source='Civitai',sourceUrl=f"https://civitai.red/models/{model['id']}?modelVersionId={version['id']}",
+                          modelId=model['id'],versionId=version['id'],images=[],status='remote',match='Available to download',previewAuth=self.auth_generation(token))
+                # Gallery thumbnails are fetched lazily by the same device preview scheduler.
+                for candidate in version.get('images') or []:
+                    if not safe_preview(candidate,bool(token)):continue
+                    url=candidate.get('url','');p=urllib.parse.urlparse(url)
+                    if p.scheme!='https' or p.hostname not in ('image.civitai.com','image.civitai.red') or p.username or p.password:continue
+                    item['images'].append(dict(source=url,credit=candidate.get('username',''),mature=not safe_preview(candidate),remote=True,
+                                              width=candidate.get('width',0),height=candidate.get('height',0),id=str(candidate.get('id','')),
+                                              path='model-preview/'+identity+'/'+str(len(item['images']))))
+                    if len(item['images'])==3:break
+                with self.db() as db:db.execute('INSERT OR REPLACE INTO assets VALUES(?,?,?,?,?,?,?)',(identity,'embedding_remote',item['name'],'',item['sha256'],time.time(),json.dumps(item)))
+                public=dict(item);public.pop('previewAuth',None);items.append(public)
+        metadata=raw.get('metadata') or {};next_cursor=metadata.get('nextCursor')
+        if not next_cursor and metadata.get('nextPage'):
+            next_cursor=urllib.parse.parse_qs(urllib.parse.urlparse(metadata['nextPage']).query).get('cursor',[None])[0]
+        if not isinstance(next_cursor,str) or len(next_cursor)>2048 or next_cursor==cursor:next_cursor=None
+        result=dict(items=items,nextCursor=next_cursor)
+        with self.db() as db:
+            db.execute('INSERT OR REPLACE INTO embedding_search VALUES(?,?,?)',(key,json.dumps(result),time.time()))
+            db.execute('DELETE FROM embedding_search WHERE checked<?',(time.time()-86400,))
+        return result
     def cache_previews(self,item,safe):
         used={x['source'] for x in item['images']}
         for candidate in safe:
@@ -288,7 +359,7 @@ class Library:
                     suffix=hashlib.sha256(url.encode()).hexdigest()[:16]
                     img.thumbnail((768,768));dest=self.previews/(item['id']+'-'+str(len(item['images']))+'-'+suffix+'.jpg')
                     tmp=dest.with_suffix('.tmp');img.convert('RGB').save(tmp,format='JPEG',quality=85);tmp.replace(dest)
-                item['images'].append(dict(source=url,credit=candidate.get('username',''),mature=not safe_preview(candidate),cacheVersion=2,path='model-preview/'+item['id']+'/'+str(len(item['images']))))
+                item['images'].append(dict(source=url,credit=candidate.get('username',''),id=str(candidate.get('id','')),width=candidate.get('width',0),height=candidate.get('height',0),mature=not safe_preview(candidate),cacheVersion=2,path='model-preview/'+item['id']+'/'+str(len(item['images']))))
                 if len(item['images'])==3:break
             except (OSError,ValueError):continue
     def inspect(self,path,kind,name,identity,force,refresh_listings=False,token=''):
@@ -311,6 +382,7 @@ class Library:
         item=dict(id=identity,kind=kind,name=name,title=title,bytes=st.st_size,sha256=digest,
                   author=meta.get('modelspec.author',''),description=plain(meta.get('modelspec.description','')),version='',baseModel=meta.get('modelspec.architecture',''),keywords=[],images=[],
                   status='unmatched',source='',sourceUrl='',checked=time.time(),match='Local file metadata')
+        if kind=='embeddings':item['encoderFamily']=embedding_encoder(path)
         if meta.get('sd_merge_recipe'):
             item['merge']=plain(meta['sd_merge_recipe'])
             item['title']='Local checkpoint merge'

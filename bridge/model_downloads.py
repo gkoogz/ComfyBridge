@@ -21,6 +21,7 @@ from model_library import API, LOCK, CivitaiRedirect, fetch, plain, request_for,
 MAX_BYTES=16*1024**3
 RESERVE=512*1024**2
 LORA_TYPES={'lora','locon','lycoris','dora'}
+EMBEDDING_TYPES={'textualinversion','embedding'}
 
 
 def version_id(value):
@@ -29,13 +30,16 @@ def version_id(value):
     return value
 
 
-def filename(value):
+def filename(value, kind='loras'):
     value=str(value)
-    if '/' in value or '\\' in value or not value.lower().endswith('.safetensors'):raise ValueError('This LoRA has no supported SafeTensor file.')
+    extensions=('.safetensors','.pt','.bin') if kind=='embeddings' else ('.safetensors',)
+    if '/' in value or '\\' in value or not value.lower().endswith(extensions):raise ValueError('This resource has no supported model file.')
+    suffix=Path(value).suffix.lower()
     value=re.sub(r'[<>:"|?*\x00-\x1f]','_',value).strip(' .')
+    if kind=='embeddings':value=re.sub(r'[\s():,]+','_',value)
     stem=Path(value).stem[:150].rstrip(' .')
     if not stem or stem.split('.')[0].upper() in {'CON','PRN','AUX','NUL',*(f'COM{i}' for i in range(1,10)),*(f'LPT{i}' for i in range(1,10))}:stem='LoRA_'+stem
-    return stem+'.safetensors'
+    return stem+suffix
 
 
 def download_url(url, version, file_id=None):
@@ -92,11 +96,11 @@ class Downloads:
 
     def installed(self, version, digest=''):
         with self.library.db() as db:
-            rows=db.execute("SELECT name,stamp,hash,payload FROM assets WHERE kind='loras'").fetchall()
+            rows=db.execute("SELECT kind,name,stamp,hash,payload FROM assets WHERE kind IN ('loras','embeddings')").fetchall()
         for row in rows:
             item=json.loads(row['payload'])
             if str(item.get('versionId',''))!=version and (not digest or row['hash'].lower()!=digest):continue
-            for folder in roots(self.library.root)['loras']:
+            for folder in roots(self.library.root)[row['kind']]:
                 path=folder/row['name']
                 try:
                     stat=path.stat()
@@ -124,14 +128,16 @@ class Downloads:
             if error.code in (401,403):raise ValueError('Civitai requires access to this LoRA. Check the PC Civitai key and your account access.') from None
             if error.code==404:raise ValueError('This LoRA version is no longer available on Civitai.') from None
             raise ValueError('Civitai could not load this LoRA. Try again.') from None
-        if not isinstance(raw,dict) or not re.fullmatch('[1-9][0-9]{0,18}',str(raw.get('modelId',''))) or str(raw.get('id'))!=version or str((raw.get('model') or {}).get('type','')).lower() not in LORA_TYPES:
-            raise ValueError('This resource is not a downloadable LoRA.')
+        if not isinstance(raw,dict) or not re.fullmatch('[1-9][0-9]{0,18}',str(raw.get('modelId',''))) or str(raw.get('id'))!=version or str((raw.get('model') or {}).get('type','')).lower() not in LORA_TYPES|EMBEDDING_TYPES:
+            raise ValueError('This resource is not a downloadable LoRA or embedding.')
+        kind='embeddings' if str(raw['model']['type']).lower() in EMBEDDING_TYPES else 'loras'
+        extensions=('.safetensors','.pt','.bin') if kind=='embeddings' else ('.safetensors',)
         files=[];rejected=[]
         for file in raw.get('files') or []:
-            if str(file.get('type','')).lower()!='model' or not str(file.get('name','')).lower().endswith('.safetensors'):continue
+            if str(file.get('type','')).lower()!='model' or not str(file.get('name','')).lower().endswith(extensions):continue
             digest=str((file.get('hashes') or {}).get('SHA256','')).lower()
             if not re.fullmatch('[a-f0-9]{64}',digest):rejected.append('Civitai has not published a valid SHA-256 for this file.');continue
-            try:name=filename(file['name']);url=download_url(file.get('downloadUrl',''),version,file.get('id'))
+            try:name=filename(file['name'],kind);url=download_url(file.get('downloadUrl',''),version,file.get('id'))
             except ValueError as error:rejected.append(str(error));continue
             size=file.get('sizeKB')
             if type(size) not in (int,float) or not math.isfinite(size) or not 0<size<=MAX_BYTES/1024:rejected.append('The file size is missing, invalid or exceeds the 16 GB limit.');continue
@@ -141,15 +147,15 @@ class Downloads:
         file,name,url,digest,size=next((f for f in files if f[0].get('primary')),files[0])
         existing=self.installed(version,digest)
         if existing:return dict(status='installed',name=existing,versionId=version)
-        folder=roots(self.library.root)['loras'][0]
+        folder=roots(self.library.root)[kind][0]
         if folder.exists():
             target=folder/name
             if target.is_file() and sha256(target)==digest:
-                plan=dict(versionId=version,name=name,sha256=digest,title=(raw.get('model') or {}).get('name') or name,
+                plan=dict(kind=kind,versionId=version,name=name,sha256=digest,title=(raw.get('model') or {}).get('name') or name,
                           version=raw.get('name',''),baseModel=raw.get('baseModel',''),modelId=raw.get('modelId'),keywords=raw.get('trainedWords') or [],
                           description=plain(raw.get('description')),fileMetadata=file.get('metadata') or {})
                 self.publish(target,plan);return dict(status='installed',name=name,versionId=version)
-        plan=dict(versionId=version,name=name,url=url,sha256=digest,bytes=size,title=str(raw['model'].get('name') or name)[:300],
+        plan=dict(kind=kind,versionId=version,name=name,url=url,sha256=digest,bytes=size,title=str(raw['model'].get('name') or name)[:300],
                   version=str(raw.get('name') or '')[:300],baseModel=str(raw.get('baseModel') or '')[:100],modelId=raw.get('modelId'),
                   keywords=[str(word)[:1000] for word in (raw.get('trainedWords') or [])[:100]],description=plain(raw.get('description')),
                   fileMetadata=file.get('metadata') or {})
@@ -206,7 +212,8 @@ class Downloads:
                 plan=json.loads(row['plan']);target=self.transfer(plan)
                 # Finish the download first; catalogue enrichment never delays its green check.
                 try:
-                    with LOCK:self.library.inspect(target,'loras',target.relative_to(roots(self.library.root)['loras'][0]).as_posix(),hashlib.sha256(('loras:'+target.name).encode()).hexdigest()[:32],False)
+                    kind=plan.get('kind','loras');name=target.relative_to(roots(self.library.root)[kind][0]).as_posix()
+                    with LOCK:self.library.inspect(target,kind,name,hashlib.sha256((kind+':'+name).encode()).hexdigest()[:32],False,token=self.library.token())
                 except (OSError,ValueError,sqlite3.Error):pass
             except urllib.error.HTTPError as error:
                 self.update(row['version'],status='error',error='Civitai denied the download. Check the PC key and account access.' if error.code in (401,403) else 'Model download failed (HTTP '+str(error.code)+'). Tap + to retry.')
@@ -215,7 +222,9 @@ class Downloads:
                 self.update(row['version'],status='error',error=message[:500])
 
     def transfer(self, plan):
-        folder=roots(self.library.root)['loras'][0];folder.mkdir(parents=True,exist_ok=True)
+        kind=plan.get('kind','loras')
+        if kind not in ('loras','embeddings'):raise ValueError('Unsupported download destination')
+        folder=roots(self.library.root)[kind][0];folder.mkdir(parents=True,exist_ok=True)
         staging=folder/'.comfybridge-downloads';staging.mkdir(exist_ok=True)
         part=staging/(plan['versionId']+'-'+plan['sha256']+'.part')
         digest=hashlib.sha256();received=0;last=0
@@ -232,9 +241,9 @@ class Downloads:
                 out.flush();os.fsync(out.fileno())
             self.update(plan['versionId'],status='verifying',received=received)
             if digest.hexdigest()!=plan['sha256']:raise ValueError('The downloaded file failed its SHA-256 check. Nothing was installed; tap + to retry.')
-            target=folder/filename(plan['name'])
+            target=folder/filename(plan['name'],kind)
             if target.exists() and sha256(target)!=plan['sha256']:
-                target=folder/(target.stem+'_civitai_v'+plan['versionId']+'_'+plan['sha256'][:8]+'.safetensors')
+                target=folder/(target.stem+'_civitai_v'+plan['versionId']+'_'+plan['sha256'][:8]+target.suffix)
             if not target.exists():
                 try:os.link(part,target)
                 except FileExistsError:pass
@@ -248,12 +257,12 @@ class Downloads:
         finally:part.unlink(missing_ok=True)
 
     def publish(self, path, plan):
-        folder=roots(self.library.root)['loras'][0];name=path.relative_to(folder).as_posix();stat=path.stat()
-        identity=hashlib.sha256(('loras:'+name).encode()).hexdigest()[:32]
-        item=dict(id=identity,kind='loras',name=name,title=plan['title'],bytes=stat.st_size,sha256=plan['sha256'],author='',
+        kind=plan.get('kind','loras');folder=roots(self.library.root)[kind][0];name=path.relative_to(folder).as_posix();stat=path.stat()
+        identity=hashlib.sha256((kind+':'+name).encode()).hexdigest()[:32]
+        item=dict(id=identity,kind=kind,name=name,title=plan['title'],bytes=stat.st_size,sha256=plan['sha256'],author='',
                   description=plan.get('description',''),version=plan['version'],baseModel=plan['baseModel'],keywords=plan['keywords'],images=[],
                   status='matched',source='Civitai',sourceUrl=f"https://civitai.com/models/{plan['modelId']}?modelVersionId={plan['versionId']}",
                   modelId=plan['modelId'],versionId=int(plan['versionId']),match='Verified downloaded SHA-256',fileMetadata=plan.get('fileMetadata',{}),checked=time.time())
         with LOCK, self.library.db() as db:
-            db.execute('INSERT OR REPLACE INTO assets VALUES(?,?,?,?,?,?,?)',(identity,'loras',name,f'{stat.st_size}:{stat.st_mtime_ns}',plan['sha256'],0,json.dumps(item)))
+            db.execute('INSERT OR REPLACE INTO assets VALUES(?,?,?,?,?,?,?)',(identity,kind,name,f'{stat.st_size}:{stat.st_mtime_ns}',plan['sha256'],0,json.dumps(item)))
             self.library.last=time.time()

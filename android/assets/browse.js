@@ -1136,7 +1136,7 @@ const CivitaiBrowser=(()=>{
   };
  }
  function resourcesHTML(resources,chosen={}){return '<ul class="modelPreviewResources civitaiResources">'+[...resources].sort((a,b)=>Number(/checkpoint/i.test(b.type))-Number(/checkpoint/i.test(a.type))).map(r=>{
-  const isLora=/lora|locon|lycoris/i.test(r.type),url=r.modelId?'https://civitai.com/models/'+r.modelId+(r.versionId?'?modelVersionId='+r.versionId:''):'';
+  const isLora=/lora|locon|lycoris|embedding|textualinversion/i.test(r.type),url=r.modelId?'https://civitai.com/models/'+r.modelId+(r.versionId?'?modelVersionId='+r.versionId:''):'';
   const hasWeight=r.weight!==''&&r.weight!=null;
   return '<li><div class="civitaiResourceRow">'+(url?button(esc(r.name||r.type),'class="resourceName '+(chosen.kind==='lora'&&String(chosen.id)===String(r.versionId)?'chosenSource':'')+'" data-civi-link="'+esc(url)+'"'):'<strong class="resourceName">'+esc(r.name||r.type)+'</strong>')+
    (isLora&&r.versionId?button('＋','class="resourceDownload" data-resource-download="'+esc(r.versionId)+'" data-civi-download="'+esc(r.versionId)+'" aria-label="Download LoRA"'):'')+
@@ -1152,7 +1152,7 @@ const CivitaiBrowser=(()=>{
    const installed=status==='installed',busy=['preparing','starting','queued','downloading','verifying'].includes(status);
    b.innerHTML=installed?'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12l4 4L19 6"/></svg>':busy?'<i class="spinner" aria-hidden="true"></i>':'＋';
    b.disabled=installed||busy||status==='confirming';b.setAttribute('aria-busy',String(busy));
-   b.setAttribute('aria-label',installed?'LoRA already in your library':status==='preparing'?'Checking LoRA download':busy?'Downloading LoRA to your PC':'Download LoRA');
+   b.setAttribute('aria-label',installed?'Resource already in your library':status==='preparing'?'Checking resource download':busy?'Downloading resource to your PC':'Download resource');
   }
   async function update(){
    if(!host.isConnected||document.hidden)return;
@@ -1161,7 +1161,7 @@ const CivitaiBrowser=(()=>{
      const installed=s.status==='installed',active=['queued','downloading','verifying'].includes(s.status);running ||= active;finished ||= installed&&b.dataset.wasActive==='true';if(active)b.dataset.wasActive='true';if(installed)delete b.dataset.wasActive;
      paintDownload(b,s.status);
      if(s.error)$('[data-download-status="'+b.dataset.civiDownload+'"]',host).textContent=s.error;
-    }if(finished){const listing=await api('model-library');modelListings=listing.items||[];if(catalog){catalog.listings=modelListings;catalog.loras=[...new Set([...(catalog.loras||[]),...modelListings.filter(i=>i.kind==='loras').map(i=>i.name)])];}await ModelPreviews.register(modelListings,listing.nsfwHidden,listing.scanning);}if(running)setTimeout(update,1800);
+    }if(finished){const listing=await api('model-library');modelListings=listing.items||[];if(catalog){catalog.listings=modelListings;catalog.loras=[...new Set([...(catalog.loras||[]),...modelListings.filter(i=>i.kind==='loras').map(i=>i.name)])];}await ModelPreviews.register(modelListings,listing.nsfwHidden,listing.scanning);if(modelBrowser?.type==='embeddings'&&$('#modal').open)paintModelBrowser(modelBrowser);}if(running)setTimeout(update,1800);
    }catch(e){for(const b of buttons)b.title=e.message;}
   }
   buttons.forEach(b=>b.onclick=async()=>{const dest=$('[data-download-status="'+b.dataset.civiDownload+'"]',host);b.dataset.downloadPhase='preparing';paintDownload(b,'preparing');dest.textContent='Checking download…';
@@ -1301,6 +1301,37 @@ const CivitaiBrowser=(()=>{
   }catch(e){if(target.isConnected){paintPrompt('failed');$('.civitaiActionError',target).textContent=e.message;}}
  }
  function peek(host){host.addEventListener('scroll',()=>host.classList.toggle('pastPeek',host.scrollTop>20),{passive:true});}
+ function metadataBackGesture(v){
+  const details=$('.modelPreviewDetails',v.el);let drag=null,surface=null,restore=null,animation=null,ignoreClick=0;
+  function reset(){animation?.cancel();animation=null;restore?.();restore=null;surface=null;drag=null;}
+  function startSurface(){
+   surface=v.options.previousScreen?.()||$('#workspace');if(!surface)return false;
+   const style=surface.getAttribute('style'),opened=surface.hasAttribute('open'),scrolls=[surface,...surface.querySelectorAll('*')].filter(n=>n.scrollTop||n.scrollLeft).map(n=>[n,n.scrollTop,n.scrollLeft]);
+   if(surface.tagName==='DIALOG')surface.setAttribute('open','');
+   surface.classList.add('mediaReturnSurface');surface.style.setProperty('transform','translateX(-100%)','important');
+   restore=()=>{surface?.classList.remove('mediaReturnSurface');if(style===null)surface?.removeAttribute('style');else surface?.setAttribute('style',style);if(surface?.tagName==='DIALOG'&&!opened)surface.removeAttribute('open');for(const [n,top,left] of scrolls){n.scrollTop=top;n.scrollLeft=left;}};
+   for(const [n,top,left] of scrolls){n.scrollTop=top;n.scrollLeft=left;}return true;
+  }
+  details.addEventListener('pointerdown',e=>{
+   if(!e.isPrimary||e.button!==0||e.target.closest('input,textarea,[contenteditable=true]')||!getSelection().isCollapsed)return;
+   drag={id:e.pointerId,x:e.clientX,y:e.clientY,dx:0,time:performance.now(),active:false,width:innerWidth};
+   e.stopPropagation();
+  });
+  details.addEventListener('pointermove',e=>{const g=drag;if(!g||e.pointerId!==g.id)return;const dx=e.clientX-g.x,dy=e.clientY-g.y;
+   if(!g.active){if(Math.abs(dy)>10&&Math.abs(dy)>Math.abs(dx)){drag=null;return;}if(dx<12||dx<Math.abs(dy)*1.4)return;if(performance.now()-g.time>300||!startSurface()){drag=null;return;}g.active=true;g.width=surface.getBoundingClientRect().width;details.setPointerCapture(e.pointerId);}
+   g.dx=Math.max(0,Math.min(g.width,dx));surface.style.setProperty('transform','translateX('+(-g.width+g.dx)+'px)','important');e.preventDefault();e.stopPropagation();
+  });
+  details.addEventListener('pointerup',e=>{const g=drag;if(!g||e.pointerId!==g.id)return;if(!g.active){drag=null;return;}
+   e.preventDefault();e.stopPropagation();ignoreClick=Date.now()+400;if(details.hasPointerCapture(e.pointerId))details.releasePointerCapture(e.pointerId);
+   const commit=g.dx>g.width*.32||(g.dx>70&&g.dx/(performance.now()-g.time)>.6),from=-g.width+g.dx,to=commit?0:-g.width,start=performance.now();
+   // CSS !important protects the real prior workspace from desktop transforms.
+   function step(now){if(!surface)return;const t=Math.min(1,(now-start)/160),eased=1-(1-t)**3;surface.style.setProperty('transform','translateX('+(from+(to-from)*eased)+'px)','important');if(t<1){const id=requestAnimationFrame(step);animation={cancel:()=>cancelAnimationFrame(id)};}else{reset();if(commit&&viewer===v)close();}}
+   const id=requestAnimationFrame(step);animation={cancel:()=>cancelAnimationFrame(id)};
+  });
+  details.addEventListener('pointercancel',reset);
+  details.addEventListener('click',e=>{if(Date.now()<ignoreClick){e.preventDefault();e.stopImmediatePropagation();}},true);
+  return reset;
+ }
  function viewerMotion(v){
   const el=v.el,scroll=$('.civitaiViewerScroll',el),hero=$('.modelPreviewHero',el);
   const media=$('img,video',hero),social=$('.civitaiSocial',el);
@@ -1449,27 +1480,27 @@ const CivitaiBrowser=(()=>{
    });
   });
  }
- function close(){if(viewer){viewer.cancelEntry?.();viewer.dispose?.();viewer.el.remove();viewer.source?.release?.();viewer=null;}document.body.classList.remove('civitaiViewerOpen');}
- function open(item,list,origin=null){
+ function close(restore=true){const prior=viewer;viewer=null;if(prior){prior.cancelEntry?.();prior.dispose?.();prior.el.remove();prior.source?.release?.();}document.body.classList.remove('civitaiViewerOpen');if(restore!==false)prior?.options?.onClose?.();}
+ function open(item,list,origin=null,options={}){
   if(view.kind==='mix'&&list===feed)markSeen(item.id);
   const cached=details.get(detailKey(item.id));if(cached)Object.assign(item,cached.result.item);
   const source=origin?takeFeedMedia(origin,item):null;
-  close();const el=document.createElement('section');el.className='civitaiViewer';el.setAttribute('role','dialog');el.setAttribute('aria-modal','true');el.setAttribute('aria-label','Civitai media details');
-  registerMedia([item]);const v={el,item,list,source};viewer=v;warm();document.body.append(el);document.body.classList.add('civitaiViewerOpen');
+  close(false);const el=document.createElement('section');el.className='civitaiViewer';el.setAttribute('role','dialog');el.setAttribute('aria-modal','true');el.setAttribute('aria-label','Civitai media details');
+  registerMedia([item]);const v={el,item,list,source,options};viewer=v;warm();document.body.append(el);document.body.classList.add('civitaiViewerOpen');
   el.innerHTML='<div class="civitaiViewerHead">'+button('×','class="civitaiClose" aria-label="Close media"')+'</div><div class="civitaiViewerScroll modelPreviewViewer"><div class="modelPreviewHero">'+(item.type==='video'?(source?.media?'<video playsinline></video>':imageHTML(item,true)):'<div class="imagePicture">'+(source?'<img alt="Civitai image">':imageHTML(item,true))+'</div>')+'<div class="modelPreviewNavigation">'+button('‹','data-prev aria-label="Previous media"')+button('›','data-next aria-label="Next media"')+'</div></div><div class="modelPreviewDetails"><div class="civitaiSocial">'+socialHTML(item,status?.collections||[])+'</div>'+promptHTML(item)+'<h2>Resources</h2><div class="civitaiResourceHost">'+resourcesHTML(item.resources||[],item.chosenBy)+'</div><dl class="modelPreviewParameters">'+parametersHTML(item.parameters)+'</dl><div class="civitaiTagHost"></div>'+button('Open on Civitai ↗','data-origin')+'</div></div>';
   if(source?.media){$('img,video',$('.modelPreviewHero',el)).replaceWith(source.media);if(source.playing)source.media.play().catch(()=>{});}
   else if(source?.poster)$('video',el).poster=source.poster;
   $('.civitaiClose',el).onclick=close;$('.civitaiClose',el).focus();$('[data-origin]',el).onclick=()=>openModelSource(item.imageUrl);
   wirePromptCopies(el,item);
-  const position=list.findIndex(i=>i.id===item.id);$('[data-prev]',el).disabled=position<=0;$('[data-next]',el).disabled=position>=list.length-1;
-  $('[data-prev]',el).onclick=()=>open(list[position-1],list);$('[data-next]',el).onclick=()=>open(list[position+1],list);
+  const position=list.findIndex(i=>i.id===item.id);$('[data-prev]',el).disabled=position<=0;$('[data-next]',el).disabled=position>=list.length-1&&!options.more?.();
+  $('[data-prev]',el).onclick=()=>open(list[position-1],list,null,options);$('[data-next]',el).onclick=async()=>{const b=$('[data-next]',el);b.disabled=true;try{if(position+1>=list.length)await options.loadMore?.(list);if(viewer===v&&list[position+1])open(list[position+1],list,null,options);}catch(e){toast(e.message);}finally{if(b.isConnected)b.disabled=position>=list.length-1&&!options.more?.();}};
   if(item.type==='video'){
    const video=$('video',el),hero=$('.modelPreviewHero',el),scroll=$('.civitaiViewerScroll',el);
    hero.classList.add('isVideo');
    VideoPlayer.mount(video,{duration:item.duration,width:item.width,height:item.height,
     bounds:()=>({width:hero.clientWidth,height:hero.clientHeight-Math.min(scroll.scrollTop,video.sharedPlayer?.peekHeight||110)}),error:e=>toast(e.message)});
   }
-  const scroll=$('.civitaiViewerScroll',el);peek(scroll);hydrate($('.modelPreviewDetails',el));wireResources(el);v.dispose=viewerMotion(v);v.entered=animateEntry(v);detail(v);
+  const scroll=$('.civitaiViewerScroll',el);peek(scroll);hydrate($('.modelPreviewDetails',el));wireResources(el);const motion=viewerMotion(v),metadataGesture=metadataBackGesture(v);v.dispose=()=>{metadataGesture();motion();};v.entered=animateEntry(v);detail(v);
   if(item.type!=='video'&&item.fullPath){
    const img=$('.modelPreviewHero img',el);imageBlob(path(item.fullPath)).then(async url=>{if(!url)return;const full=new Image();full.src=url;await full.decode();await v.entered;if(viewer===v&&img.isConnected)img.src=url;}).catch(()=>{/* Keep the visible preview if the full image fails. */});
   }
@@ -1477,7 +1508,12 @@ const CivitaiBrowser=(()=>{
    imageBlob(path(item.fullPath),true).then(url=>{if(url&&viewer===v){const video=$('.modelPreviewHero video',el);if(video)video.src=url;}}).catch(()=>{});
   }
  }
- async function detail(v){if(viewer===v)await enrich(v.el,v.item);}
+ async function detail(v){
+  try{await v.options?.prepare?.(v.item);}catch{/* Cached metadata remains usable offline. */}
+  if(viewer!==v)return;
+  if(/^[1-9][0-9]*$/.test(String(v.item.id)))await enrich(v.el,v.item);
+  else {wireSocial($('.civitaiSocial',v.el),v.item,status?.collections||[]);$('.civitaiReactions',v.el).hidden=true;}
+ }
  document.addEventListener('click',e=>{
   if(!e.target.closest('#browseCollections,#browseSources'))closeMenus();
   $$('.weightMenu[open]').forEach(menu=>{if(!menu.contains(e.target))menu.open=false;});
