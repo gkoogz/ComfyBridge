@@ -1,0 +1,26 @@
+/* Shared full-screen controls: the picture and timeline are separate flow boxes. */
+.unifiedVideo{position:relative;max-width:100%;margin-inline:auto;line-height:1;color:white;flex:none}
+.unifiedVideo .videoPicture{position:relative;width:100%;margin-inline:auto;background:transparent}
+.unifiedVideo .videoPicture>video{position:static;display:block;width:100%;height:100%;max-height:none;object-fit:contain}
+.unifiedVideo .videoToggle{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);translate:none;width:64px;height:64px;min-width:64px;max-width:64px;min-height:64px;max-height:64px;padding:19px;display:grid;place-items:center;border:1px solid #ffffff80;border-radius:50%;background:#15212845;backdrop-filter:blur(5px);color:white;opacity:1;visibility:visible;transition:none;touch-action:pan-y}
+.videoToggle svg{width:100%;height:100%;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;pointer-events:none}
+.videoToggle.preparing{opacity:.5}
+.unifiedVideo .videoTimeline{position:relative;inset:auto;display:block;width:100%;height:54px;padding:0;gap:0;background:none;opacity:1;visibility:visible;transition:none;pointer-events:auto}
+.videoTrack{position:absolute;inset:0 0 auto;height:6px;background:#56615e;pointer-events:none;--video-progress:0%}
+.videoTrack i{display:block;width:var(--video-progress);height:100%;background:var(--mint)}
+.videoTrack b{position:absolute;left:clamp(0px,calc(var(--video-progress) - 2px),calc(100% - 4px));top:0;width:4px;height:16px;background:var(--mint);border-radius:0 0 1px 1px}
+.unifiedVideo .videoSeek{position:absolute;left:0;top:0;width:100%;height:26px;min-height:0;margin:0;padding:0;border:0;opacity:0;cursor:ew-resize;touch-action:none;pointer-events:auto}
+.videoTimeline:has(input:focus-visible) .videoTrack{outline:2px solid white;outline-offset:3px}
+.videoTimes{position:absolute;left:0;right:0;top:24px;height:22px;font-size:14px;font-variant-numeric:tabular-nums;pointer-events:none}
+.videoCurrent{position:absolute;left:0;font-weight:750;white-space:nowrap}
+.videoTotal{position:absolute;right:8px;white-space:nowrap}.videoSlash{position:absolute;color:white}
+.mediaHero>.videoAsset{height:calc(100% - var(--action-height,72px));display:grid;place-items:center}
+.civitaiViewer .modelPreviewHero.isVideo{display:grid;place-items:center}
+body:is([data-page=image],[data-page=video]) #statusDot{margin-left:0}
+body:is([data-page=image],[data-page=video]) #presetButton{margin-left:auto}
+/* Justified rows keep source proportions instead of square letterboxed slots. */
+.librarygrid{display:flex;flex-wrap:wrap;gap:2px;align-items:flex-start}
+.librarygrid::after{content:'';flex:9999 1 0}
+.libraryitem{flex:var(--thumb-ratio,1) 1 calc(var(--thumb-ratio,1)*120px);aspect-ratio:var(--thumb-ratio,1);min-width:0;min-height:0;display:block;border:0;padding:0}
+.libraryitem img{display:block;position:absolute;inset:0;width:100%;height:100%;object-fit:contain}
+.librarygrid .galleryEmpty{width:100%}

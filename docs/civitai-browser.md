@@ -927,3 +927,29 @@ Checks: browse-loader.cjs measures midpoint, stow threshold, wave independence
 and lifecycle; browse-return-geometry.cjs compares all card positions/sizes before,
 during and after a deep-feed swipe at 390/1400px and checks completed-feed text.
 Existing touch, scheduling, arrival and video tests cover related behavior.
+
+## Beta 107: shared Library and Browse video player
+
+`video-player.js` / `video-player.css` provide the same center-only play/pause
+control and below-picture transport in both viewers (also reused by Latest
+Result). The full-width 6px track has a 4px handle extending downward. Elapsed
+time follows progress but clamps before the right-aligned total, revealing a
+slash at the collision boundary. The transparent range target extends 26px
+below the picture; pointer capture isolates seeking from viewer toss gestures.
+Keyboard range interaction remains available with a visible focus indicator.
+
+Library retains its complete-file/blob preparation on Android. Browse retains
+its media URL/cache transport. The shared component owns metadata, timing and
+resize listeners, disposing them when the video is detached. The old native
+Browse controls and separate Library transport play button are removed.
+
+Library thumbnails use source aspect ratios in justified rows, preserving DOM
+chronology and avoiding square slots. Metadata supplies the initial ratio when
+available; decoded thumbnails confirm it. Image/Video headers remove the second
+auto margin on the status dot, placing Current Settings at the right.
+
+Checks: shared-video-player.cjs uses the neutral MP4 with proper HTTP Range
+responses, measures the flush full-width track and nonoverlapping labels, and
+checks real playback/seeking on both viewers at 390/1400px. Related coverage:
+media-controls, feed-arrival, feed-video, library-replay, live-results, desktop
+and prompt-sizing. Browser checks do not establish physical-phone behavior.

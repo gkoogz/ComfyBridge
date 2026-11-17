@@ -152,7 +152,7 @@ const CivitaiBrowser=(()=>{
  const path=p=>'/'+String(p||'').replace(/^\//,'');
  const button=(label,attrs='')=>'<button '+attrs+'>'+label+'</button>';
  const thumbURL=item=>assetCache.get(path(item.path))||(item.cacheAsset&&item.cacheSample&&ModelPreviews.url(item.cacheAsset,item.cacheSample))||path(item.path);
- const imageHTML=(item,full=false)=>item.type==='video'&&full?'<video controls playsinline preload="none" poster="'+esc(thumbURL(item))+'" src="'+esc(assetCache.get(path(item.fullPath))||path(item.fullPath))+'"></video>':'<img width="'+(Number(item.width)||512)+'" height="'+(Number(item.height)||768)+'" loading="lazy" decoding="async" src="'+esc(full&&assetCache.get(path(item.fullPath))||thumbURL(item))+'" alt="Civitai '+(item.type==='video'?'video preview':'image')+'">';
+ const imageHTML=(item,full=false)=>item.type==='video'&&full?'<video playsinline preload="metadata" poster="'+esc(thumbURL(item))+'" src="'+esc(assetCache.get(path(item.fullPath))||path(item.fullPath))+'"></video>':'<img width="'+(Number(item.width)||512)+'" height="'+(Number(item.height)||768)+'" loading="lazy" decoding="async" src="'+esc(full&&assetCache.get(path(item.fullPath))||thumbURL(item))+'" alt="Civitai '+(item.type==='video'?'video preview':'image')+'">';
  const ribbonIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h12v18l-6-4-6 4z"/></svg>';
  const thumbIcon='<svg class="thumbIcon" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10H3v11h4zM7 10l5-7c.5-.7 2-.2 2 1v5h5c1.4 0 2.2 1.1 1.9 2.4l-1.5 7.5c-.2 1.2-1.1 2.1-2.4 2.1H7z"/></svg>';
  const copyIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 8h12v13H8zM16 8V3H3v13h5"/></svg>';
@@ -1293,8 +1293,14 @@ const CivitaiBrowser=(()=>{
    const height=media.naturalHeight||media.videoHeight||v.item.height;
    const author=$('.civitaiAuthor',social),reactions=$('.civitaiReactions',social);
    if(author&&reactions)peekHeight=reactions.offsetTop+reactions.offsetHeight-social.offsetTop+16;
-   const visible=Math.min(scroll.scrollTop,peekHeight),gutter=video?44:0;
+   const visible=Math.min(scroll.scrollTop,peekHeight),gutter=0;
    const mediaHeight=Math.max(160,hero.clientHeight-visible-gutter);
+   if(video&&media.sharedPlayer){
+    media.sharedPlayer.peekHeight=peekHeight;const fit=media.sharedPlayer.refresh();
+    gap=peekHeight+Math.max(0,(hero.clientHeight-visible-fit.totalHeight)/2);
+    hero.style.transform='translateY('+Math.min(scroll.scrollTop,gap)+'px)';
+    el.classList.toggle('mediaOnly',scroll.scrollTop<=1&&!tapVisible);return;
+   }
    media.style.height=mediaHeight+'px';
    const renderedHeight=width&&height?Math.min(mediaHeight,hero.clientWidth*height/width):mediaHeight;
    gap=peekHeight+Math.max(0,(mediaHeight-renderedHeight)/2)+gutter;
@@ -1308,7 +1314,7 @@ const CivitaiBrowser=(()=>{
   scroll.addEventListener('wheel',()=>{touched=true;},{passive:true});
   requestAnimationFrame(reveal);
   media.addEventListener('load',align);
-  media.addEventListener('loadedmetadata',align);
+  media.addEventListener('loadedmetadata',align);media.addEventListener('playergeometry',align);
   scroll.addEventListener('scroll',align,{passive:true});
   align();
   function reset(){
@@ -1347,9 +1353,7 @@ const CivitaiBrowser=(()=>{
   hero.addEventListener('dragstart',e=>e.preventDefault());
   hero.addEventListener('pointerdown',e=>{
    if(!e.isPrimary){gesture=null;reset();return;}
-   if(e.button!==0||e.target.closest('button'))return;
-   const bounds=media.getBoundingClientRect();
-   if(video&&e.clientX>=bounds.left&&e.clientX<=bounds.right&&e.clientY>=bounds.bottom-64&&e.clientY<=bounds.bottom)return;
+   if(e.button!==0||e.target.closest('button,input,.videoTimeline'))return;
    cancelAnimationFrame(frame);
    scroll.style.transition='none';el.style.transition='none';
    gesture={id:e.pointerId,x:e.clientX,y:e.clientY,lastX:e.clientX,lastY:e.clientY,time:performance.now(),last:performance.now(),top:scroll.scrollTop,mode:'',dx:0,dy:0,vx:0,vy:0};
@@ -1385,7 +1389,7 @@ const CivitaiBrowser=(()=>{
   hero.addEventListener('pointercancel',()=>{gesture=null;reset();});
   return ()=>{
    closed=true;cancelAnimationFrame(frame);resize.disconnect();
-   media.removeEventListener('load',align);media.removeEventListener('loadedmetadata',align);
+   media.removeEventListener('load',align);media.removeEventListener('loadedmetadata',align);media.removeEventListener('playergeometry',align);
    scroll.removeEventListener('scroll',align);
   };
  }
@@ -1401,6 +1405,12 @@ const CivitaiBrowser=(()=>{
   wirePromptCopies(el,item);
   const position=list.findIndex(i=>i.id===item.id);$('[data-prev]',el).disabled=position<=0;$('[data-next]',el).disabled=position>=list.length-1;
   $('[data-prev]',el).onclick=()=>open(list[position-1],list);$('[data-next]',el).onclick=()=>open(list[position+1],list);
+  if(item.type==='video'){
+   const video=$('video',el),hero=$('.modelPreviewHero',el),scroll=$('.civitaiViewerScroll',el);
+   hero.classList.add('isVideo');
+   VideoPlayer.mount(video,{duration:item.duration,width:item.width,height:item.height,
+    bounds:()=>({width:hero.clientWidth,height:hero.clientHeight-Math.min(scroll.scrollTop,video.sharedPlayer?.peekHeight||110)}),error:e=>toast(e.message)});
+  }
   const scroll=$('.civitaiViewerScroll',el);peek(scroll);hydrate($('.modelPreviewDetails',el));wireResources(el);v.dispose=viewerMotion(v);detail(v);
   if(item.type!=='video'&&item.fullPath){
    const img=$('.modelPreviewHero img',el);imageBlob(path(item.fullPath)).then(async url=>{if(!url)return;const full=new Image();full.src=url;await full.decode();if(viewer===v&&img.isConnected)img.src=url;}).catch(()=>{/* Keep the visible preview if the full image fails. */});

@@ -43,13 +43,13 @@ const assert=require('node:assert/strict'),path=require('node:path');
  await p.waitForTimeout(250);assert.equal(await p.evaluate(()=>feedCalls),1);
  await p.locator('#workspace').evaluate(w=>w.scrollTop+=w.clientHeight*.2);
  await p.waitForFunction(()=>feedCalls===2);
- // Video gestures share image toss/scroll behavior, except its native bottom controls.
+ // Video gestures share image toss/scroll behavior, except its separate scrub controls.
  await p.evaluate(()=>{const item={...fixture(99),type:'video'};CivitaiBrowser.open(item,[item]);});
  await p.waitForSelector('.civitaiViewer video');await p.waitForTimeout(100);
  await p.evaluate(()=>{
-  const video=document.querySelector('.civitaiViewer video'),r=video.getBoundingClientRect();
+  const video=document.querySelector('.civitaiViewer .videoSeek'),r=video.getBoundingClientRect();
   const fire=(type,x,y)=>video.dispatchEvent(new PointerEvent(type,{bubbles:true,pointerId:9,isPrimary:true,button:0,clientX:x,clientY:y}));
-  fire('pointerdown',r.left+r.width/2,r.bottom-20);fire('pointermove',r.left+r.width/2+130,r.bottom-20);fire('pointerup',r.left+r.width/2+130,r.bottom-20);
+  fire('pointerdown',r.left+r.width/2,r.top+10);fire('pointermove',r.left+r.width/2+130,r.top+10);fire('pointerup',r.left+r.width/2+130,r.top+10);
  });
  assert.equal(await p.locator('.civitaiViewer.tossing').count(),0,'Scrub controls must not start a toss');
  const r=await p.locator('.civitaiViewer video').boundingBox();

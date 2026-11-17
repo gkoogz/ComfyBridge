@@ -27,14 +27,13 @@ const assert=require('node:assert/strict'),path=require('node:path');
  await p.locator('.viewerTop [data-rating="5"]').click();assert.equal(await p.locator('.mediaRating [aria-pressed=true]').count(),0);
  const geometry=await p.evaluate(()=>{
   const v=$('#viewer video');Object.defineProperty(v,'videoWidth',{value:100,configurable:true});Object.defineProperty(v,'videoHeight',{value:300,configurable:true});v.dispatchEvent(new Event('loadedmetadata'));
-  const a=$('.transport').getBoundingClientRect(),b=$('.transportPlay').getBoundingClientRect(),c=$('.bigPlay').getBoundingClientRect(),r=v.getBoundingClientRect();
-  const h=Math.min(r.height,r.width*3),w=h/3;
-  return {circle:Math.abs(b.width-b.height),big:Math.abs(c.width-c.height),left:a.left,expectedLeft:r.left+(r.width-w)/2,bottom:a.bottom,expectedBottom:r.top+(r.height+h)/2};
+  const a=$('.transport').getBoundingClientRect(),c=$('.bigPlay').getBoundingClientRect(),r=v.getBoundingClientRect();
+  return {big:Math.abs(c.width-c.height),left:a.left,expectedLeft:$('.galleryAsset').getBoundingClientRect().left,top:a.top,expectedTop:r.bottom,background:getComputedStyle($('.transport')).backgroundImage};
  });
  if(process.env.MEDIA_SHOT)await p.screenshot({path:process.env.MEDIA_SHOT});
- assert(geometry.circle<1&&geometry.big<1);assert(Math.abs(geometry.left-geometry.expectedLeft)<2);assert(Math.abs(geometry.bottom-geometry.expectedBottom)<2);
+ assert(geometry.big<1);assert(Math.abs(geometry.left-geometry.expectedLeft)<2);assert(Math.abs(geometry.top-geometry.expectedTop)<2);assert.equal(geometry.background,'none');assert.equal(await p.locator('.transportPlay').count(),0);
  assert.equal(await p.locator('.viewerNavigation').count(),0);
- await p.locator('#viewer video').click({position:{x:375,y:250}});assert.equal(await p.locator('#viewer').getAttribute('data-id'),'three');
+ const videoBox=await p.locator('#viewer video').boundingBox();await p.locator('#viewer video').click({position:{x:videoBox.width*.9,y:videoBox.height*.4}});assert.equal(await p.locator('#viewer').getAttribute('data-id'),'three');
  await p.locator('#viewer .original').click({position:{x:15,y:250}});assert.equal(await p.locator('#viewer').getAttribute('data-id'),'two');
  await p.mouse.move(65,300);await p.mouse.down();await p.mouse.move(225,300,{steps:12});
  const during=await p.evaluate(()=>({view:$('#viewer').getBoundingClientRect().left,library:$('#workspace').getBoundingClientRect().left}));

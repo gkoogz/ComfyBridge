@@ -30,7 +30,7 @@ const assert=require('node:assert/strict'),path=require('node:path');
  await first.locator('.feedVideoToggle').click();await p.waitForFunction(()=>!document.querySelector('.feedVideo').paused);
  await v.evaluate(v=>v.currentTime=v.duration-.15);await p.waitForTimeout(600);assert(await v.evaluate(v=>v.currentTime<2&&!v.paused),'Playback actually loops');
  const box=await first.locator('.browseMedia').boundingBox();await first.locator('.browseMedia').click({position:{x:Math.min(80,box.width*.2),y:box.height/2}});await p.waitForSelector('.civitaiViewer');
- await p.waitForFunction(()=>document.querySelector('.feedVideo').paused);assert(await p.locator('.civitaiViewer video').evaluate(v=>v.controls),'Solo view retains scrub controls');
+ await p.waitForFunction(()=>document.querySelector('.feedVideo').paused);assert.equal(await p.locator('.civitaiViewer video').evaluate(v=>v.controls),false);assert.equal(await p.locator('.civitaiViewer .videoSeek').count(),1,'Solo view has the shared scrub controls');
  await p.evaluate(()=>CivitaiBrowser.close());await p.waitForFunction(()=>!document.querySelector('.feedVideo').paused);
  await p.locator('#workspace').evaluate(w=>w.scrollTop=3000);await p.waitForFunction(()=>document.querySelector('.feedVideo').paused).catch(async e=>{console.log(await p.evaluate(()=>({scroll:document.querySelector('#workspace').scrollTop,height:document.querySelector('#workspace').clientHeight,rect:document.querySelector('.browseTile').getBoundingClientRect().toJSON(),count:document.querySelectorAll('.browseTile').length})));throw e;});
  await p.evaluate(()=>navigate('notepad'));await p.waitForTimeout(100);assert.equal(await p.locator('.feedVideo').count(),0);

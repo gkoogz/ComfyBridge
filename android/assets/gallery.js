@@ -26,9 +26,10 @@ function renderLibrary(){
   $('.galleryEmpty',grid)?.remove();
   for(const [i,j] of items.entries()){
    const tile=old.get(j.id)||document.createElement('button');old.delete(j.id);
-   tile.className='libraryitem';tile.dataset.media=j.id;tile.setAttribute('aria-label','Open '+j.kind);
+   tile.className='libraryitem';if(j.width>0&&j.height>0)tile.style.setProperty('--thumb-ratio',j.width/j.height);tile.dataset.media=j.id;tile.setAttribute('aria-label','Open '+j.kind);
    const key=JSON.stringify([media(j.id,true),j.warning,j.duration]);
    if(tile.dataset.content!==key){tile.dataset.content=key;tile.innerHTML=(media(j.id,true)?'<img loading="lazy" alt="" src="'+media(j.id,true)+'">':'<small>On PC</small>')+(j.kind==='video'?'<span class="videoBadge">▶ '+duration(j.duration)+'</span>':'')+(j.warning?'<small class="copyBadge">Review</small>':'');}
+   const preview=$('img',tile);if(preview){const ratio=()=>{if(preview.naturalWidth&&preview.naturalHeight)tile.style.setProperty('--thumb-ratio',preview.naturalWidth/preview.naturalHeight);};preview.onload=ratio;if(preview.complete)ratio();}
    if(tile!==grid.children[i])grid.insertBefore(tile,grid.children[i]||null);
   }
   old.forEach(t=>t.remove());
@@ -202,47 +203,25 @@ function mountAsset(host,item,isViewer,posterOverride=null){
     return;
    }
    const videoPoster=posterOverride||media(id,true);
-   host.innerHTML='<video playsinline preload="metadata" poster="'+esc(videoPoster)+'" aria-label="Generated video"></video><button class="bigPlay" aria-label="Play video">▶</button><div class="transport"><button class="transportPlay" aria-label="Play">▶</button><input type="range" min="0" max="1" step="any" value="0" aria-label="Video position"><small></small></div>';
-   const video=$('video',host),middle=$('.bigPlay',host),btn=$('.transportPlay',host),seek=$('input',host);
-   const chrome=on=>(isViewer?$('#viewer'):host).classList.toggle('quiet',!on);
-   const tick=()=>{const end=Number.isFinite(video.duration)?video.duration:item.duration||0;seek.max=end||1;seek.value=video.currentTime;$('small',host).textContent=duration(video.currentTime)+' / '+duration(end);};
-   let preparing=false;
-   const toggle=async()=>{
-    if(!video.paused){video.pause();return;}if(preparing)return;preparing=true;
-    try{
-     if(window.Desktop){if(!video.src)video.src='/local/video/'+id+'/'+item.local;}else if(!playbackHandles.has(video)){
-      middle.textContent='…';middle.disabled=true;
-      // WebView can stall while seeking larger intercepted MP4 streams. A Blob gives
-      // the decoder a seekable local source without base64 or an extra native screen.
-      const response=await fetch('/local/video/'+id+'/'+item.local);
-      if(!response.ok)throw Error('Could not open this phone copy.');
-      const blob=await response.blob();
-      if(!video.isConnected)return;
-      if(!blob.size)throw Error('The phone copy is empty.');
-      const url=URL.createObjectURL(blob);playbackHandles.set(video,url);video.src=url;
-     }
-     await video.play();
-    }catch(e){if(video.isConnected)toast(e.message);}finally{preparing=false;middle.textContent='▶';middle.disabled=false;}
+   host.classList.add('videoAsset');
+   host.innerHTML='<video playsinline preload="metadata" poster="'+esc(videoPoster)+'" aria-label="Generated video"></video>';
+   const video=$('video',host);
+   const prepare=async()=>{
+    if(window.Desktop){if(!video.src)video.src='/local/video/'+id+'/'+item.local;}
+    else if(!playbackHandles.has(video)){
+     // Complete local blobs remain reliably seekable in Android's intercepted WebView.
+     const response=await fetch('/local/video/'+id+'/'+item.local);
+     if(!response.ok)throw Error('Could not open this phone copy.');
+     const blob=await response.blob();if(!video.isConnected)return;
+     if(!blob.size)throw Error('The phone copy is empty.');
+     const url=URL.createObjectURL(blob);playbackHandles.set(video,url);video.src=url;
+    }
    };
-   btn.onclick=middle.onclick=toggle;video.onclick=e=>mediaTap(e,toggleChrome);seek.oninput=()=>{if(Number.isFinite(video.duration))video.currentTime=Number(seek.value);};
-   video.onplay=()=>{middle.hidden=true;btn.textContent='Ⅱ';btn.setAttribute('aria-label','Pause');chrome(false);};
-   video.onpause=video.onended=()=>{middle.hidden=false;btn.textContent='▶';btn.setAttribute('aria-label','Play');chrome(true);};
-   const poster=new Image();
-   const layout=()=>{
-    const vw=video.videoWidth||poster.naturalWidth,vh=video.videoHeight||poster.naturalHeight;
-    if(!isViewer||!vw||!vh)return;
-    const rect=video.getBoundingClientRect(),outer=host.getBoundingClientRect();
-    const scale=Math.min(rect.width/vw,rect.height/vh);
-    const width=vw*scale,height=vh*scale;
-    host.style.setProperty('--content-left',(rect.left-outer.left+(rect.width-width)/2)+'px');
-    host.style.setProperty('--content-right',(outer.right-rect.right+(rect.width-width)/2)+'px');
-    host.style.setProperty('--content-bottom',(outer.bottom-rect.bottom+(rect.height-height)/2)+'px');
-   };
-   poster.onload=layout;poster.src=videoPoster;
-   const observer=new ResizeObserver(layout);observer.observe(video);assetObservers.set(host,observer);
-   video.ontimeupdate=tick;video.onloadedmetadata=()=>{tick();layout();};tick();
-   video.onerror=()=>{if(host.isConnected){chrome(true);msg(window.Desktop?'Windows could not decode this video. Use Open file location to play it in another app.':'Android could not decode this video. Your phone copy is still available to save.');}};
-   if(play)await toggle();
+   const player=VideoPlayer.mount(video,{duration:item.duration,width:item.width,height:item.height,prepare,
+    bounds:()=>({width:host.clientWidth,height:isViewer?host.clientHeight:Infinity}),error:e=>toast(e.message)});
+   video.onclick=e=>mediaTap(e,toggleChrome);
+   video.onerror=()=>{if(host.isConnected)toast(window.Desktop?'Windows could not decode this video. Use Open file location to play it in another app.':'Android could not decode this video. Your phone copy is still available to save.');};
+   if(play)await player.playPause();
   }catch(e){if(host.isConnected){msg(e.message);const retry=document.createElement('button');retry.className='assetRetry';retry.textContent='Try again';retry.onclick=()=>load(true,play);host.append(retry);}}
  }
  load(isViewer||item.kind==='image'&&(connected||!!item.local));
