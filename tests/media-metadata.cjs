@@ -1,7 +1,7 @@
 const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
 const assert=require('node:assert/strict'),path=require('node:path');
 (async()=>{const browser=await chromium.launch();try{for(const width of [320,390,1400]){
- const p=await browser.newPage({viewport:{width,height:900}}),errors=[];
+ const p=await browser.newPage({viewport:{width,height:900},hasTouch:width<500}),errors=[];
  p.on('pageerror',e=>errors.push(e.message));
  await p.route('https://bridge.test/**',r=>r.fulfill({path:path.join(__dirname,'../android/assets',new URL(r.request().url()).pathname.slice(1)||'index.html')}));
  await p.route('**/model-preview/**',r=>r.fulfill({contentType:'image/svg+xml',body:'<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300"><rect width="400" height="300" fill="#527c78"/></svg>'}));
@@ -26,6 +26,8 @@ const assert=require('node:assert/strict'),path=require('node:path');
   return {name:rect('.creatorName.chosenSource'),follow:rect('.viewerFollow'),copy:rect('.promptCopy'),title:rect('.civitaiPromptHeading h2'),vote:rect('[data-vote]'),resource:rect('.civitaiResources li:nth-child(2)'),params:[...document.querySelectorAll('.modelParameter')].map(el=>el.getBoundingClientRect().toJSON()),overflow:document.querySelector('.modelPreviewDetails').scrollWidth>document.querySelector('.modelPreviewDetails').clientWidth};
  });
  assert.equal(dimensions.name.height,dimensions.follow.height);assert(Math.abs(dimensions.name.y-dimensions.follow.y)<1);
+ assert.deepEqual(await p.locator('.modelPreviewDetails h2').allTextContents(),['Positive prompt','Negative prompt','Resources','Tags with algorithm weight']);
+ assert(await p.locator('.modelPreviewDetails h2').evaluateAll(hs=>hs.every(h=>parseFloat(getComputedStyle(h).paddingLeft)===9)));
  assert(Math.abs(dimensions.copy.y+dimensions.copy.height/2-dimensions.title.y-dimensions.title.height/2)<1);
  assert.equal(dimensions.vote.height,34);assert.equal(dimensions.vote.width,32);assert(dimensions.resource.height<70);
  assert.equal(dimensions.params[0].y,dimensions.params[1].y);assert(dimensions.params[1].x>dimensions.params[0].x);assert(!dimensions.overflow);
@@ -39,6 +41,15 @@ const assert=require('node:assert/strict'),path=require('node:path');
  assert(await p.locator('.newCollection').evaluate(e=>e.parentElement.classList.contains('collectionHeading')));
  const choice=await p.locator('.feedCollectionChoices label').first().boundingBox();assert(choice.height>=50);
  await p.locator('.feedCollectionChoices label').first().click({position:{x:choice.width-12,y:25}});assert(await p.locator('.feedCollectionChoices input').first().isChecked(),'Whole shaded row toggles membership');
+ // Tap the row edges and text, then drag slightly: the drawer must never capture it.
+ const box=p.locator('.feedCollectionChoices input').first();
+ for(const [x,y] of [[choice.x+choice.width-3,choice.y+3],[choice.x+60,choice.y+25]]){
+  const was=await box.isChecked();if(width<500)await p.touchscreen.tap(x,y);else await p.mouse.click(x,y);
+  assert.equal(await box.isChecked(),!was,'A row tap toggles exactly once');
+ }
+ await p.mouse.move(choice.x+choice.width-35,choice.y+25);await p.mouse.down();await p.mouse.move(choice.x+choice.width-20,choice.y+25,{steps:3});await p.mouse.up();
+ assert.equal(await p.locator('#drawer').evaluate(e=>e.classList.contains('open')),false);
+ await box.focus();const checked=await box.isChecked();await p.keyboard.press('Space');assert.equal(await box.isChecked(),!checked);
  assert(await p.locator('.feedCollectionShade>section').evaluate(e=>e.scrollWidth<=e.clientWidth));
  if(process.env.BROWSE_SHOTS)await p.screenshot({path:path.join(process.env.BROWSE_SHOTS,'collections-'+width+'.png')});
  assert.deepEqual(errors,[]);await p.close();

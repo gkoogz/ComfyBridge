@@ -8,7 +8,7 @@ const assert=require('node:assert/strict'),path=require('node:path');
  await p.addInitScript(()=>window.Native={configuration:()=>JSON.stringify({paired:false,fingerprint:'tag-fixture'}),notificationRoute:()=>''});
  await p.goto('https://bridge.test');await p.waitForSelector('#connect');
  await p.evaluate(()=>{
-  heartbeat=poll=syncSettings=()=>{};connected=true;window.calls=[];window.tagWeights={12:3,13:10,14:0};window.weightStamp=100;
+  heartbeat=poll=syncSettings=()=>{};connected=true;window.calls=[];window.tagWeights={12:3,13:10,14:0};window.weightStamp=100;window.bans=[];
   const weights=()=>({tagWeights:structuredClone(tagWeights),tagWeightsAt:weightStamp});
   const item=n=>({id:String(n),credit:Number(n)===2?'Potter':'Ceramicist',creatorId:Number(n)===2?'7':'8',type:'image',width:300,height:600,tags:[{id:12,name:'Ceramics',score:500},{id:13,name:'Blue',score:1},{id:14,name:'Glaze',score:10000}],tagsKnown:true,reactions:[],stats:{},path:`model-preview/browse/1/${n}/thumb`,fullPath:`model-preview/browse/1/${n}/full`,resources:[],parameters:{},detailVersion:2,generationDataAvailable:true,prompt:'A blue ceramic vase.'});
   api=async(route,body)=>{
@@ -20,6 +20,12 @@ const assert=require('node:assert/strict'),path=require('node:path');
     if(window.failNext){window.failNext=false;throw Error('Fixture failure');}
     tagWeights[body.tagId]=Math.max(0,(tagWeights[body.tagId]||0)+body.delta);weightStamp++;
     return {ok:true,tagId:body.tagId,weight:tagWeights[body.tagId],...weights()};
+   }
+   if(route==='browse/action'&&body.kind==='tag-ban'){
+    if(window.failBan){window.failBan=false;throw Error('Ban failed');}
+    bans=bans.filter(r=>!body.tagIds.includes(r.id));
+    if(body.banned)bans.push(...body.tagIds.map(id=>({kind:'tag',id,name:id})));
+    weightStamp++;return {ok:true,bans:structuredClone(bans),...weights()};
    }
    return {};
   };navigate('browse');
@@ -65,6 +71,18 @@ const assert=require('node:assert/strict'),path=require('node:path');
  await p.locator('.browseTile .browseMedia').nth(1).click();await p.waitForSelector('.creatorName.chosenSource');
  assert.equal(await p.locator('.civitaiTag.chosenSource').count(),0);
  assert.equal(await p.locator('.creatorName.chosenSource').evaluate(el=>getComputedStyle(el).color),'rgb(255, 219, 115)');
+ await p.locator('.civitaiTagHost').scrollIntoViewIfNeeded();
+ await tag(12).locator('.tagSearch').click();await tag(13).locator('.tagSearch').click();
+ const banBox=await p.locator('.tagBanSubmit').boundingBox(),findBox=await p.locator('.tagSearchSubmit').boundingBox();assert(banBox.x+banBox.width<findBox.x);
+ await p.evaluate(()=>window.failBan=true);await p.locator('.tagBanSubmit').click();await p.waitForTimeout(50);assert.equal(await p.locator('.bannedTag').count(),0);
+ await p.locator('.tagBanSubmit').click();await p.waitForFunction(()=>document.querySelectorAll('.bannedTag').length===2);
+ assert.equal(await p.locator('.civitaiViewer').count(),1,'Banning must leave the current sheet open to undo');
+ assert.equal(await p.locator('.tagBanSubmit').textContent(),'Unban tag');
+ await tag(12).locator('.tagSearch').click();assert.equal(await tag(12).evaluate(e=>getComputedStyle(e).color),'rgb(255, 119, 125)','Deselecting does not remove persistent red ban styling');
+ assert(await tag(12).locator('[data-vote="5"]').isDisabled());
+ await p.locator('.tagBanSubmit').click();await p.waitForFunction(()=>document.querySelectorAll('.bannedTag').length===1);
+ assert(await tag(12).evaluate(e=>e.classList.contains('bannedTag')));
+ await tag(13).locator('.tagSearch').click();await tag(12).locator('.tagSearch').click();await p.locator('.tagBanSubmit').click();await p.waitForFunction(()=>!document.querySelector('.bannedTag'));
  await p.evaluate(()=>CivitaiBrowser.close());
  assert.deepEqual(errors,[]);await p.close();
  }console.log('Media tag weights: personal sorting, +/-5, zero clamp, failed writes, stale snapshot protection, multi-tag selection/search and source-specific highlights passed on mobile/desktop.');

@@ -975,3 +975,29 @@ real video playback continuity, paused feed clones, toss return and scroll
 preservation, caret stowing/alignment, and opacity at phone and desktop widths.
 Existing Browse, shared player, feed video, arrival and loading checks also run.
 These browser checks do not constitute physical-phone verification.
+
+
+## Beta 109: collection targets and media tag bans
+
+Collection rows retain native checkbox semantics but the transparent checkbox
+covers the entire shaded label, with a separate visible check indicator. The
+popup is excluded from global swipe navigation. Keyboard Space/focus and the
+existing durable social outbox remain unchanged; unknown membership still waits
+for the lookup instead of guessing a checked state.
+
+Media headings gain 9px indentation and use Positive prompt / Negative prompt /
+Resources / Tags with algorithm weight. Selected tags expose Ban Tag beside
+Search by tag; an entirely banned selection offers Unban tag. Mixed selections
+ban all selected tags. Banned chips stay red whether selected or not.
+
+The local tag-ban action validates every selected ID against the stored media,
+then writes all weight-overrides and the idempotency receipt in one transaction.
+It can introduce previously untracked tags using the stored tag names. This is
+the same ban store used by Your Feed, with account isolation and zero algorithm
+weight while banned. No upstream tag votes are sent. Unban restores prior weight.
+Confirmed bans prune matching feed cards but keep the current sheet open for undo.
+
+Checks: media-metadata (320/390/1400px full-row taps, keyboard and gesture isolation),
+media-tag-weights (multi-ban, red persistence, undo, failure), social-queue, Browse,
+and the browser backend suite including restart persistence and atomic rejection
+of invalid multi-tag requests. Physical-phone verification remains outstanding.

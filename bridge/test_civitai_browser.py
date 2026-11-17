@@ -272,6 +272,26 @@ class BrowseTests(unittest.TestCase):
         self.b.action(self.act(kind='preference',subject='tag',id=12,banned=False))
         self.assertTrue(self.b.feed({'channel':'collection:4'})['items'])
 
+    def test_media_tag_bans_accept_untracked_tags_and_persist_atomically(self):
+        self.b.remember('1',image(tags=[{'id':12,'name':'ceramics'},{'id':13,'name':'blue'}]))
+        self.assertEqual(self.b.preference_rows('1'),[])
+        ban=self.act(kind='tag-ban',imageId=1,tagIds=[12,13],banned=True)
+        result=self.b.action(ban)
+        self.assertEqual(self.b.action(ban),result)
+        self.assertEqual({r['id'] for r in result['bans']},{'12','13'})
+        restarted=Browser(self.tmp.name,self.models,None,self.api)
+        self.assertEqual({r['name'] for r in restarted.preference_rows('1') if r['banned']},{'ceramics','blue'})
+        self.assertEqual(restarted.bans('2'),[])
+        with self.assertRaisesRegex(ValueError,'Refresh this media'):
+            restarted.action(self.act(kind='tag-ban',imageId=1,tagIds=[12,999],banned=False))
+        self.assertEqual(len(restarted.bans('1')),2,'Invalid selection must not partially unban')
+        restored=restarted.action(self.act(kind='tag-ban',imageId=1,tagIds=[12,13],banned=False))
+        self.assertEqual(restored['bans'],[])
+        restarted.action(self.act(kind='tag-weight',imageId=1,tagId=12,delta=5))
+        restarted.action(self.act(kind='tag-ban',imageId=1,tagIds=[12],banned=True))
+        self.assertEqual(restarted.action(self.act(kind='tag-ban',imageId=1,tagIds=[12],banned=False))['tagWeights']['12'],5)
+        self.assertFalse(any(write for _,_,write in self.api.calls),'Bans are local preferences, not upstream tag votes')
+
     def test_exclusive_feeds_pass_recency_and_media_filter(self):
         self.b.feed({'channel':'creator:7:video'})
         query=[v for r,v,_ in self.api.calls if r=='image.getInfinite'][-1]

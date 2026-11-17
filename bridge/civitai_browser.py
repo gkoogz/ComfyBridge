@@ -916,7 +916,30 @@ class Browser:
             else:
                 iid=ident(payload.get('imageId'));item=self.stored(account,iid)
                 if not item:raise ValueError('Open this media before interacting with it.')
-                if kind=='reaction':
+                if kind=='tag-ban':
+                    ids=payload.get('tagIds');banned=payload.get('banned')
+                    if not isinstance(ids,list) or not 1<=len(ids)<=100 or type(banned) is not bool:
+                        raise ValueError('Choose tags and a ban state.')
+                    ids={str(ident(tid)) for tid in ids}
+                    tags={str(t['id']):t for t in item.get('tags',[])}
+                    if not ids.issubset(tags):raise ValueError('Refresh this media before changing its tags.')
+                    overrides=self.setting(account,'weight-overrides',{})
+                    rows={r['id']:r for r in self.preference_rows(account) if r['kind']=='tag'}
+                    snapshot=self.tag_weight_snapshot(account)
+                    for tid in ids:
+                        key='tag:'+tid;change=overrides.get(key,{})
+                        change.update(name=tags[tid]['name'],banned=banned)
+                        if not banned:change['disabled']=False
+                        overrides[key]=change
+                        snapshot['tagWeights'][tid]=0 if banned else max(0,rows.get(tid,{}).get('base',0)+change.get('offset',0))
+                    bans=[dict(kind=k.split(':',1)[0],id=k.split(':',1)[1],name=v.get('name','')) for k,v in overrides.items() if v.get('banned')]
+                    result=dict(ok=True,bans=bans,**snapshot)
+                    # All selected tags and the retry receipt persist together; no upstream writes.
+                    with self.db() as db:
+                        db.execute('INSERT OR REPLACE INTO settings VALUES(?,?,?)',(account,'weight-overrides',json.dumps(overrides)))
+                        db.execute('UPDATE actions SET state=?,result=? WHERE account=? AND id=?',('done',json.dumps(result),account,request_id))
+                    return result
+                elif kind=='reaction':
                     reaction=payload.get('reaction');desired=payload.get('selected')
                     if reaction not in REACTIONS or type(desired) is not bool:raise ValueError('Invalid reaction')
                     def current():

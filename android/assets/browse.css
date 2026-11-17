@@ -344,3 +344,16 @@ header.hasBrowseSubject #headerIdentity{min-height:44px}
 
 .civitaiViewer.entering .modelPreviewHero{pointer-events:none}
 .civitaiViewer .modelPreviewDetails{transition:opacity .12s ease}
+/* Full-row native checkbox targets also exclude collection touches from page swipes. */
+.feedCollectionChoices label{position:relative;width:100%;touch-action:pan-y}
+.feedCollectionChoices label input{position:absolute;inset:0;width:100%;height:100%;opacity:0;margin:0;z-index:1;cursor:pointer}
+.collectionCheck{width:20px;height:20px;flex:none;border:1px solid var(--muted);border-radius:4px;display:grid;place-items:center;color:#10231d}
+.feedCollectionChoices input:checked+.collectionCheck{background:var(--mint);border-color:var(--mint)}
+.feedCollectionChoices input:checked+.collectionCheck::after{content:'✓';font-weight:800;font-size:16px;line-height:1}
+.feedCollectionChoices label:has(input:disabled){opacity:.55}
+.modelPreviewDetails h2{padding-left:9px}
+.tagSelectionActions{position:fixed;right:12px;bottom:calc(12px + env(safe-area-inset-bottom,0px));z-index:210;display:flex;gap:8px;max-width:calc(100% - 24px)}
+.tagSelectionActions .tagSearchSubmit{position:static}
+.tagBanSubmit{background:#46252b;border:1px solid var(--red);color:var(--red);font-weight:650;box-shadow:0 3px 18px #0007}
+.civitaiTag.bannedTag,.civitaiTag.bannedTag .personalTagWeight{color:var(--red);border-color:var(--red);background:#46252b}
+.civitaiTag.bannedTag.selectedTag{box-shadow:inset 0 0 0 1px var(--red)}

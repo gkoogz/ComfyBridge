@@ -228,7 +228,7 @@ const CivitaiBrowser=(()=>{
   }
  }
  function promptHTML(item,state='loading'){
-  return '<div class="civitaiPromptBlocks">'+[['prompt','Prompt'],['negativePrompt','Negative prompt']].map(([key,label])=>{
+  return '<div class="civitaiPromptBlocks">'+[['prompt','Positive prompt'],['negativePrompt','Negative prompt']].map(([key,label])=>{
    if(key==='negativePrompt'&&!item[key])return '';
    return '<section class="civitaiPromptBlock"><div class="civitaiPromptHeading"><h2>'+label+'</h2>'+
     (item[key]?button(copyIcon,'class="promptCopy" data-copy-prompt="'+key+'" aria-label="Copy '+label.toLowerCase()+'"'):'')+'</div><p class="modelPreviewPrompt"'+(!item[key]&&state==='loading'&&!item.generationDataAvailable?' role="status" aria-busy="true"':'')+'>'+esc(item[key]||(item.generationDataAvailable?'No prompt is available in this media’s generation data.':state==='loading'?'Loading prompt details…':'Could not load prompt details.'))+'</p>'+
@@ -366,13 +366,13 @@ const CivitaiBrowser=(()=>{
    String(item.creatorId||'')===String(rule.id)||rule.name&&rule.name.toLowerCase()===String(item.credit||'').toLowerCase():
    !item.tagsKnown||(item.tags||[]).some(t=>String(t.id)===String(rule.id)||rule.name&&rule.name.toLowerCase()===String(t.name||'').toLowerCase()));
  }
- function pruneBanned(){
+ function pruneBanned(keepViewer=false){
   feed=feed.filter(i=>!isBanned(i));strip=strip.filter(i=>!isBanned(i));
   for(const saved of history)saved.feed=saved.feed.filter(i=>!isBanned(i));
   for(const root of [document,...history.flatMap(h=>h.nodes),...(suspended?.nodes||[])]){
    $$('.browseTile,.browseThumb',root).forEach(el=>{if(isBanned(el.browseItem||{}))el.remove();});
   }
-  if(viewer&&isBanned(viewer.item))close();
+  if(!keepViewer&&viewer&&isBanned(viewer.item))close();
   paintCollections();saveSnapshot();
   if(view.kind!=='mix')try{
    const saved=JSON.parse(localStorage.getItem(scope())||'null');
@@ -876,7 +876,7 @@ const CivitaiBrowser=(()=>{
   async function refresh(){
    if(account!==boundAccount)throw Error('Civitai account changed. Reopen this menu.');
    const known=Array.isArray(item.collections),members=membershipIds(item.collections),host=$('.feedCollectionChoices',popup);
-   host.innerHTML=(status?.account===boundAccount?status.collections:knownCollections).map(c=>'<label><input type="checkbox" value="'+c.id+'" '+(!known?'disabled ':'')+(members.includes(String(c.id))?'checked':'')+'>'+esc(c.name)+'</label>').join('');
+   host.innerHTML=(status?.account===boundAccount?status.collections:knownCollections).map(c=>'<label><input type="checkbox" value="'+c.id+'" '+(!known?'disabled ':'')+(members.includes(String(c.id))?'checked':'')+'><span class="collectionCheck" aria-hidden="true"></span><span>'+esc(c.name)+'</span></label>').join('');
    $$('input',host).forEach(box=>box.onchange=async()=>{
     box.disabled=true;
     try{const result=await action({account:boundAccount,kind:'collect',imageId:item.id,collectionId:box.value,selected:box.checked});const ids=new Set(membershipIds(item.collections));box.checked?ids.add(box.value):ids.delete(box.value);updateItemSocial(item,{collections:result.collections||[...ids].map(collectionId=>({collectionId}))});}
@@ -1118,12 +1118,12 @@ const CivitaiBrowser=(()=>{
   finally{socialPumping=false;socialSoon(5000);}
  }
  async function action(data){
-  const key=detailKey(data.imageId);if(data.imageId)socialRevisions.set(key,(socialRevisions.get(key)||0)+1);if(data.kind==='follow')followRevision++;if(data.kind==='preference')banRevision++;
+  const key=detailKey(data.imageId);if(data.imageId)socialRevisions.set(key,(socialRevisions.get(key)||0)+1);if(data.kind==='follow')followRevision++;if(['preference','tag-ban'].includes(data.kind))banRevision++;
   try{
    if(['reaction','collect','follow'].includes(data.kind)){const result=queueSocial({account,...data});if(data.imageId)details.delete(key);else details.clear();return result;}
    const result=await api('browse/action',{account,...data,requestId:crypto.randomUUID()});
    if(data.imageId)details.delete(key);else if(data.kind==='follow')details.clear();saveSnapshot();return result;
-  }finally{if(data.imageId)socialRevisions.set(key,(socialRevisions.get(key)||0)+1);if(data.kind==='follow')followRevision++;if(data.kind==='preference')banRevision++;}
+  }finally{if(data.imageId)socialRevisions.set(key,(socialRevisions.get(key)||0)+1);if(data.kind==='follow')followRevision++;if(['preference','tag-ban'].includes(data.kind))banRevision++;}
  }
  async function createCollection(parent,onCreated,boundAccount=account){
   const form=document.createElement('form');form.className='browseCollectionForm';form.innerHTML='<label>New private media collection<input name="name" maxlength="30" required placeholder="Collection name"></label><div class="row">'+button('Create','type="submit" class="green"')+button('Cancel','type="button"')+'</div><p role="status"></p>';
@@ -1229,7 +1229,7 @@ const CivitaiBrowser=(()=>{
   const chosen=item.chosenBy?.kind==='tags'?item.chosenBy.ids.map(String):[];
   return '<div class="civitaiTags">'+[...(item.tags||[])].sort((a,b)=>tagWeight(b)-tagWeight(a)||a.name.localeCompare(b.name)).map(t=>{
    const weight=tagWeight(t),id=String(t.id),banned=(status?.bans||[]).some(r=>r.kind==='tag'&&String(r.id)===id),busy=pendingTagWeights.has(account+':'+id);
-   return '<div class="civitaiTag '+(chosen.includes(id)?'chosenSource':'')+(selected.has(id)?' selectedTag':'')+'" data-weight-tag="'+esc(id)+'">'+
+   return '<div class="civitaiTag '+(chosen.includes(id)?'chosenSource':'')+(selected.has(id)?' selectedTag':'')+(banned?' bannedTag':'')+'" data-weight-tag="'+esc(id)+'">'+
     button(esc(t.name),'class="tagSearch" data-tag-search="'+esc(id)+'" aria-pressed="'+selected.has(id)+'" aria-label="Select tag '+esc(t.name)+'"')+'<small class="personalTagWeight" title="Your weight">'+weight+'</small>'+
     button(caretIcon(false),'class="'+(lastTagAdjust.get(id)===5?'selected':'')+'" data-vote="5" data-tag="'+esc(id)+'" aria-label="Add 5 weight to '+esc(t.name)+'" '+(busy||banned?'disabled':''))+
     button(caretIcon(true),'class="'+(lastTagAdjust.get(id)===-5?'selected':'')+'" data-vote="-5" data-tag="'+esc(id)+'" aria-label="Subtract 5 weight from '+esc(t.name)+'" '+(busy||banned||weight<=0?'disabled':''))+'</div>';
@@ -1240,11 +1240,27 @@ const CivitaiBrowser=(()=>{
   host.tagItem=item;host.tagSelection??=new Set();
   const ids=new Set((item.tags||[]).map(t=>String(t.id)));for(const id of host.tagSelection)if(!ids.has(id))host.tagSelection.delete(id);
   host.classList.toggle('hasTagSelection',host.tagSelection.size>0);
-  host.innerHTML='<h2>Tags · your weights</h2>'+tagHTML(item,host.tagSelection)+(host.tagSelection.size?button('Search by tag','class="tagSearchSubmit" aria-label="Search by selected tags"'):'');
+  const unban=[...host.tagSelection].every(id=>(status?.bans||[]).some(r=>r.kind==='tag'&&String(r.id)===id));
+  host.innerHTML='<h2>Tags with algorithm weight</h2>'+tagHTML(item,host.tagSelection)+(host.tagSelection.size?'<div class="tagSelectionActions">'+button(host.tagBanBusy?'<i class="spinner"></i>':(unban?'Unban tag':'Ban Tag'),'class="tagBanSubmit" '+(host.tagBanBusy?'disabled ':'')+'data-unban="'+unban+'"')+button('Search by tag','class="tagSearchSubmit" aria-label="Search by selected tags"')+'</div>':'');
   wireTags(host,item);
  }
  function wireTags(host,item){
   const boundAccount=account;
+  $('.tagBanSubmit',host)?.addEventListener('click',async e=>{
+   if(host.tagBanBusy)return;
+   const ids=[...host.tagSelection],banned=e.currentTarget.dataset.unban!=='true';
+   host.tagBanBusy=true;paintTags(host,item);
+   try{
+    const result=await action({account:boundAccount,kind:'tag-ban',imageId:item.id,tagIds:ids,banned});
+    if(account!==boundAccount)return;
+    // Listing previews can open metadata before Browse has loaded its status.
+    status??={account:boundAccount,collections:[],username:''};
+    status.bans=result.bans;acceptTagWeights({account:boundAccount,...result});
+    // Keep this sheet available to inspect or undo the ban; remove matching feed cards.
+    pruneBanned(true);
+   }catch(error){toast(error.message);}
+   finally{host.tagBanBusy=false;if(account===boundAccount&&host.isConnected)paintTags(host,item);}
+  });
   $$('[data-tag-search]',host).forEach(b=>b.onclick=()=>{const id=b.dataset.tagSearch;host.tagSelection.has(id)?host.tagSelection.delete(id):host.tagSelection.add(id);paintTags(host,item);});
   $('.tagSearchSubmit',host)?.addEventListener('click',()=>{
    const tags=item.tags.filter(t=>host.tagSelection.has(String(t.id))).sort((a,b)=>Number(a.id)-Number(b.id));
