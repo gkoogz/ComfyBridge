@@ -23,7 +23,9 @@ const assert=require('node:assert/strict'),path=require('node:path');
     library=[{id:'old-'+kind,job:'old-job-'+kind,kind,local:'old',created:1}];
     active=null;jobs=[{id:'live-'+kind,kind,status:'pending',owner:'one',created:2,queuePosition:1,queueTotal:1}];queueHistory=jobs;
     fetchOriginal=id=>new Promise(resolve=>window.finishDownload=()=>resolve({...library.find(x=>x.id===id),local:'complete'}));
-    api=async route=>{
+    api=async (route,body)=>{
+     // Background outbox status reads are unrelated to replay; still record writes.
+     if(route==='browse/social'&&body===undefined)return {};
      calls.push(route);
      if(route.startsWith('studio/replay/'))return {kind:'video',settings:{...state.settings.video,seed:'123456789',upload:'ComfyBridge/source.png',finalFrame:'ComfyBridge/end.png'},inputs:{data:sourceImage,finalFrame:{data:sourceImage}}};
      return {};

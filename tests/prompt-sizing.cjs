@@ -113,9 +113,12 @@ const assert=require('node:assert/strict'),path=require('node:path');
    for(let i=0;i<2;i++){
     const size=await list.nth(i).evaluate(async img=>{
      await img.decode();
-     return {ratio:img.naturalWidth/img.naturalHeight,rendered:img.getBoundingClientRect().width/img.getBoundingClientRect().height};
+     const rect=img.getBoundingClientRect(),tile=img.closest('.thumb')?.getBoundingClientRect();
+     return {ratio:img.naturalWidth/img.naturalHeight,rendered:rect.width/rect.height,
+      contained:!tile||(rect.left>=tile.left&&rect.right<=tile.right+.5&&rect.top>=tile.top&&rect.bottom<=tile.bottom+.5)};
     });
     assert(Math.abs(size.ratio-size.rendered)<.02,JSON.stringify(size));
+    assert(size.contained,'Carousel flex sizing must not clip an intrinsically sized thumbnail');
    }
   }
   await assertThumbnailRatios(thumbs);
@@ -146,7 +149,7 @@ const assert=require('node:assert/strict'),path=require('node:path');
   const tile=await p.locator('#carousel .thumb').first().evaluate(el=>({
    width:el.offsetWidth,radius:parseFloat(getComputedStyle(el).borderRadius),gap:parseFloat(getComputedStyle(el.closest('#carousel')).gap)
   }));
-  assert(tile.width<72&&tile.radius<10&&tile.gap<9);
+  assert(tile.radius<10&&tile.gap<9);
   await p.evaluate(()=>navigate('video'));
   await fold('Canvas & model').click();
   assert.match(await box('Canvas & model').locator('.foldSummary').textContent(),/0.92 s · 24 FPS/);
