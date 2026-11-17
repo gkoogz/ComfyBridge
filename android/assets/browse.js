@@ -641,6 +641,7 @@ const CivitaiBrowser=(()=>{
 
  }
  async function render(){
+  BrowseLoader.stop();
   parkSubjectHeading();
   showBrowseHeader();
   clearBackLayer();
@@ -678,6 +679,7 @@ const CivitaiBrowser=(()=>{
   schedule();
  },15000);}
  function suspend(){
+  BrowseLoader.stop();
   parkSubjectHeading();
   showBrowseHeader();
   clearBackLayer();
@@ -740,6 +742,7 @@ const CivitaiBrowser=(()=>{
   return Number(item.stats?.[key.toLowerCase()+'CountAllTime']??item.stats?.[key.toLowerCase()+'Count']??0);
  }
  function saveView(){
+  BrowseLoader.stop();
   parkSubjectHeading();
   showBrowseHeader();
   observer?.disconnect();
@@ -751,8 +754,9 @@ const CivitaiBrowser=(()=>{
  function back(){
   showBrowseHeader();
   clearBackLayer();
-  if(collectionPopup){collectionPopup.remove();collectionPopup=null;return true;}
+  if(collectionPopup){collectionPopup.remove();collectionPopup=null;BrowseLoader.refresh();return true;}
   if(!history.length)return false;
+  BrowseLoader.stop();
   parkSubjectHeading();
   observer?.disconnect();session++;busy=false;stripBusy=false;
   const saved=history.pop();
@@ -766,6 +770,7 @@ const CivitaiBrowser=(()=>{
  function feedLead(){return Math.round(($('#workspace')?.clientHeight||innerHeight)*1.5);}
  function observeMore(){
   observer?.disconnect();
+  BrowseLoader.attach($('#browseMore'),$('#workspace'),()=>page==='browse'&&!viewer&&!backLayer&&!collectionPopup&&!$('#drawer').classList.contains('open'));
   if(!$('#browseMore')||feedEnded)return;
   observer=new IntersectionObserver(entries=>{if(entries.some(e=>e.isIntersecting)&&emptyPages<2)loadFeed();},{root:$('#workspace'),rootMargin:feedLead()+'px 0px'});
   observer.observe($('#browseMore'));pullerMotion.disconnect();pullerMotion.observe($('#browseMore'));
@@ -864,7 +869,7 @@ const CivitaiBrowser=(()=>{
   popup.className='feedCollectionShade';collectionPopup=popup;
   popup.innerHTML='<section role="dialog" aria-modal="true" aria-label="Collections"><div class="row spread"><strong>Collections</strong>'+button('×','class="collectionClose" aria-label="Close collections"')+'</div><div class="feedCollectionChoices">Loading…</div><div class="newCollectionAnchor"></div><p class="warning" role="status"></p></section>';
   document.body.append(popup);
-  function dismiss(){popup.remove();if(collectionPopup===popup)collectionPopup=null;}
+  function dismiss(){popup.remove();if(collectionPopup===popup)collectionPopup=null;BrowseLoader.refresh();}
   $('.collectionClose',popup).onclick=dismiss;
   popup.onclick=e=>{if(e.target===popup)dismiss();};
   async function refresh(){
@@ -891,7 +896,7 @@ const CivitaiBrowser=(()=>{
   }
   try{await refresh();}catch(error){if(popup.isConnected)$('p.warning',popup).textContent=error.message;}
  }
- function pullerHTML(){return '<div id="browseMore" class="browsePuller" role="status" tabindex="0" aria-label="Load more media"><i class="spinner"></i><span>Pulling..</span></div>';}
+ function pullerHTML(){return '<div id="browseMore" class="browsePuller" role="status" tabindex="0" aria-label="Load more media"><canvas class="browseFluid" aria-hidden="true"></canvas><canvas class="browseFlung" aria-hidden="true"></canvas><div class="browseLoaderSpinner"><i class="spinner" aria-hidden="true"></i><span>Pulling..</span></div></div>';}
  function pendingCards(){const host=$('#browseFeed');return !!(feedBuilds.get(host)?.length||host?.querySelector('.cardPending:not(.cardFailed)'));}
  function paintPuller(){
   const more=$('#browseMore');if(!more)return;
@@ -900,6 +905,7 @@ const CivitaiBrowser=(()=>{
   more.querySelector('span').textContent=failed&&!pendingCards()&&!busy?'Media unavailable · tap to retry':'Pulling..';
   more.onclick=()=>{const failed=$$('#browseFeed .cardFailed');if(failed.length)failed.forEach(prepareFeedCard);else loadFeed();};
   more.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();more.click();}};
+  BrowseLoader.attach(more,$('#workspace'),()=>page==='browse'&&!viewer&&!backLayer&&!collectionPopup&&!$('#drawer').classList.contains('open'));BrowseLoader.refresh();
  }
  const feedBuilds=new WeakMap(),cardLoads=[];let cardLoading=0;
  function clearFeed(){const host=$('#browseFeed');if(host){feedBuilds.delete(host);host.replaceChildren();}}
@@ -939,6 +945,8 @@ const CivitaiBrowser=(()=>{
   const visible=canAnimate?ready.filter(el=>{const r=el.getBoundingClientRect();return r.bottom>viewport.top&&r.top<viewport.bottom&&r.right>viewport.left&&r.left<viewport.right;}):[];
   let ghost;if(visible.length&&old&&old.bottom>viewport.top&&old.top<viewport.bottom&&!more.hidden&&section&&!section.querySelector('.pullGhost')){
    ghost=more.cloneNode(true);ghost.removeAttribute('id');ghost.removeAttribute('tabindex');ghost.setAttribute('aria-hidden','true');ghost.classList.add('pullGhost','motionVisible');
+   // Canvas clones are blank; keep a single static frame beneath the arriving card.
+   [...ghost.querySelectorAll('canvas')].forEach((canvas,i)=>canvas.getContext('2d').drawImage(more.querySelectorAll('canvas')[i],0,0));
    ghost.style.top=oldTop+'px';ghost.style.height=oldHeight+'px';section.append(ghost);more.classList.add('pullCovered');
   }
   visible.forEach(el=>el.classList.add('cardArriving'));

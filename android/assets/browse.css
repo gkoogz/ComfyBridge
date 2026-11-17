@@ -256,3 +256,17 @@ body[data-page=browse] #workspace>header.hasBrowseSubject,.browseBackLayer>heade
 header.hasBrowseSubject>.subjectHeading{flex:0 0 100%;width:100%;min-width:0;padding:2px 0 5px;margin:0}
 header.hasBrowseSubject #headerIdentity{min-height:44px}
 .viewerFollow.selected{color:var(--mint);border-color:var(--mint);background:#1d3b31}
+
+/* Liquid loading edge; the media above and the waves share the same flow position. */
+#browseMore.browsePuller{position:relative;height:var(--loader-height,240px);padding:0;isolation:isolate}
+.browseFluid,.browseFlung{position:absolute;top:0;left:0;width:100%;height:112px;pointer-events:none}
+.browseFlung{height:200px}
+.browseLoaderSpinner{position:absolute;top:90px;left:0;right:0;display:flex;flex-direction:column;align-items:center;gap:14px;pointer-events:none}
+.browseLoaderSpinner .spinner{display:block;width:38px;height:38px;border:4px solid #a3f2cc1a;border-top-color:var(--mint);border-right-color:#a3f2cc65;border-radius:50%;box-sizing:border-box;animation:spin 1.1s linear infinite;animation-play-state:paused}
+.browseLoaderSpinner span{color:var(--muted);font-size:12px;letter-spacing:.02em;text-align:center}
+#browseMore.fluidRunning .spinner{animation-play-state:running}
+#browseMore.pullFailed{height:160px}
+.pullFailed .browseFluid,.pullFailed .browseFlung{display:none}
+.pullFailed .browseLoaderSpinner{top:65px}
+.pullGhost .spinner{animation:none}
+@media(prefers-reduced-motion:reduce){#browseMore .spinner{animation:none}}

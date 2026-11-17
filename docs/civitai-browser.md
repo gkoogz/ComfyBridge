@@ -838,3 +838,28 @@ Coverage: `browse-topbar.cjs`, `social-header.cjs`, `browse-swipe.cjs`,
 `media-tag-weights.cjs`, `browse-download.cjs`, `lora-library.cjs` and
 `test_model_downloads.py`. Live Silverdream listing metadata confirmed the
 previously rejected fileId URL; actual model download was not used as a test.
+
+## Beta 101: liquid feed loader
+
+`browse-loader.js` owns one controller for the current `browseMore` node. It is
+disposed before navigation/history parking and rebound to the restored node.
+Canvas waves stay in document flow beneath the last ready card; only the spinner
+is positioned relative to the workspace viewport. Upward overscroll at the bottom
+tugs the section and waves together, with only 30% of that movement on the spinner.
+Horizontal gestures, controls and ordinary vertical scrolling retain ownership.
+
+The approved palette is gold and white with small mint reflections and the app's
+mint spinner. Independent staggered droplets swell from the liquid, narrow their
+necks and release after 2.8–4.5 seconds, or earlier on rebound. Rebound sparks travel
+downward and expire. The wave and droplet subpaths share clockwise winding so their
+overlaps cannot subtract transparent holes.
+
+Drawing is capped at 30 fps and DPR 1.5, with bounded particles and no API requests.
+Intersection, document visibility, overlays, reduced motion, errors and navigation
+gate the animation. A static canvas frame accompanies the existing loading ghost
+while a decoded card arrives. The next-page threshold remains 1.5 viewport heights.
+
+Checks: `browse-loader.cjs` (phone/desktop, emulated touch and wheel, separate
+anchors, rebound-only particles, pause/disposal); `feed-arrival.cjs`,
+`scroll-scheduling.cjs`, `browse.cjs` and `android-assets.cjs`. Browser checks do not
+establish physical-phone gesture behavior.
