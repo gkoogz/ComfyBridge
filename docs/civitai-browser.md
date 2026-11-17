@@ -763,3 +763,13 @@ known. Avatar requests are bridge media/CDN transfers, not new Civitai API reads
 outline/filled styling, provenance order, wide/narrow action alignment, creator
 heading placement, one shared avatar fetch, restart reuse and the 300-file cap.
 Existing browse, discovery and durable-social tests use the single Like control.
+
+
+## Beta 97: follow from full-screen media
+
+A Follow button sits between creator name and Feed in the full-screen social
+header only when that creator is not followed. It uses the existing durable
+follow action and pending-state overlay; it disappears immediately on a saved
+follow and stays hidden on reopen. Creator-feed follow/unfollow controls remain
+unchanged. `tests/social-header.cjs` verifies order, queued intent and reopen
+behavior at phone and desktop widths.

@@ -122,12 +122,12 @@ const CivitaiBrowser=(()=>{
     $$('[data-feed-react]',el).forEach(b=>{b.innerHTML=reactionLabel(item,b.dataset.feedReact);b.setAttribute('aria-pressed',String((item.reactions||[]).includes(b.dataset.feedReact)));});
    });
    $$('[data-follow-creator]',root).forEach(b=>{
-    const selected=following({creatorId:b.dataset.followCreator});b.classList.toggle('selected',selected);b.textContent=selected?'Following ✓':'Follow';b.setAttribute('aria-pressed',String(selected));
+    const selected=following({creatorId:b.dataset.followCreator});b.classList.toggle('selected',selected);b.textContent=selected?'Following ✓':'Follow';b.setAttribute('aria-pressed',String(selected));if(b.hasAttribute('data-follow-only'))b.hidden=selected;
    });
   }
   if(viewer){
    const host=viewer.el,item=viewer.item;
-   $$('[data-follow-creator]',host).forEach(b=>{const selected=following({creatorId:b.dataset.followCreator});b.textContent=selected?'Following ✓':'Follow';b.classList.toggle('selected',selected);b.setAttribute('aria-pressed',String(selected));});
+   $$('[data-follow-creator]',host).forEach(b=>{const selected=following({creatorId:b.dataset.followCreator});b.textContent=selected?'Following ✓':'Follow';b.classList.toggle('selected',selected);b.setAttribute('aria-pressed',String(selected));if(b.hasAttribute('data-follow-only'))b.hidden=selected;});
    const via=$('.viaFollowing',host);if(via)via.hidden=!following({creatorId:item.chosenBy?.via?.id});
    $('.viewerCollect',host)?.classList.toggle('bookmarked',membershipIds(item.collections).length>0);
    $$('[data-civi-react]',host).forEach(b=>{b.innerHTML=reactionLabel(item,b.dataset.civiReact);b.setAttribute('aria-pressed',String((item.reactions||[]).includes(b.dataset.civiReact)));b.classList.toggle('selected',(item.reactions||[]).includes(b.dataset.civiReact));});
@@ -1058,7 +1058,7 @@ const CivitaiBrowser=(()=>{
   $$('.sourceLora',host).forEach(b=>b.onclick=()=>openModelSource(b.dataset.civiLink));
  }
  function socialHTML(item,collections){
-  return '<div class="socialTop"><div class="civitaiAuthor">'+avatarHTML(item)+button(esc(item.credit||'Unknown creator'),'class="creatorName '+(item.chosenBy?.kind==='creator'&&String(item.chosenBy.id)===String(item.creatorId)?'chosenSource':'')+'" data-civi-link="https://civitai.red/user/'+esc(encodeURIComponent(item.credit||''))+'"')+(item.creatorId?button('Feed','data-creator-feed class="creatorFeed"'):'')+button('↗','data-creator-profile class="creatorProfile" aria-label="Open creator profile"')+(item.chosenBy?.kind==='curation'?discoveryHTML(item):'')+'</div><div class="civitaiReactions">'+button(reactionLabel(item),'data-civi-react="Like" aria-label="Like" aria-pressed="'+(item.reactions||[]).includes('Like')+'"')+button(ribbonIcon,'class="viewerCollect '+(membershipIds(item.collections).length?'bookmarked':'')+'" aria-label="Add to collection"')+'</div></div>'+(item.chosenBy?.kind==='lora'?discoveryHTML(item):'')+'<p class="civitaiActionError warning" role="status"></p>';
+  return '<div class="socialTop"><div class="civitaiAuthor">'+avatarHTML(item)+button(esc(item.credit||'Unknown creator'),'class="creatorName '+(item.chosenBy?.kind==='creator'&&String(item.chosenBy.id)===String(item.creatorId)?'chosenSource':'')+'" data-civi-link="https://civitai.red/user/'+esc(encodeURIComponent(item.credit||''))+'"')+(item.creatorId?button('Follow','class="viewerFollow" data-follow-only data-follow-creator="'+esc(item.creatorId)+'" '+(following(item)?'hidden':''))+button('Feed','data-creator-feed class="creatorFeed"'):'')+button('↗','data-creator-profile class="creatorProfile" aria-label="Open creator profile"')+(item.chosenBy?.kind==='curation'?discoveryHTML(item):'')+'</div><div class="civitaiReactions">'+button(reactionLabel(item),'data-civi-react="Like" aria-label="Like" aria-pressed="'+(item.reactions||[]).includes('Like')+'"')+button(ribbonIcon,'class="viewerCollect '+(membershipIds(item.collections).length?'bookmarked':'')+'" aria-label="Add to collection"')+'</div></div>'+(item.chosenBy?.kind==='lora'?discoveryHTML(item):'')+'<p class="civitaiActionError warning" role="status"></p>';
  }
  function membershipIds(raw){
   if(!raw)return [];
