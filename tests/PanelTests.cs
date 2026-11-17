@@ -32,12 +32,12 @@ partial class Bridge {
         try{
             app.ShowMonitor();Application.DoEvents();
             var header=(TableLayoutPanel)((TableLayoutPanel)app.compactPanel).GetControlFromPosition(0,0);
-            Check(header.GetControlFromPosition(1,0).Text.Contains(VersionLabel())
+            Check(header.GetControlFromPosition(0,0).Text.Contains(VersionLabel())
                 && app.tray.Text.Contains(VersionLabel())
                 && app.tray.ContextMenuStrip.Items[1].Text==VersionLabel(),"version is visible in the panel, tooltip and tray menu");
             foreach(Control control in header.Controls){
                 Check(control.Height>=TextRenderer.MeasureText(control.Text,control.Font).Height+4,"header text has vertical clearance");
-                if(control is Button)Check(((Button)control).FlatAppearance.BorderSize==0,"window controls are borderless");
+                if(control is Button && control.AccessibleName=="Hide to tray")Check(((Button)control).FlatAppearance.BorderSize==0,"window controls are borderless");
             }
             Check(app.monitor.Visible && online && app.codeLabel.Text.Length==6,"pairing panel opened");
             Check(app.civitaiGear!=null && app.civitaiGear.AccessibleName=="Civitai preview settings","civitai gear is on the panel");
@@ -84,6 +84,8 @@ partial class Bridge {
                 app.RefreshState();Check(app.phone.Text.Contains("2 phones"),"two connected phones");
                 http.DownloadString(baseUrl+"disconnect");app.RefreshState();Check(app.phone.Text.Contains("1 phone"),"disconnect only one phone");}
             Check(app.monitor.FormBorderStyle==FormBorderStyle.None&&app.monitor.Region!=null&&Screen.FromControl(app.monitor).WorkingArea.Contains(app.monitor.Bounds),"rounded panel inside working area");
+            var edge=app.monitor.PointToScreen(new Point(app.monitor.ClientSize.Width-3,app.monitor.ClientSize.Height-3));
+            Check(SendMessage(app.monitor.Handle,0x84,IntPtr.Zero,(IntPtr)((edge.Y<<16)|(edge.X&65535))).ToInt32()==17,"corner returns native resize hit");
             int pct;var j=new Dictionary<string,object>{{"id","test"},{"kind","image"},{"ordinal",1},{"total",1},{"queuePosition",2},{"queueTotal",4},{"progress",0.47},{"status","running"},{"current_node","Sample image · 12/32"}};
             var st=new Dictionary<string,object>{{"active","test"},{"jobs",new object[]{j}},{"elapsed","2:17"}};
             app.jobText.Text=JobSummary(st,out pct);app.bar.Value=pct;

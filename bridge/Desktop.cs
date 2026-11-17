@@ -22,6 +22,11 @@ partial class Bridge {
     bool expanded;
     System.Windows.Forms.Timer expansion;
     Rectangle compactBounds;
+    Size compactMinimum;
+    void RememberStudioSize(){
+        if(desktop==null && expansion!=null)return;
+        try{File.WriteAllText(Path.Combine(Data,"desktop-size.txt"),monitor.Width+","+monitor.Height);}catch(IOException){}
+    }
     static JavaScriptSerializer DesktopJson(){return new JavaScriptSerializer{MaxJsonLength=100000000};}
     static string DesktopDevice(){
         if(desktopDevice==null){
@@ -44,15 +49,22 @@ partial class Bridge {
         };expansion.Start();
     }
     void ExpandDesktop(){
-        if(expanded)return;expanded=true;compactBounds=monitor.Bounds;
+        if(expanded)return;expanded=true;compactBounds=monitor.Bounds;compactMinimum=monitor.MinimumSize;
         monitor.TopMost=false;monitor.ShowInTaskbar=true;compactPanel.Visible=false;
         var area=Screen.FromControl(monitor).WorkingArea;
         int w=Math.Min(1480,area.Width-24),h=Math.Min(960,area.Height-24);
+        try{
+            var saved=File.ReadAllText(Path.Combine(Data,"desktop-size.txt")).Split(',');
+            int sw,sh;
+            if(saved.Length==2&&Int32.TryParse(saved[0],out sw)&&Int32.TryParse(saved[1],out sh)){
+                w=Math.Min(Math.Max(780,sw),area.Width-12);h=Math.Min(Math.Max(460,sh),area.Height-12);
+            }
+        }catch(IOException){}
         var target=new Rectangle(area.Left+(area.Width-w)/2,area.Top+(area.Height-h)/2,w,h);
-        AnimatePanel(target,()=>{if(expanded)OpenDesktop();});
+        AnimatePanel(target,()=>{if(expanded){monitor.MinimumSize=new Size(Math.Min(w,780),Math.Min(h,460));OpenDesktop();}});
     }
     void CollapseDesktop(){
-        if(!expanded)return;expanded=false;ReleaseDesktop();
+        if(!expanded)return;RememberStudioSize();expanded=false;monitor.MinimumSize=compactMinimum;ReleaseDesktop();
         monitor.TopMost=true;monitor.ShowInTaskbar=false;
         AnimatePanel(compactBounds,()=>{compactPanel.Visible=true;DockPanel();RefreshState();});
     }

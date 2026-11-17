@@ -83,3 +83,40 @@
  .desktop #desktopBridge>.sectionline{display:none}
  .desktop #desktopBridge .metric strong{font-size:15px}
 }
+
+/* Constrain content inside the workspace; keep its chrome aligned to the window. */
+.desktop{--desktop-left:clamp(248px,22vw,310px);--editor-width:904px;--feed-width:570px;--feed-gutter:52px}
+.desktop #workspace>header{padding-inline:18px;z-index:22}
+.desktop #workspace>header #presetButton{margin-left:auto}
+.desktop #workspace>header #presetButton:not([hidden])~.dot{margin-left:0}
+.desktop #presetMenu{right:18px;top:calc(100% + 3px)}
+.desktop #main{width:100%;max-width:var(--editor-width)}
+.desktop body[data-page=library] #main{max-width:1280px}
+.desktop body[data-page=browse] #main,.desktop .browseBackLayer>.browseBackMain{
+ width:calc(100% - 32px);max-width:var(--feed-width);margin-inline:auto
+}
+.desktop #desktopFeedLayout{display:none}
+@media(min-width:1120px){
+ .desktop[data-feed-columns="2"]{--feed-width:960px}
+ .desktop body[data-page=browse] #main,.desktop .browseBackLayer>.browseBackMain{
+  width:calc(100% - 2 * var(--feed-gutter))
+ }
+ .desktop[data-feed-columns="2"] .browseFeed{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));align-items:start;gap:8px}
+ .desktop[data-feed-columns="2"] .browseTile{margin:0}
+ .desktop body[data-page=browse]:has(#browseFeed):not(.civitaiViewerOpen) #desktopFeedLayout{
+  display:grid;position:fixed;z-index:8;top:calc(var(--desktop-top) + 112px);
+  right:max(8px,calc((100vw - var(--desktop-left) - var(--feed-width))/2 - 44px));
+  gap:3px;padding:3px;border:1px solid var(--line);border-radius:9px;background:var(--panel)
+ }
+ #desktopFeedLayout button{display:flex;justify-content:center;gap:2px;width:27px;height:29px;min-height:0;padding:7px 5px;background:transparent;color:var(--muted);border:0;border-radius:5px}
+ #desktopFeedLayout button[aria-pressed=true]{background:#294035;color:var(--mint)}
+ #desktopFeedLayout i{display:block;width:100%;height:100%;border:1.5px solid currentColor;border-radius:2px}
+}
+.desktop .desktopMediaShade{position:fixed;z-index:199;inset:var(--desktop-top) 0 0;width:100%;border:0;border-radius:0;background:#060a0e85;cursor:default}
+.desktop .civitaiViewer{inset:var(--desktop-top) 0 0 auto;width:min(690px,82vw);background:var(--bg);border-left:1px solid var(--line);box-shadow:-12px 0 40px #0005;transform:translateX(0)}
+.desktop .civitaiViewerScroll{position:absolute;inset:0;overflow-y:auto;overscroll-behavior:contain}
+.desktop .civitaiViewer .modelPreviewHero{height:min(75dvh,760px);touch-action:pan-y}
+.desktop .civitaiViewer .modelPreviewDetails{padding-inline:clamp(16px,2vw,30px)}
+.desktop .civitaiViewer .civitaiViewerHead{top:10px;right:12px}
+.desktop .civitaiViewer .modelPreviewHero img{cursor:grab}
+.desktop .browseCarousel{scrollbar-width:thin;scrollbar-color:#52635f transparent}

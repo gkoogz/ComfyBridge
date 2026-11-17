@@ -65,10 +65,10 @@ const assert=require('node:assert/strict'),path=require('node:path');
   assert(await p.locator('#bridgeCommands [data-action=skip]').isEnabled());
   assert(await p.locator('#bridgeCommands [data-action=stop]').isEnabled());
   assert(await p.evaluate(()=>{
-   const work=$('#workspace').getBoundingClientRect();
+   const work=$('#main').getBoundingClientRect();
    return ['#result','#carousel'].every(id=>{
     const r=$(id).getBoundingClientRect();
-    return Math.abs(r.left-work.left)<1&&Math.abs(r.right-$('#workspace').clientWidth-work.left)<1;
+    return Math.abs(r.left-work.left)<1&&Math.abs(r.right-work.right)<1;
    });
   }));
   await p.locator('#queueList .foldToggle').click();
@@ -100,6 +100,41 @@ const assert=require('node:assert/strict'),path=require('node:path');
    assert(await p.evaluate(()=>document.body.scrollWidth<=innerWidth));
    const work=await p.locator('#workspace').boundingBox();assert(work.width>=600);
   }
+  for(const width of [790,1440,1920]){
+   await p.setViewportSize({width,height:825});await p.locator('[data-nav=image]').click();
+   for(const kind of ['image','video']){
+    await p.locator('[data-nav='+kind+']').click();
+    const settings=p.locator('#presetButton');await settings.click();
+    const save=p.locator('#savePreset');await save.click({trial:true});
+    const head=await p.locator('#workspace>header').boundingBox(),button=await settings.boundingBox();
+    assert(head.x+head.width-button.x-button.width<80,'settings near workspace edge');
+    assert((await p.locator('#main').boundingBox()).width<=905);
+    await settings.click();
+   }
+  }
+  await p.locator('[data-nav=browse]').click();
+  await p.evaluate(()=>{
+   const section=document.querySelector('.civitaiBrowse');
+   section.innerHTML='<div id="browseFeed" class="browseFeed">'+('<article class="browseTile" style="height:180px"></article>'.repeat(24))+'</div>';
+  });
+  const toggle=p.getByRole('button',{name:'One column',exact:true});
+  await toggle.click();const narrow=await p.locator('#browseFeed').boundingBox();assert(narrow.width<=571);
+  await p.getByRole('button',{name:'Two columns',exact:true}).click();
+  const tiles=p.locator('.browseTile');const a=await tiles.nth(0).boundingBox(),b=await tiles.nth(1).boundingBox();
+  assert(a.y===b.y&&b.x>a.x&&b.width<500);
+  await p.locator('#workspace').evaluate(el=>el.scrollTop=190);
+  const at=await p.locator('#workspace').evaluate(el=>el.scrollTop);
+  const openMedia=()=>p.evaluate(()=>{
+   const item={id:'sample',width:320,height:480,type:'image',credit:'Studio',tags:[],resources:[],reactions:[],stats:{},path:'',prompt:'A vase'};
+   CivitaiBrowser.open(item,[item]);
+  });
+  await openMedia();
+  const pane=p.locator('.civitaiViewer');await p.waitForTimeout(220);
+  const rect=await pane.boundingBox();assert(rect.width<710&&rect.x>900);
+  await p.mouse.click(rect.x-50,200);await pane.waitFor({state:'detached'});
+  await openMedia();await p.waitForTimeout(220);
+  await p.mouse.move(rect.x+140,185);await p.mouse.down();await p.mouse.move(rect.x+340,189,{steps:10});await p.mouse.up();
+  await pane.waitFor({state:'detached'});assert.equal(await p.locator('#workspace').evaluate(el=>el.scrollTop),at);
   assert.deepEqual(errors,[]);
   console.log('Desktop layout, always-visible queue, native commands, Library reveal, route changes and small-screen sizing passed.');
  }finally{await browser.close();}

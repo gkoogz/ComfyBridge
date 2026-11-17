@@ -1351,7 +1351,7 @@ const CivitaiBrowser=(()=>{
     media.sharedPlayer.shell.style.transform='translateY('+(-visible/2)+'px)';
     gap=peekHeight+Math.max(0,(hero.clientHeight-visible-fit.totalHeight)/2);
     hero.style.transform='translateY('+Math.min(scroll.scrollTop,gap)+'px)';
-    el.classList.toggle('mediaOnly',scroll.scrollTop<=1&&!tapVisible);
+    el.classList.toggle('mediaOnly',!window.Desktop&&scroll.scrollTop<=1&&!tapVisible);
     $('.modelPreviewNavigation',hero).style.top=((hero.clientHeight-visible)/2-27)+'px';return;
    }
    const renderedHeight=width&&height?Math.min(mediaHeight,hero.clientWidth*height/width):mediaHeight;
@@ -1360,7 +1360,7 @@ const CivitaiBrowser=(()=>{
    $('.modelPreviewNavigation',hero).style.top=(mediaHeight/2)+'px';
    gap=peekHeight+Math.max(0,(mediaHeight-renderedHeight)/2)+gutter;
    hero.style.transform='translateY('+Math.min(scroll.scrollTop,gap)+'px)';
-   el.classList.toggle('mediaOnly',scroll.scrollTop<=1&&!tapVisible);
+   el.classList.toggle('mediaOnly',!window.Desktop&&scroll.scrollTop<=1&&!tapVisible);
   }
   const resize=new ResizeObserver(align);
   resize.observe(hero);resize.observe(social);
@@ -1408,6 +1408,7 @@ const CivitaiBrowser=(()=>{
   hero.addEventListener('click',e=>{if(video&&Date.now()<suppressVideoClick){e.preventDefault();e.stopPropagation();}},{capture:true});
   hero.addEventListener('dragstart',e=>e.preventDefault());
   hero.addEventListener('pointerdown',e=>{
+   if(window.Desktop)return;
    if(!e.isPrimary){gesture=null;reset();return;}
    if(e.button!==0||e.target.closest('button,input,.videoTimeline'))return;
    cancelAnimationFrame(frame);
@@ -1480,17 +1481,22 @@ const CivitaiBrowser=(()=>{
    });
   });
  }
- function close(restore=true){const prior=viewer;viewer=null;if(prior){prior.cancelEntry?.();prior.dispose?.();prior.el.remove();prior.source?.release?.();}document.body.classList.remove('civitaiViewerOpen');if(restore!==false)prior?.options?.onClose?.();}
+ function close(restore=true){const prior=viewer;viewer=null;if(prior){prior.cancelEntry?.();prior.dispose?.();prior.el.remove();prior.source?.release?.();}document.body.classList.remove('civitaiViewerOpen');if(restore!==false){prior?.restoreWorkspace?.();prior?.options?.onClose?.();}}
  function open(item,list,origin=null,options={}){
   if(view.kind==='mix'&&list===feed)markSeen(item.id);
   const cached=details.get(detailKey(item.id));if(cached)Object.assign(item,cached.result.item);
   const source=origin?takeFeedMedia(origin,item):null;
   close(false);const el=document.createElement('section');el.className='civitaiViewer';el.setAttribute('role','dialog');el.setAttribute('aria-modal','true');el.setAttribute('aria-label','Civitai media details');
-  registerMedia([item]);const v={el,item,list,source,options};viewer=v;warm();document.body.append(el);document.body.classList.add('civitaiViewerOpen');
+  registerMedia([item]);const v={el,item,list,source,options};
+  if(window.Desktop){
+   const workspace=$('#workspace'),position=workspace.scrollTop,previous=document.activeElement;
+   v.restoreWorkspace=()=>{if(previous?.isConnected)previous.focus({preventScroll:true});workspace.scrollTop=position;};
+  }
+  viewer=v;warm();document.body.append(el);document.body.classList.add('civitaiViewerOpen');
   el.innerHTML='<div class="civitaiViewerHead">'+button('×','class="civitaiClose" aria-label="Close media"')+'</div><div class="civitaiViewerScroll modelPreviewViewer"><div class="modelPreviewHero">'+(item.type==='video'?(source?.media?'<video playsinline></video>':imageHTML(item,true)):'<div class="imagePicture">'+(source?'<img alt="Civitai image">':imageHTML(item,true))+'</div>')+'<div class="modelPreviewNavigation">'+button('‹','data-prev aria-label="Previous media"')+button('›','data-next aria-label="Next media"')+'</div></div><div class="modelPreviewDetails"><div class="civitaiSocial">'+socialHTML(item,status?.collections||[])+'</div>'+promptHTML(item)+'<h2>Resources</h2><div class="civitaiResourceHost">'+resourcesHTML(item.resources||[],item.chosenBy)+'</div><dl class="modelPreviewParameters">'+parametersHTML(item.parameters)+'</dl><div class="civitaiTagHost"></div>'+button('Open on Civitai ↗','data-origin')+'</div></div>';
   if(source?.media){$('img,video',$('.modelPreviewHero',el)).replaceWith(source.media);if(source.playing)source.media.play().catch(()=>{});}
   else if(source?.poster)$('video',el).poster=source.poster;
-  $('.civitaiClose',el).onclick=close;$('.civitaiClose',el).focus();$('[data-origin]',el).onclick=()=>openModelSource(item.imageUrl);
+  $('.civitaiClose',el).onclick=close;$('.civitaiClose',el).focus({preventScroll:true});$('[data-origin]',el).onclick=()=>openModelSource(item.imageUrl);
   wirePromptCopies(el,item);
   const position=list.findIndex(i=>i.id===item.id);$('[data-prev]',el).disabled=position<=0;$('[data-next]',el).disabled=position>=list.length-1&&!options.more?.();
   $('[data-prev]',el).onclick=()=>open(list[position-1],list,null,options);$('[data-next]',el).onclick=async()=>{const b=$('[data-next]',el);b.disabled=true;try{if(position+1>=list.length)await options.loadMore?.(list);if(viewer===v&&list[position+1])open(list[position+1],list,null,options);}catch(e){toast(e.message);}finally{if(b.isConnected)b.disabled=position>=list.length-1&&!options.more?.();}};
@@ -1500,7 +1506,7 @@ const CivitaiBrowser=(()=>{
    VideoPlayer.mount(video,{duration:item.duration,width:item.width,height:item.height,
     bounds:()=>({width:hero.clientWidth,height:hero.clientHeight-Math.min(scroll.scrollTop,video.sharedPlayer?.peekHeight||110)}),error:e=>toast(e.message)});
   }
-  const scroll=$('.civitaiViewerScroll',el);peek(scroll);hydrate($('.modelPreviewDetails',el));wireResources(el);const motion=viewerMotion(v),metadataGesture=metadataBackGesture(v);v.dispose=()=>{metadataGesture();motion();};v.entered=animateEntry(v);detail(v);
+  const scroll=$('.civitaiViewerScroll',el);peek(scroll);hydrate($('.modelPreviewDetails',el));wireResources(el);const motion=viewerMotion(v),metadataGesture=window.Desktop?desktopMediaPane(v,close):metadataBackGesture(v);v.dispose=()=>{metadataGesture();motion();};v.entered=window.Desktop?Promise.resolve():animateEntry(v);detail(v);
   if(item.type!=='video'&&item.fullPath){
    const img=$('.modelPreviewHero img',el);imageBlob(path(item.fullPath)).then(async url=>{if(!url)return;const full=new Image();full.src=url;await full.decode();await v.entered;if(viewer===v&&img.isConnected)img.src=url;}).catch(()=>{/* Keep the visible preview if the full image fails. */});
   }

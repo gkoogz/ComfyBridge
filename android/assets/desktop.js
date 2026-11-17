@@ -28,6 +28,20 @@ async function initDesktop(){
  document.body.prepend(title);
  title.onpointerdown=e=>{if(e.button===0&&!e.target.closest('button'))desktopCall('drag');};
  title.querySelectorAll('[data-window]').forEach(b=>b.onclick=async()=>{if(profileDirty)await flushProfile();desktopCall(b.dataset.window);});
+ const layout=document.createElement('div');
+ layout.id='desktopFeedLayout';layout.setAttribute('role','group');layout.setAttribute('aria-label','Feed columns');
+ function selectColumns(value){
+  document.documentElement.dataset.feedColumns=value;
+  for(const button of layout.children)button.setAttribute('aria-pressed',String(button.value===value));
+ }
+ for(const count of ['1','2']){
+  const button=document.createElement('button');button.type='button';button.value=count;
+  button.title=count==='1'?'One column':'Two columns';button.setAttribute('aria-label',button.title);
+  button.innerHTML='<i aria-hidden="true"></i>'.repeat(Number(count));
+  button.onclick=()=>{selectColumns(count);localStorage.setItem('desktopFeedColumns',count);};
+  layout.append(button);
+ }
+ selectColumns(localStorage.getItem('desktopFeedColumns')==='1'?'1':'2');document.body.append(layout);
  const left=$('#drawerBridge');left.id='desktopBridge';
  left.innerHTML='<div class="desktopServer"><div class="row spread"><div><strong id="desktopServerState">Checking server…</strong><small id="desktopPhones"></small></div><div class="row desktopPowerRow"><button id="desktopCivitai" type="button" aria-label="Civitai preview settings" title="Civitai API key for listing previews">⚙</button><button id="desktopPower" aria-label="Toggle server power">⏻</button></div></div><label for="desktopAddress">PC address · enter on your phone</label><div class="row"><select id="desktopAddress"></select><button id="desktopCopy" title="Copy address">Copy</button><button id="desktopEdit" title="Edit remote address">✎</button></div><div class="row spread desktopPairRow"><label>Pairing code</label><strong id="desktopCode">—</strong><button id="desktopNewCode">New code</button></div><small id="desktopPairHint"></small><div id="desktopError" role="alert" hidden></div></div>'+machinePulse('LOCAL')+bridgeActivityMarkup();
  const chatControls=document.createElement('div');chatControls.className='desktopChatControls';chatControls.innerHTML='<label for="desktopChatModel">Local chat model</label><select id="desktopChatModel" aria-label="Local chat model"></select><small id="desktopChatHint">Checking installed models…</small>';
@@ -81,4 +95,50 @@ async function initDesktop(){
   finally{refreshing=false;}
  },2000);
  updateBridgeActivity();
+}
+
+// The desktop pane hosts the same media, metadata and actions as the phone viewer.
+function desktopMediaPane(view, closeView){
+ const pane=view.el,shade=document.createElement('button');
+ shade.type='button';shade.className='desktopMediaShade';shade.setAttribute('aria-label','Close media details');
+ pane.before(shade);
+ const reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
+ let animation=null,drag=null,closing=false;
+ const slide=(from,to,done)=>{
+  animation?.cancel();
+  if(reduced){done?.();return;}
+  animation=pane.animate([{transform:'translateX('+from+')'},{transform:'translateX('+to+')'}],
+   {duration:170,easing:'cubic-bezier(.2,.7,.3,1)',fill:'both'});
+  animation.onfinish=()=>{animation?.cancel();animation=null;done?.();};
+ };
+ const dismiss=()=>{
+  if(closing)return;closing=true;
+  slide(pane.style.transform?'var(--pane-offset)':'0','100%',()=>closeView());
+ };
+ shade.onclick=dismiss;pane.querySelector('.civitaiClose').onclick=dismiss;
+ pane.addEventListener('pointerdown',e=>{
+  if(!e.isPrimary||e.button!==0||e.target.closest('button,input,textarea,select,a,.videoTimeline,.promptText')||!getSelection().isCollapsed)return;
+  drag={id:e.pointerId,x:e.clientX,y:e.clientY,active:false};
+ });
+ pane.addEventListener('pointermove',e=>{
+  if(!drag||e.pointerId!==drag.id)return;
+  const dx=e.clientX-drag.x,dy=e.clientY-drag.y;
+  if(!drag.active){
+   if(Math.abs(dy)>8&&Math.abs(dy)>=dx||!getSelection().isCollapsed){drag=null;return;}
+   if(dx<10)return;
+   drag.active=true;animation?.cancel();pane.setPointerCapture(e.pointerId);
+  }
+  pane.style.setProperty('--pane-offset',Math.max(0,dx)+'px');pane.style.transform='translateX(var(--pane-offset))';
+  e.preventDefault();
+ });
+ const finish=e=>{
+  if(!drag||drag.id!==e.pointerId)return;
+  const active=drag.active;drag=null;if(!active)return;
+  if(e.type==='pointerup'&&parseFloat(pane.style.getPropertyValue('--pane-offset'))>Math.min(112,pane.clientWidth*.22)){dismiss();return;}
+  const from=pane.style.getPropertyValue('--pane-offset');pane.style.transform='';slide(from,'0');
+ };
+ pane.addEventListener('pointerup',finish);pane.addEventListener('pointercancel',finish);
+ shade.onwheel=e=>e.preventDefault();
+ slide('100%','0');
+ return ()=>{animation?.cancel();shade.remove();};
 }

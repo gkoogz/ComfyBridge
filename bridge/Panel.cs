@@ -19,7 +19,7 @@ partial class Bridge {
     readonly string remoteFile=Path.Combine(Data,"remote-address.txt"), offFile=Path.Combine(Data,"server-off");
     Label badge,phone,codeLabel,codeHint,jobText; Button power,newCode,civitaiGear; ToolTip civitaiTip;
     string powerError;
-    ComboBox addressBox,chatModels; Label chatHint; string chatModelError; ProgressBar bar; bool reading,readingChat,paintingChat;
+    ComboBox addressBox,chatModels; Label chatHint; string chatModelError; ActivityMeter bar; bool reading,readingChat,paintingChat;
     sealed class ChatChoice{public string Id,Name;public override string ToString(){return Name;}}
     static async Task<Dictionary<string,object>> ChatControl(string action,string body){
         var json=new System.Web.Script.Serialization.JavaScriptSerializer();
@@ -41,6 +41,39 @@ partial class Bridge {
         }catch(Exception e){if(chatHint!=null&&!chatHint.IsDisposed)chatHint.Text=e.Message;}
         finally{paintingChat=false;readingChat=false;}
     }
+    sealed class ActivityMeter : Control {
+        int value;
+        internal int Value {get{return value;}set{this.value=Math.Max(0,Math.Min(100,value));Invalidate();}}
+        internal ActivityMeter(){DoubleBuffered=true;Height=5;Dock=DockStyle.Top;Margin=new Padding(3,3,3,0);}
+        protected override void OnPaint(PaintEventArgs e){
+            e.Graphics.Clear(Color.FromArgb(55,69,76));
+            using(var fill=new SolidBrush(Color.FromArgb(123,195,165)))e.Graphics.FillRectangle(fill,0,0,Width*value/100,Height);
+        }
+    }
+    sealed class PanelChoice : ComboBox {
+        internal PanelChoice(){
+            DropDownStyle=ComboBoxStyle.DropDownList;FlatStyle=FlatStyle.Flat;DrawMode=DrawMode.OwnerDrawFixed;
+            ItemHeight=22;BackColor=Ink;ForeColor=Color.Gainsboro;
+        }
+        protected override void OnDrawItem(DrawItemEventArgs e){
+            bool selected=(e.State & DrawItemState.Selected)!=0;
+            using(var brush=new SolidBrush(selected?Color.FromArgb(42,60,61):Ink))e.Graphics.FillRectangle(brush,e.Bounds);
+            if(e.Index>=0)TextRenderer.DrawText(e.Graphics,GetItemText(Items[e.Index]),Font,Rectangle.Inflate(e.Bounds,-4,0),ForeColor,
+                TextFormatFlags.VerticalCenter|TextFormatFlags.EndEllipsis|TextFormatFlags.SingleLine|TextFormatFlags.NoPrefix);
+        }
+        protected override void WndProc(ref Message m){
+            base.WndProc(ref m);
+            if(m.Msg!=0x0F && m.Msg!=0x318 && m.Msg!=0x317)return;
+            using(var g=m.Msg==0x0F?Graphics.FromHwnd(Handle):Graphics.FromHdc(m.WParam)){
+                using(var bg=new SolidBrush(Ink))g.FillRectangle(bg,ClientRectangle);var rect=new Rectangle(6,0,Math.Max(0,Width-31),Height);
+                TextRenderer.DrawText(g,Text,Font,rect,Enabled?ForeColor:Muted,TextFormatFlags.VerticalCenter|TextFormatFlags.EndEllipsis|TextFormatFlags.SingleLine|TextFormatFlags.NoPrefix);
+                using(var pen=new Pen(Focused?Mint:Color.FromArgb(65,80,87))){
+                    g.DrawRectangle(pen,0,0,Width-1,Height-1);
+                    pen.Color=Muted;int x=Width-14,y=Height/2;g.DrawLines(pen,new[]{new Point(x-4,y-2),new Point(x,y+2),new Point(x+4,y-2)});
+                }
+            }
+        }
+    }
     static Label L(string s,float pt,Color color,bool bold=false){return new Label{Text=s,UseMnemonic=false,ForeColor=color,Font=new Font("Segoe UI",pt,bold?FontStyle.Bold:FontStyle.Regular),Dock=DockStyle.Fill,TextAlign=ContentAlignment.MiddleLeft,AutoEllipsis=true};}
     static Image PowerIcon(){var bmp=new Bitmap(20,20);using(var g=Graphics.FromImage(bmp))using(var pen=new Pen(Mint,2.2f)){g.SmoothingMode=System.Drawing.Drawing2D.SmoothingMode.AntiAlias;g.DrawArc(pen,3,4,14,14,-55,290);g.DrawLine(pen,10,1,10,10);}return bmp;}
     static Image GearIcon(){var bmp=new Bitmap(20,20);using(var g=Graphics.FromImage(bmp))using(var pen=new Pen(Color.FromArgb(214,226,230),1.6f)){g.SmoothingMode=SmoothingMode.AntiAlias;g.DrawEllipse(pen,7,7,6,6);g.DrawEllipse(pen,4.5f,4.5f,11,11);for(int i=0;i<8;i++){double a=i*Math.PI/4+Math.PI/8;g.DrawLine(pen,10+(float)Math.Cos(a)*6.1f,10+(float)Math.Sin(a)*6.1f,10+(float)Math.Cos(a)*9.2f,10+(float)Math.Sin(a)*9.2f);}}return bmp;}
@@ -49,7 +82,7 @@ partial class Bridge {
     static bool CivitaiKeySaved(){try{return ValidCivitaiKey(File.ReadAllText(CivitaiKeyFile()).Trim());}catch{return false;}}
     static void SaveCivitaiKey(string value){string path=CivitaiKeyFile(),tmp=path+".tmp";File.WriteAllText(tmp,value,new System.Text.UTF8Encoding(false));if(File.Exists(path))File.Replace(tmp,path,null);else File.Move(tmp,path);}
     void RefreshCivitaiTip(){if(civitaiGear==null)return;if(civitaiTip==null)civitaiTip=new ToolTip();civitaiTip.SetToolTip(civitaiGear,CivitaiKeySaved()?"Civitai key saved. Mature listing previews are enabled.":"Add a Civitai API key to show NSFW listing previews.");}
-    static Button B(string s,EventHandler action){var b=new Button{Text=s,AutoSize=true,MinimumSize=new Size(70,32),FlatStyle=FlatStyle.Flat,ForeColor=Color.White,BackColor=Panel,Font=new Font("Segoe UI",9)};b.FlatAppearance.BorderColor=Color.FromArgb(73,88,95);b.Click+=action;return b;}
+    static Button B(string s,EventHandler action){var b=new Button{Text=s,AutoSize=true,MinimumSize=new Size(70,32),FlatStyle=FlatStyle.Flat,ForeColor=Color.White,BackColor=Color.FromArgb(39,50,59),Font=new Font("Segoe UI",9)};b.FlatAppearance.BorderColor=Color.FromArgb(59,73,82);b.Click+=action;return b;}
     static Button WindowButton(string text,string name,EventHandler action){
         var button=B(text,action);button.AutoSize=false;button.MinimumSize=Size.Empty;button.Dock=DockStyle.Fill;
         button.Margin=new Padding(2);button.Padding=Padding.Empty;button.BackColor=Ink;
@@ -83,11 +116,42 @@ partial class Bridge {
     void RefreshState(){int count=PhoneCount();bool live=online&&count>0;
         tray.Text=TrayText(!online?"server off":live?count+(count==1?" phone connected":" phones connected"):"waiting for phone");
         if(badge==null)return;
-        badge.Text=online?"●  Server on":"●  Server off";badge.ForeColor=online?Mint:Red;
+        badge.Text=online?"●  Server on":"●  Server off";badge.ForeColor=online?Mint:Muted;
         int bg;lock(phones)bg=watchers.Keys.Count(id=>!phones.ContainsKey(id));
-        phone.Text=live?"●  "+count+(count==1?" phone":" phones")+(bg>0?" · "+bg+" in bg":" connected"):"●  No phones";phone.ForeColor=live?Mint:Red;
+        phone.Text=live?""+count+(count==1?" phone":" phones")+(bg>0?" · "+bg+" in bg":" connected"):"No phones connected";phone.ForeColor=Muted;
         power.Text=online?"Turn server off":"Turn server on";RefreshCivitaiTip();
         string hint;codeLabel.Text=Pairing.Display(out hint);codeLabel.AccessibleName="Pairing code "+codeLabel.Text;codeHint.Text=online?hint:powerError??"Turn the server on to pair.";codeHint.ForeColor=powerError!=null?Red:Muted;newCode.Enabled=online;
+    }
+    // WebView2 is a child HWND. Leave a real Win32 resize border around both surfaces.
+    sealed class BridgeWindow : Form {
+        internal BridgeWindow(){Padding=new Padding(6);}
+        protected override CreateParams CreateParams {
+            get { var p=base.CreateParams;p.Style|=0x40000;return p; } // WS_THICKFRAME
+        }
+        protected override void WndProc(ref Message m){
+            if(m.Msg==0x83){m.Result=IntPtr.Zero;return;} // keep the custom chrome in the client area
+            base.WndProc(ref m);
+            if(m.Msg!=0x84||WindowState!=FormWindowState.Normal)return;
+            int packed=unchecked((int)m.LParam.ToInt64());
+            Point p=PointToClient(new Point((short)packed,(short)(packed>>16)));
+            bool left=p.X<Padding.Left,right=p.X>=ClientSize.Width-Padding.Right;
+            bool top=p.Y<Padding.Top,bottom=p.Y>=ClientSize.Height-Padding.Bottom;
+            int hit=top?(left?13:right?14:12):bottom?(left?16:right?17:15):left?10:right?11:0;
+            if(hit!=0)m.Result=(IntPtr)hit;
+        }
+    }
+    static TableLayoutPanel Group(TableLayoutPanel parent,int height){
+        var section=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=1,BackColor=Panel,
+            Margin=new Padding(0,3,0,3),Padding=new Padding(12,6,12,6)};
+        section.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));Add(parent,section,height);return section;
+    }
+    static TableLayoutPanel Fields(Control flexible,params Control[] actions){
+        var row=new TableLayoutPanel{Dock=DockStyle.Fill,Margin=Padding.Empty,ColumnCount=actions.Length+1,RowCount=1};
+        row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));row.Controls.Add(flexible,0,0);flexible.Dock=DockStyle.Fill;
+        for(int i=0;i<actions.Length;i++){
+            row.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));row.Controls.Add(actions[i],i+1,0);
+        }
+        return row;
     }
     static bool ValidAddress(string s,out string clean){Uri u;clean=null;
         if(!Uri.TryCreate(s,UriKind.Absolute,out u)||u.Scheme!="https"||u.Host==""||u.AbsolutePath!="/"||u.UserInfo!=""||u.Query!=""||u.Fragment!="")return false;
@@ -133,37 +197,38 @@ partial class Bridge {
     }
     void ShowMonitor(){
         if(monitor==null){
-            monitor=new Form{Text="ComfyBridge",Icon=tray.Icon,ClientSize=new Size(492,428),BackColor=Ink,ForeColor=Color.White,ShowInTaskbar=false,TopMost=true,StartPosition=FormStartPosition.Manual,FormBorderStyle=FormBorderStyle.None,AutoScaleMode=AutoScaleMode.Dpi};
+            monitor=new BridgeWindow{Text="ComfyBridge",Icon=tray.Icon,ClientSize=new Size(500,487),MinimumSize=new Size(462,455),BackColor=Ink,ForeColor=Color.White,ShowInTaskbar=false,TopMost=true,StartPosition=FormStartPosition.Manual,FormBorderStyle=FormBorderStyle.None,AutoScaleMode=AutoScaleMode.Dpi};
             monitor.SizeChanged+=(s,e)=>RoundPanel();RoundPanel();
             monitor.FormClosing+=(s,e)=>{
                 if(e.CloseReason==CloseReason.UserClosing){e.Cancel=true;HidePanel();return;}
                 Server(false,false);tray.Visible=false;Application.ExitThread();
             };
-            var grid=new TableLayoutPanel{Padding=new Padding(14,8,14,8),Dock=DockStyle.Fill,ColumnCount=1,AutoScroll=true};grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));monitor.Controls.Add(grid);
+            var grid=new TableLayoutPanel{Padding=new Padding(8,2,8,2),Dock=DockStyle.Fill,ColumnCount=1,AutoScroll=true};grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));monitor.Controls.Add(grid);
             compactPanel=grid;
-            var head=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=4,RowCount=1,Margin=Padding.Empty,Padding=Padding.Empty};head.RowStyles.Add(new RowStyle(SizeType.Percent,100));head.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,43));head.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));head.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,43));head.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,43));
-            head.Controls.Add(WindowButton("↖","Expand desktop studio",(s,e)=>ExpandDesktop()),0,0);
-            var title=L("ComfyBridge · "+VersionLabel(),15,Color.White,true);title.Margin=Padding.Empty;head.Controls.Add(title,1,0);
+            var head=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=4,RowCount=1,Margin=Padding.Empty,Padding=Padding.Empty};head.RowStyles.Add(new RowStyle(SizeType.Percent,100));head.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));head.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,100));head.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,43));head.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,43));
+            var openStudio=B("Open studio ↗",(s,e)=>ExpandDesktop());openStudio.Dock=DockStyle.Fill;openStudio.ForeColor=Mint;openStudio.AccessibleName="Expand desktop studio";head.Controls.Add(openStudio,1,0);
+            var title=L("ComfyBridge · "+VersionLabel(),15,Color.White,true);title.Margin=Padding.Empty;head.Controls.Add(title,0,0);
             head.Controls.Add(WindowButton("–","Hide to tray",(s,e)=>HidePanel()),2,0);
             head.Controls.Add(WindowButton("×","Hide to tray",(s,e)=>HidePanel()),3,0);Add(grid,head,44);
             badge=L("",10,Mint,true);badge.Dock=DockStyle.None;badge.Size=new Size(88,30);phone=L("",10,Red);phone.Dock=DockStyle.None;phone.Size=new Size(155,30);
-            power=B("",(s,e)=>{try{Server(!online,true);}catch(Exception ex){MessageBox.Show(monitor,ex.Message);}});power.Image=PowerIcon();power.TextImageRelation=TextImageRelation.ImageBeforeText;
+            power=B("",(s,e)=>{try{Server(!online,true);}catch(Exception ex){MessageBox.Show(monitor,ex.Message);}});power.AutoSize=false;power.Size=new Size(132,32);power.Image=PowerIcon();power.TextImageRelation=TextImageRelation.ImageBeforeText;
             civitaiGear=B("",(s,e)=>{try{EditCivitaiKey();}catch(Exception ex){MessageBox.Show(monitor,ex.Message);}});civitaiGear.Text="";civitaiGear.Image=GearIcon();civitaiGear.AutoSize=false;civitaiGear.MinimumSize=new Size(34,32);civitaiGear.Size=new Size(34,32);civitaiGear.AccessibleName="Civitai preview settings";civitaiGear.ImageAlign=ContentAlignment.MiddleCenter;civitaiGear.TextImageRelation=TextImageRelation.Overlay;
-            Add(grid,Row(badge,phone,civitaiGear,power),38);
-            Add(grid,L("1   PC address",10,Mint,true),23);
-            addressBox=new ComboBox{DropDownStyle=ComboBoxStyle.DropDownList,Font=new Font("Segoe UI",12),Width=270,AccessibleName="PC address"};
+            Add(grid,Fields(Row(badge,phone),civitaiGear,power),38);
+            var pairing=Group(grid,168);
+            Add(pairing,L("PC address",9,Muted,true),21);
+            addressBox=new PanelChoice{DropDownStyle=ComboBoxStyle.DropDownList,FlatStyle=FlatStyle.Flat,BackColor=Ink,ForeColor=Color.Gainsboro,Font=new Font("Segoe UI",10),Width=270,AccessibleName="PC address"};
             var copy=B("Copy",(s,e)=>{if(addressBox.SelectedItem!=null)Clipboard.SetText(addressBox.SelectedItem.ToString());});copy.MinimumSize=Size.Empty;copy.AutoSize=false;copy.Size=new Size(55,29);
-            var edit=B("Edit…",(s,e)=>SetRemote());edit.MinimumSize=Size.Empty;edit.AutoSize=false;edit.Size=new Size(55,29);Add(grid,Row(addressBox,copy,edit),36);
-            Add(grid,L("2   Pairing code",10,Mint,true),23);
-            codeLabel=L("",20,Color.White,true);codeLabel.Dock=DockStyle.None;codeLabel.Size=new Size(158,35);
-            newCode=B("New code",(s,e)=>{if(online){Pairing.Issue();RefreshState();}});Add(grid,Row(codeLabel,newCode),39);
-            codeHint=L("",9,Muted);Add(grid,codeHint,24);
-            Add(grid,L("Local chat model",10,Mint,true),23);
-            chatModels=new ComboBox{DropDownStyle=ComboBoxStyle.DropDownList,Font=new Font("Segoe UI",10),Dock=DockStyle.Fill,AccessibleName="Local chat model"};Add(grid,chatModels,31);
+            var edit=B("Edit…",(s,e)=>SetRemote());edit.MinimumSize=Size.Empty;edit.AutoSize=false;edit.Size=new Size(55,29);Add(pairing,Fields(addressBox,copy,edit),35);
+            Add(pairing,L("Pairing code",9,Muted,true),22);
+            codeLabel=L("",17,Color.Gainsboro,true);codeLabel.Dock=DockStyle.None;codeLabel.Size=new Size(158,35);
+            newCode=B("New code",(s,e)=>{if(online){Pairing.Issue();RefreshState();}});Add(pairing,Fields(codeLabel,newCode),36);
+            codeHint=L("",9,Muted);Add(pairing,codeHint,27);
+            var chat=Group(grid,95);Add(chat,L("Local chat model",9,Muted,true),21);
+            chatModels=new PanelChoice{FlatStyle=FlatStyle.Flat,BackColor=Ink,ForeColor=Color.Gainsboro,DropDownStyle=ComboBoxStyle.DropDownList,Font=new Font("Segoe UI",10),Dock=DockStyle.Fill,AccessibleName="Local chat model"};Add(chat,chatModels,30);
             chatModels.SelectedIndexChanged+=async(s,e)=>{if(paintingChat||chatModels.SelectedItem==null)return;chatModels.Enabled=false;try{await ChatControl("select",new System.Web.Script.Serialization.JavaScriptSerializer().Serialize(new{id=((ChatChoice)chatModels.SelectedItem).Id}));chatModelError=null;}catch(Exception error){chatModelError=error.Message;chatHint.Text=error.Message;}RefreshChatModels();};
-            chatHint=L("Checking local models…",9,Muted);Add(grid,chatHint,24);
-            Add(grid,L("Generation",11,Color.White,true),23);jobText=L("No active generation",10,Muted);Add(grid,jobText,42);
-            bar=new ProgressBar{Dock=DockStyle.Fill,Minimum=0,Maximum=100};Add(grid,bar,16);
+            chatHint=L("Checking local models…",9,Muted);Add(chat,chatHint,23);
+            var generation=Group(grid,95);Add(generation,L("Generation",9,Muted,true),21);jobText=L("No active generation",10,Muted);Add(generation,jobText,39);
+            bar=new ActivityMeter();Add(generation,bar,8);
         }
         if(!monitor.Visible){AddressesList();if(online)Pairing.Issue();monitor.Show();}
         if(!expanded)DockPanel();
@@ -172,7 +237,7 @@ partial class Bridge {
     void HidePanel(){
         monitor.Hide();ReleaseDesktop();
         if(expansion!=null){expansion.Stop();expansion.Dispose();expansion=null;}
-        if(expanded){expanded=false;monitor.Bounds=compactBounds;compactPanel.Visible=true;monitor.TopMost=true;monitor.ShowInTaskbar=false;}
+        if(expanded){RememberStudioSize();expanded=false;monitor.MinimumSize=compactMinimum;monitor.Bounds=compactBounds;compactPanel.Visible=true;monitor.TopMost=true;monitor.ShowInTaskbar=false;}
         Pairing.Close("Click New code to pair.");timer.Interval=5000;
     }
     void RoundPanel(){int w=monitor.Width,h=monitor.Height,r=18;using(var p=new GraphicsPath()){
