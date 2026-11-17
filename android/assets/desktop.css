@@ -120,3 +120,21 @@
 .desktop .civitaiViewer .civitaiViewerHead{top:10px;right:12px}
 .desktop .civitaiViewer .modelPreviewHero img{cursor:grab}
 .desktop .browseCarousel{scrollbar-width:thin;scrollbar-color:#52635f transparent}
+.desktop .browseCarousel .browseMedia{cursor:grab}
+.desktop .browseCarousel.desktopDragging{cursor:grabbing;user-select:none;scroll-snap-type:none}
+.desktop .browseCarousel.desktopDragging .browseMedia{cursor:grabbing}
+
+.desktop #desktopPanelToggle{display:none}
+@media(max-width:880px){
+ .desktop{--desktop-left:56px}
+ .desktop #desktopPanelToggle{
+  display:grid;place-items:center;flex:none;align-self:flex-start;width:40px;height:36px;
+  min-height:0;margin:0 7px 6px;padding:8px;color:var(--mint)
+ }
+ .desktop #desktopPanelToggle svg{width:19px;height:19px}
+ .desktop #drawer:not(.open) :is(.drawerTop,#desktopBridge){display:none}
+ .desktop #drawer:not(.open) nav{margin-top:auto;padding-inline:5px}
+ .desktop #drawer:not(.open) nav button{justify-content:center;gap:0;padding-inline:0;font-size:0}
+ .desktop #drawer.open{width:min(300px,80vw);box-shadow:6px 0 22px #0004}
+ .desktop #shade:not([hidden]){display:block!important;inset:var(--desktop-top) 0 0;z-index:9}
+}

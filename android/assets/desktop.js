@@ -64,7 +64,8 @@ async function initDesktop(){
  };
  refreshChatModels();setInterval(refreshChatModels,5000);
  $('#desktopPower').innerHTML=powerIcon;
- $('#drawer').inert=false;$('#drawer').classList.add('open');
+ initDesktopSidebar();
+ initDesktopCarousel();
  let status,busy=false,refreshing=false,revision=0;
  const paint=s=>{
   status=s;$('#desktopServerState').textContent=s.online?'● Server on':'● Server off';$('#desktopServerState').className=s.online?'serverOnline':'serverOffline';
@@ -95,6 +96,60 @@ async function initDesktop(){
   finally{refreshing=false;}
  },2000);
  updateBridgeActivity();
+}
+
+function initDesktopSidebar(){
+ const panel=$('#drawer'),workspace=$('#workspace'),shade=$('#shade');
+ const narrow=matchMedia('(max-width:880px)');
+ const toggle=document.createElement('button');toggle.id='desktopPanelToggle';toggle.type='button';
+ toggle.innerHTML='<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="2" y="3" width="16" height="14" rx="2"/><path d="M8 3v14"/></svg>';
+ toggle.setAttribute('aria-controls','desktopBridge');panel.prepend(toggle);panel.inert=false;
+ for(const item of panel.querySelectorAll('[data-nav]'))item.title=item.lastChild.textContent.trim();
+ function setOpen(open){
+  // The shared feed pauses behind an open overlay. A persistent desktop rail is not an overlay.
+  panel.classList.toggle('open',open);shade.hidden=!open;workspace.inert=open;
+  toggle.setAttribute('aria-expanded',String(open));
+  toggle.title=open?'Hide bridge panel':'Show bridge panel';toggle.setAttribute('aria-label',toggle.title);
+ }
+ setOpen(false);toggle.onclick=()=>setOpen(!panel.classList.contains('open'));
+ shade.onclick=()=>{setOpen(false);toggle.focus();};
+ panel.querySelector('nav').addEventListener('click',e=>{if(e.target.closest('[data-nav]'))setOpen(false);});
+ narrow.addEventListener('change',()=>setOpen(false));
+ document.addEventListener('keydown',e=>{
+  if(e.key==='Escape'&&panel.classList.contains('open')&&!document.querySelector('dialog[open],.civitaiViewer')){
+   e.preventDefault();e.stopImmediatePropagation();setOpen(false);toggle.focus();
+  }
+ },true);
+}
+
+function initDesktopCarousel(){
+ const main=$('#main');let drag=null,swallowClick=null;
+ main.addEventListener('dragstart',e=>{if(e.target.closest('.browseCarousel'))e.preventDefault();});
+ main.addEventListener('pointerdown',e=>{
+  drag=null;swallowClick=null;
+  const strip=e.target.closest('.browseCarousel');
+  if(e.pointerType!=='mouse'||e.button!==0||!strip||strip.scrollWidth<=strip.clientWidth)return;
+  drag={strip,id:e.pointerId,x:e.clientX,y:e.clientY,left:strip.scrollLeft,active:false};
+ });
+ main.addEventListener('pointermove',e=>{
+  if(!drag||e.pointerId!==drag.id)return;
+  if(!(e.buttons&1)){drag=null;return;}
+  const dx=e.clientX-drag.x;
+  if(!drag.active){
+   if(Math.abs(e.clientY-drag.y)>8&&Math.abs(e.clientY-drag.y)>Math.abs(dx)){drag=null;return;}
+   if(Math.abs(dx)<7)return;
+   drag.strip.setPointerCapture(e.pointerId);drag.active=true;swallowClick=drag.strip;
+   drag.strip.classList.add('desktopDragging');
+  }
+  drag.strip.scrollLeft=drag.left-dx;e.preventDefault();
+ });
+ const finish=()=>{drag?.strip.classList.remove('desktopDragging');drag=null;};
+ main.addEventListener('pointerup',finish);main.addEventListener('pointercancel',finish);
+ main.addEventListener('lostpointercapture',finish);
+ main.addEventListener('click',e=>{
+  if(e.detail&&swallowClick?.contains(e.target)){e.preventDefault();e.stopPropagation();}
+  swallowClick=null;
+ },true);
 }
 
 // The desktop pane hosts the same media, metadata and actions as the phone viewer.

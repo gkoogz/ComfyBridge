@@ -7,6 +7,7 @@ const assert=require('node:assert/strict'),path=require('node:path');
   p.on('pageerror',e=>errors.push(e.message));
   await p.route('https://desktop.test/**',r=>r.fulfill({path:path.join(__dirname,'../android/assets',new URL(r.request().url()).pathname.slice(1)||'index.html')}));
   await p.route('**/local/**',r=>r.fulfill({contentType:'image/svg+xml',body:'<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300"><rect width="400" height="300" fill="#a3f2cc"/></svg>'}));
+  await p.route('https://desktop.test/fixture-video.mp4',r=>r.fulfill({path:path.join(__dirname,'fixtures/feed-video.mp4'),contentType:'video/mp4'}));
   await p.addInitScript(()=>{
    window.Desktop=true;window.desktopConfiguration={device:'pc',name:'This PC',paired:true,version:'0.1.0-beta.117'};window.calls=[];
    const listeners=[];let on=false;
@@ -122,6 +123,30 @@ const assert=require('node:assert/strict'),path=require('node:path');
   await p.getByRole('button',{name:'Two columns',exact:true}).click();
   const tiles=p.locator('.browseTile');const a=await tiles.nth(0).boundingBox(),b=await tiles.nth(1).boundingBox();
   assert(a.y===b.y&&b.x>a.x&&b.width<500);
+  await tiles.first().evaluate(card=>{
+   card.innerHTML='<button class="browseMedia"></button><span class="browseVideo"></span><button class="feedCollect"></button>';
+   FeedVideo.attach(card,async()=>'/fixture-video.mp4','/fixture-video.mp4');
+  });
+  const playing=()=>p.waitForFunction(()=>{const v=document.querySelector('.feedVideo');return v&&!v.paused&&v.currentTime>0;},null,{timeout:5000});
+  await playing();
+  for(const width of [620,790]){
+   await p.setViewportSize({width,height:825});
+   assert((await p.locator('#workspace').boundingBox()).width>=width-65,'Narrow desktop leaves room for the content');
+   const togglePanel=p.getByRole('button',{name:'Show bridge panel',exact:true});await togglePanel.click();
+   assert(await p.locator('#desktopPower').isVisible());await p.waitForFunction(()=>document.querySelector('.feedVideo').paused);
+   if(width===620)await p.keyboard.press('Escape');else await p.mouse.click(width-20,250);
+   await playing();
+  }
+  await p.setViewportSize({width:1920,height:825});
+  await p.evaluate(()=>{
+   const strip=document.createElement('div');strip.className='browseCarousel';
+   for(let i=0;i<20;i++){const button=document.createElement('button');button.className='browseMedia';button.textContent='Photo '+(i+1);button.style.flex='0 0 110px';strip.append(button);}
+   strip.onclick=()=>{strip.dataset.clicked='yes';};$('#browseFeed').before(strip);
+  });
+  const strip=p.locator('.browseCarousel'),start=await strip.locator('button').nth(3).boundingBox();
+  await p.mouse.move(start.x+30,start.y+10);await p.mouse.down();await p.mouse.move(start.x-150,start.y+10,{steps:8});await p.mouse.up();
+  assert(await strip.evaluate(el=>el.scrollLeft>=150&&!el.dataset.clicked),'Mouse drag scrolls without opening media');
+  await strip.locator('button').nth(4).click();assert.equal(await strip.getAttribute('data-clicked'),'yes');
   await p.locator('#workspace').evaluate(el=>el.scrollTop=190);
   const at=await p.locator('#workspace').evaluate(el=>el.scrollTop);
   const openMedia=()=>p.evaluate(()=>{
@@ -136,6 +161,6 @@ const assert=require('node:assert/strict'),path=require('node:path');
   await p.mouse.move(rect.x+140,185);await p.mouse.down();await p.mouse.move(rect.x+340,189,{steps:10});await p.mouse.up();
   await pane.waitFor({state:'detached'});assert.equal(await p.locator('#workspace').evaluate(el=>el.scrollTop),at);
   assert.deepEqual(errors,[]);
-  console.log('Desktop layout, always-visible queue, native commands, Library reveal, route changes and small-screen sizing passed.');
+  console.log('Desktop layout, queue, native commands, compact navigation, autoplay, mouse carousel and media pane passed.');
  }finally{await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;});
