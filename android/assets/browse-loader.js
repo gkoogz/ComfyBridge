@@ -3,17 +3,27 @@
 const BrowseLoader=(()=>{
  let current=null;
  function attach(host,workspace,allowed){
-  if(current?.host===host){current.refresh();return;}
+  const split=!!(window.Desktop&&desktopTwoColumns());
+  if(current&&current.host===host&&current.split===split){current.refresh();return;}
   current?.dispose();current=null;if(!host)return;
-  current=create(host,workspace,allowed);
+  let loaders;
+  if(split){
+   loaders=[0,1].map(col=>{
+    const edge=document.createElement('div');edge.className='desktopDrip column'+col;edge.setAttribute('aria-hidden','true');
+    edge.innerHTML='<canvas class="browseFluid"></canvas><canvas class="browseFlung"></canvas>';host.append(edge);
+    return create(edge,workspace,()=>allowed()&&!host.hidden&&!host.matches('.pullFailed,.pullEnded,.pullCovered'),col+1);
+   });
+  }else loaders=[create(host,workspace,allowed)];
+  current={host,workspace,allowed,split,refresh:()=>loaders.forEach(l=>l.refresh()),dispose:()=>{for(const l of loaders){l.dispose();if(split)l.host.remove();}}};
  }
  function stop(){current?.dispose();current=null;}
- function refresh(){current?.refresh();}
- function create(host,workspace,allowed){
+ function refresh(){if(current)attach(current.host,current.workspace,current.allowed);}
+ function create(host,workspace,allowed,column=0){
   const section=host.closest('.civitaiBrowse'),canvas=host.querySelector('.browseFluid'),flung=host.querySelector('.browseFlung'),spinner=host.querySelector('.browseLoaderSpinner');
   const ctx=canvas.getContext('2d'),fx=flung.getContext('2d'),state={reach:24,speed:1.5};
   const reduced=matchMedia('(prefers-reduced-motion: reduce)'),listeners=[];
-  let width=500,tick=0,frame=0,positionFrame=0,lastFrame=0,running=false,disposed=false,visible=false,layout=true;
+  const spring=column?host:section;
+  let width=500,tick=column*3,frame=0,positionFrame=0,lastFrame=0,running=false,disposed=false,visible=false,layout=true;
   let sparks=[],stir=0,gesture=null,pull=0,edgeOffset=0,rebound=null,wheelTimer=0,mouseId=null;
   const on=(el,name,fn,options)=>{el.addEventListener(name,fn,options);listeners.push(()=>el.removeEventListener(name,fn,options));};
   const atBottom=()=>workspace.scrollHeight-workspace.clientHeight-workspace.scrollTop<3;
@@ -27,6 +37,7 @@ const BrowseLoader=(()=>{
    layout=true;if(!running)draw();
   }
   function position(){
+   if(!spinner){layout=false;return;}
    const rect=host.getBoundingClientRect(),view=workspace.getBoundingClientRect();
    // Ignore the wave's spring translation: the spinner belongs to the open
    // viewport area, halfway between the resting content edge and screen bottom.
@@ -38,7 +49,7 @@ const BrowseLoader=(()=>{
   function queuePosition(){layout=true;if(!positionFrame)positionFrame=requestAnimationFrame(()=>{positionFrame=0;if(!disposed&&host.isConnected&&!host.classList.contains('pullEnded')&&!host.classList.contains('pullFailed'))position();});}
   function clearPull(){
    gesture=null;pull=0;edgeOffset=0;rebound=null;clearTimeout(wheelTimer);
-   section?.style.removeProperty('translate');layout=true;
+   spring?.style.removeProperty('translate');layout=true;
   }
   function refresh(){
    if(disposed)return;layout=true;
@@ -50,7 +61,7 @@ const BrowseLoader=(()=>{
   function tug(distance){
    if(!running||!atBottom())return;rebound=null;
    const delta=distance-pull;pull=Math.max(0,distance);edgeOffset=38*(1-Math.exp(-pull/110));
-   stir=Math.min(4,stir+Math.abs(delta)*.035);section.style.translate='0 '+(-edgeOffset)+'px';layout=true;
+   stir=Math.min(4,stir+Math.abs(delta)*.035);spring.style.translate='0 '+(-edgeOffset)+'px';layout=true;
   }
   function release(cancel=false){
    gesture=null;if(mouseId!==null){if(workspace.hasPointerCapture(mouseId))workspace.releasePointerCapture(mouseId);mouseId=null;}
@@ -62,15 +73,15 @@ const BrowseLoader=(()=>{
    if(!lastFrame)lastFrame=now;
    if(now-lastFrame>=33){
     const dt=Math.min(now-lastFrame,80)/1000;lastFrame=now;tick+=dt*state.speed;
-    if(rebound){const progress=Math.min(1,(now-rebound.start)/480);edgeOffset=rebound.from*Math.pow(1-progress,3)*Math.cos(progress*Math.PI*.7);section.style.translate='0 '+(-edgeOffset)+'px';layout=true;
+    if(rebound){const progress=Math.min(1,(now-rebound.start)/480);edgeOffset=rebound.from*Math.pow(1-progress,3)*Math.cos(progress*Math.PI*.7);spring.style.translate='0 '+(-edgeOffset)+'px';layout=true;
      if(progress>=.67&&!rebound.emitted){rebound.emitted=true;if(rebound.distance>18)sprinkle(rebound.distance);}
-     if(progress===1){rebound=null;edgeOffset=0;section.style.removeProperty('translate');}
+     if(progress===1){rebound=null;edgeOffset=0;spring.style.removeProperty('translate');}
     }
     if(layout)position();advanceDroplets(dt);drawSparkles(dt);draw();
    }
    frame=requestAnimationFrame(animate);
   }
-  const interactive=target=>target.closest('button,summary,input,textarea,select,a,video,.browseCarousel');
+  const interactive=target=>target.closest('button,summary,input,textarea,select,a,video,.browseCarousel')||(column&&!host.contains(target));
   on(workspace,'touchstart',e=>{
    if(!running||!atBottom()||e.touches.length!==1||interactive(e.target))return;
    gesture={x:e.touches[0].clientX,y:e.touches[0].clientY,claimed:false};

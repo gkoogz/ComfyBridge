@@ -19,8 +19,6 @@
 .desktop .desktopServer select{padding:4px 6px;height:28px;font-size:12px}
 .desktop .desktopChatControls small{display:block;font-size:10px;line-height:1.2;margin-top:3px}
 .desktop #desktopAddress{min-width:0;padding:6px;font-size:12px}
-.desktop .desktopPowerRow{gap:4px;align-items:center;width:auto;flex:none}
-.desktop #desktopCivitai{width:30px;min-width:30px;padding:0;font-size:16px;line-height:1;color:var(--muted)}
 .desktop #desktopPower{font-size:22px;line-height:1;color:var(--red)}
 .desktop #desktopPower svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;vertical-align:middle}
 .desktop #desktopPower.powered,.desktop .serverOnline{color:var(--mint)}
@@ -101,7 +99,8 @@
  .desktop body[data-page=browse] #main,.desktop .browseBackLayer>.browseBackMain{
   width:calc(100% - 2 * var(--feed-gutter))
  }
- .desktop[data-feed-columns="2"] .browseFeed{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));align-items:start;gap:8px}
+ .desktop .desktopMasonry{display:block;position:relative;height:var(--feed-height)}
+ .desktop .desktopMasonry>.browseTile{position:absolute;inset:var(--tile-y,0) auto auto var(--tile-x,0);width:calc(50% - 4px)}
  .desktop[data-feed-columns="2"] .browseTile{margin:0}
  .desktop body[data-page=browse]:has(#browseFeed):not(.civitaiViewerOpen) #desktopFeedLayout{
   display:grid;position:fixed;z-index:8;top:calc(var(--desktop-top) + 112px);
@@ -115,14 +114,36 @@
 .desktop .desktopMediaShade{position:fixed;z-index:199;inset:var(--desktop-top) 0 0;width:100%;border:0;border-radius:0;background:#060a0e85;cursor:default}
 .desktop .civitaiViewer{inset:var(--desktop-top) 0 0 auto;width:min(690px,82vw);background:var(--bg);border-left:1px solid var(--line);box-shadow:-12px 0 40px #0005;transform:translateX(0)}
 .desktop .civitaiViewerScroll{position:absolute;inset:0;overflow-y:auto;overscroll-behavior:contain}
-.desktop .civitaiViewer .modelPreviewHero{height:min(75dvh,760px);touch-action:pan-y}
+.desktop .civitaiViewer .modelPreviewHero{height:calc(100dvh - var(--desktop-top));touch-action:pan-y}
 .desktop .civitaiViewer .modelPreviewDetails{padding-inline:clamp(16px,2vw,30px)}
-.desktop .civitaiViewer .civitaiViewerHead{top:10px;right:12px}
+.desktop .civitaiViewer .civitaiViewerHead{top:10px;left:12px;right:auto}
 .desktop .civitaiViewer .modelPreviewHero img{cursor:grab}
 .desktop .browseCarousel{scrollbar-width:thin;scrollbar-color:#52635f transparent}
 .desktop .browseCarousel .browseMedia{cursor:grab}
 .desktop .browseCarousel.desktopDragging{cursor:grabbing;user-select:none;scroll-snap-type:none}
 .desktop .browseCarousel.desktopDragging .browseMedia{cursor:grabbing}
+.desktop .desktopServerHead{display:flex;align-items:center;gap:8px}
+.desktop #desktopPower{width:36px;height:36px;min-width:36px;display:grid;place-items:center;padding:0;border-radius:50%}
+.desktop #desktopPower:not(.powered) svg{transform:rotate(-35deg)}
+.desktop #desktopCivitai{width:auto;margin-top:5px;min-height:23px;display:inline-flex;align-items:center;gap:6px;padding:2px 9px;font-size:11px;color:var(--muted);border-radius:20px}
+.desktop #desktopCivitai i{width:7px;height:7px;background:var(--red);border-radius:50%}
+.desktop #desktopCivitai.connected i{background:var(--mint)}
+.desktop #browseCollectionDot{display:grid;place-items:center;align-self:center;font-size:0;height:36px;padding:0;margin:0}
+.desktop #browseCollectionDot::before{content:"";width:3px;height:3px;border-radius:50%;background:currentColor}
+.desktop #browseCollectionDot[hidden]{display:none}
+.desktop .civitaiViewer :is(.civitaiClose,[data-prev],[data-next],.desktopFullscreenExit){display:grid;place-items:center;font-size:0;padding:0;line-height:1}
+.desktop .civitaiViewer :is([data-prev],[data-next])::before{content:"";width:9px;height:9px;border:solid currentColor;border-width:2px 2px 0 0;transform:translateX(-2px) rotate(45deg)}
+.desktop .civitaiViewer [data-prev]::before{transform:translateX(2px) rotate(-135deg)}
+.desktop :is(.civitaiClose,.desktopFullscreenExit)::before{content:"";width:18px;height:18px;background:linear-gradient(45deg,transparent 45%,currentColor 46% 54%,transparent 55%),linear-gradient(-45deg,transparent 45%,currentColor 46% 54%,transparent 55%);background-size:14px 14px;background-repeat:no-repeat;background-position:center}
+.desktop .desktopImageFullscreen{display:grid;place-items:center;max-width:100%;max-height:100%;min-height:0;padding:0;border:0;border-radius:0;background:transparent}
+.desktop .civitaiViewer .desktopImageFullscreen img{cursor:zoom-in}
+.desktop .desktopLightbox[open]{display:grid;place-items:center;background:#080b0d;position:fixed;inset:0;width:100vw;height:100dvh;max-width:none;max-height:none;border:0;border-radius:0;margin:0;padding:0;overflow:hidden}
+.desktop .desktopLightbox img{width:100%;height:100%;min-height:0;object-fit:contain;cursor:zoom-out}
+.desktop .desktopFullscreenExit{display:grid;place-items:center;position:absolute;top:10px;left:12px;width:40px;height:40px;padding:0;background:#101b24bb;color:white}
+.desktop .desktopDrip{position:absolute;top:var(--drip-offset-0,0);left:0;width:calc(50% - 4px);height:140px}
+.desktop .desktopDrip.column1{left:calc(50% + 4px);top:var(--drip-offset-1,0)}
+.desktop #browseMore:has(.desktopDrip){overflow:visible}
+.desktop #browseMore:has(.desktopDrip)>canvas,.desktop #browseMore:has(.desktopDrip):not(.pullFailed,.pullEnded)>.browseLoaderSpinner,.desktop #browseMore:is(.pullFailed,.pullEnded) .desktopDrip{display:none}
 
 .desktop #desktopPanelToggle{display:none}
 @media(max-width:880px){

@@ -40,8 +40,9 @@ partial class Bridge {
                 if(control is Button && control.AccessibleName=="Hide to tray")Check(((Button)control).FlatAppearance.BorderSize==0,"window controls are borderless");
             }
             Check(app.monitor.Visible && online && app.codeLabel.Text.Length==6,"pairing panel opened");
-            Check(app.civitaiGear!=null && app.civitaiGear.AccessibleName=="Civitai preview settings","civitai gear is on the panel");
-            Check(app.civitaiGear.Parent==app.power.Parent && app.civitaiGear.Right<=app.power.Left && app.power.Right<=app.power.Parent.ClientSize.Width+1,"gear sits beside Turn server off");
+            Check(app.civitaiStatus.Text=="Civitai not connected"&&!app.civitaiStatus.Active,"missing Civitai key shown on panel");
+            app.checkKey=key=>System.Threading.Tasks.Task.FromResult(key==new string('a',32));SaveCivitaiKey(new string('b',32));app.RefreshState();Check(!app.civitaiStatus.Active,"unaccepted key stays disconnected");SaveCivitaiKey(new string('a',32));app.RefreshState();Check(app.civitaiStatus.Active&&app.civitaiStatus.Text=="Civitai connected","saved API key indicated");File.Delete(CivitaiKeyFile());app.RefreshState();
+            Check(app.civitaiStatus.Parent==app.power.Parent && app.power.Width==app.power.Height && app.power.Right<=app.badge.Parent.Left && app.civitaiStatus.Left>=app.badge.Parent.Right,"power, status and key control align without overlap");
             Check(!Bridge.CivitaiKeySaved() && !Bridge.ValidCivitaiKey("short key") && Bridge.ValidCivitaiKey(new string('a',32)),"civitai key shape");
             Check(app.addressBox.Text=="https://203.0.113.10:15294","remote address shown first");
             int port=((System.Net.IPEndPoint)tlsServer.LocalEndpoint).Port;
@@ -84,8 +85,16 @@ partial class Bridge {
                 app.RefreshState();Check(app.phone.Text.Contains("2 phones"),"two connected phones");
                 http.DownloadString(baseUrl+"disconnect");app.RefreshState();Check(app.phone.Text.Contains("1 phone"),"disconnect only one phone");}
             Check(app.monitor.FormBorderStyle==FormBorderStyle.None&&app.monitor.Region!=null&&Screen.FromControl(app.monitor).WorkingArea.Contains(app.monitor.Bounds),"rounded panel inside working area");
-            var edge=app.monitor.PointToScreen(new Point(app.monitor.ClientSize.Width-3,app.monitor.ClientSize.Height-3));
-            Check(SendMessage(app.monitor.Handle,0x84,IntPtr.Zero,(IntPtr)((edge.Y<<16)|(edge.X&65535))).ToInt32()==17,"corner returns native resize hit");
+            var window=(BridgeWindow)app.monitor;var corner=new Point(window.ClientSize.Width-3,window.ClientSize.Height-3);
+            var initial=window.Bounds;
+            foreach(bool studioMode in new[]{false,true}){
+                window.EnableGrip(studioMode);
+                SendMessage(window.Handle,0x201,(IntPtr)1,(IntPtr)((corner.Y<<16)|corner.X));
+                SendMessage(window.Handle,0x200,(IntPtr)1,(IntPtr)(((corner.Y+10)<<16)|(corner.X+20)));
+                SendMessage(window.Handle,0x202,IntPtr.Zero,(IntPtr)((corner.Y<<16)|corner.X));
+                Check(window.Width==initial.Width+(studioMode?20:0)&&window.Height==initial.Height+(studioMode?10:0),"mouse resize is restricted to studio mode");
+            }
+            window.Bounds=initial;window.EnableGrip(false);
             int pct;var j=new Dictionary<string,object>{{"id","test"},{"kind","image"},{"ordinal",1},{"total",1},{"queuePosition",2},{"queueTotal",4},{"progress",0.47},{"status","running"},{"current_node","Sample image · 12/32"}};
             var st=new Dictionary<string,object>{{"active","test"},{"jobs",new object[]{j}},{"elapsed","2:17"}};
             app.jobText.Text=JobSummary(st,out pct);app.bar.Value=pct;

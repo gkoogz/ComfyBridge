@@ -943,8 +943,9 @@ const CivitaiBrowser=(()=>{
   const oldTop=more?.offsetTop,oldHeight=more?.offsetHeight;
   // One write phase, one layout read phase: no write/read loop for every card.
   for(const el of ready)el.classList.remove('cardPending');
+  if(window.Desktop)desktopLayoutFeed(host);
   const visible=canAnimate?ready.filter(el=>{const r=el.getBoundingClientRect();return r.bottom>viewport.top&&r.top<viewport.bottom&&r.right>viewport.left&&r.left<viewport.right;}):[];
-  let ghost;if(visible.length&&old&&old.bottom>viewport.top&&old.top<viewport.bottom&&!more.hidden&&section&&!section.querySelector('.pullGhost')){
+  let ghost;if(!host.classList.contains('desktopMasonry')&&visible.length&&old&&old.bottom>viewport.top&&old.top<viewport.bottom&&!more.hidden&&section&&!section.querySelector('.pullGhost')){
    ghost=more.cloneNode(true);ghost.removeAttribute('id');ghost.removeAttribute('tabindex');ghost.setAttribute('aria-hidden','true');ghost.classList.add('pullGhost','motionVisible');
    // Canvas clones are blank; keep a single static frame beneath the arriving card.
    [...ghost.querySelectorAll('canvas')].forEach((canvas,i)=>canvas.getContext('2d').drawImage(more.querySelectorAll('canvas')[i],0,0));
@@ -1342,7 +1343,7 @@ const CivitaiBrowser=(()=>{
    const width=media.naturalWidth||media.videoWidth||v.item.width;
    const height=media.naturalHeight||media.videoHeight||v.item.height;
    const author=$('.civitaiAuthor',social),reactions=$('.civitaiReactions',social);
-   if(author&&reactions)peekHeight=reactions.offsetTop+reactions.offsetHeight-social.offsetTop+16;
+   if(author&&reactions)peekHeight=window.Desktop?author.getBoundingClientRect().height+parseFloat(getComputedStyle(social.closest('.modelPreviewDetails')).paddingTop)+4:reactions.offsetTop+reactions.offsetHeight-social.offsetTop+16;
    const visible=Math.min(scroll.scrollTop,peekHeight),gutter=0;
    const mediaHeight=Math.max(160,hero.clientHeight-visible-gutter);
    if(video&&media.sharedPlayer){
@@ -1525,7 +1526,7 @@ const CivitaiBrowser=(()=>{
   $$('.weightMenu[open]').forEach(menu=>{if(!menu.contains(e.target))menu.open=false;});
  });
  document.addEventListener('click',e=>{if(Date.now()<suppressTap){e.preventDefault();e.stopImmediatePropagation();}},true);
- document.addEventListener('keydown',e=>{if(e.key==='Escape'){if(viewer){e.preventDefault();close();}else if(page==='browse'&&back())e.preventDefault();}});
+ document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!document.fullscreenElement){if(viewer){e.preventDefault();close();}else if(page==='browse'&&back())e.preventDefault();}});
  document.addEventListener('visibilitychange',()=>{document.body.classList.toggle('browseBackgrounded',document.hidden);if(document.hidden)cancelArrivalMotion();else scheduleScrollWork();if(document.hidden){for(const c of mediaControllers.values())c.abort();}if(page==='browse'&&!document.hidden){if(activityAge()>=7200000){render();return;}if(available()){refreshStatus(true).catch(()=>{});warm();}}});
  document.addEventListener('pointerdown',activity,{passive:true});document.addEventListener('keydown',activity,{passive:true});document.addEventListener('wheel',activity,{passive:true});document.addEventListener('touchmove',activity,{passive:true});
  return {render,suspend,connectionChanged,launchWarm,pauseMedia,open,close,back,canSwipeBack,beginSwipeBack,moveSwipeBack,endSwipeBack,isOpen:()=>!!viewer,enrich,peek,resourcesHTML,wireResources,promptHTML,parametersHTML,wirePromptCopies};

@@ -23,9 +23,17 @@ partial class Bridge {
     System.Windows.Forms.Timer expansion;
     Rectangle compactBounds;
     Size compactMinimum;
+    Rectangle? beforeFullscreen;
+    void SetStudioFullscreen(bool on){
+        if(on==beforeFullscreen.HasValue)return;
+        if(on){beforeFullscreen=monitor.Bounds;((BridgeWindow)monitor).EnableGrip(false);monitor.TopMost=true;monitor.Bounds=Screen.FromControl(monitor).Bounds;}
+        else{var previous=beforeFullscreen.Value;beforeFullscreen=null;monitor.TopMost=!expanded;monitor.Bounds=previous;((BridgeWindow)monitor).EnableGrip(expanded);}
+        RoundPanel();
+    }
     void RememberStudioSize(){
         if(desktop==null && expansion!=null)return;
-        try{File.WriteAllText(Path.Combine(Data,"desktop-size.txt"),monitor.Width+","+monitor.Height);}catch(IOException){}
+        var bounds=beforeFullscreen??monitor.Bounds;
+        try{File.WriteAllText(Path.Combine(Data,"desktop-size.txt"),bounds.Width+","+bounds.Height);}catch(IOException){}
     }
     static JavaScriptSerializer DesktopJson(){return new JavaScriptSerializer{MaxJsonLength=100000000};}
     static string DesktopDevice(){
@@ -61,7 +69,7 @@ partial class Bridge {
             }
         }catch(IOException){}
         var target=new Rectangle(area.Left+(area.Width-w)/2,area.Top+(area.Height-h)/2,w,h);
-        AnimatePanel(target,()=>{if(expanded){monitor.MinimumSize=new Size(Math.Min(w,780),Math.Min(h,460));OpenDesktop();}});
+        AnimatePanel(target,()=>{if(expanded){monitor.MinimumSize=new Size(Math.Min(w,780),Math.Min(h,460));((BridgeWindow)monitor).EnableGrip(true);OpenDesktop();}});
     }
     void CollapseDesktop(){
         if(!expanded)return;RememberStudioSize();expanded=false;monitor.MinimumSize=compactMinimum;ReleaseDesktop();
@@ -69,6 +77,7 @@ partial class Bridge {
         AnimatePanel(compactBounds,()=>{compactPanel.Visible=true;DockPanel();RefreshState();});
     }
     void ReleaseDesktop(){
+        SetStudioFullscreen(false);((BridgeWindow)monitor).EnableGrip(false);
         if(desktop!=null){var old=desktop;desktop=null;old.Dispose();}
     }
     async void OpenDesktop(){
@@ -99,7 +108,7 @@ partial class Bridge {
     }
     object DesktopStatus(){
         string hint,code=Pairing.Display(out hint);
-        return new{online=online,phones=PhoneCount(),code=code,hint=online?hint:"Turn the server on to pair a phone.",error=powerError,addresses=addressBox.Items.Cast<object>().Select(x=>x.ToString()).ToArray(),address=addressBox.Text};
+        return new{online=online,phones=PhoneCount(),code=code,hint=online?hint:"Turn the server on to pair a phone.",error=powerError,civitaiConnected=keyConnected,civitaiChecking=keyChecking,addresses=addressBox.Items.Cast<object>().Select(x=>x.ToString()).ToArray(),address=addressBox.Text};
     }
     static string ExternalListing(string url){
         var uri=new Uri(url);
@@ -117,6 +126,7 @@ partial class Bridge {
             case "request":result=await DesktopApi(Convert.ToString(args["path"]),Convert.ToString(args["method"]),Convert.ToString(args["body"]));break;
             case "local":result=await DesktopMedia(Convert.ToString(args["action"]),(Dictionary<string,object>)args["value"]);break;
             case "status":result=DesktopStatus();break;
+            case "imageFullscreen":SetStudioFullscreen(Convert.ToBoolean(args["on"]));result=true;break;
             case "chatModels":result=await ChatControl("models","");break;
             case "chatSelect":result=await ChatControl("select",DesktopJson().Serialize(args));break;
             case "power":Server(Convert.ToBoolean(args["on"]),true);result=DesktopStatus();break;

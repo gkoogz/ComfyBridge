@@ -33,6 +33,12 @@ partial class Bridge {
                 app.ExpandDesktop();
                 await Until(async()=>app.desktop!=null&&app.desktop.CoreWebView2!=null&&await app.desktop.CoreWebView2.ExecuteScriptAsync("!!document.querySelector('#desktopPower')")=="true","desktop startup");
                 var web=app.desktop.CoreWebView2;
+                var studioBounds=app.monitor.Bounds;
+                await web.ExecuteScriptAsync("CivitaiBrowser.open({id:'desktop-fixture',type:'image',width:320,height:480,credit:'Fixture',tags:[],resources:[],reactions:[],stats:{},path:'',prompt:'A vase'},[]);document.querySelector('.desktopImageFullscreen').click()");
+                await Until(()=>Task.FromResult(app.beforeFullscreen.HasValue&&app.monitor.Bounds==Screen.FromControl(app.monitor).Bounds&&app.monitor.Region==null),"monitor fullscreen without frame");
+                await web.ExecuteScriptAsync("document.querySelector('.desktopFullscreenExit').click()");
+                await Until(()=>Task.FromResult(!app.beforeFullscreen.HasValue&&app.monitor.Bounds==studioBounds),"studio window restored after fullscreen");
+                await web.ExecuteScriptAsync("document.querySelector('.civitaiClose').click()");
                 await Until(async()=>await web.ExecuteScriptAsync("document.querySelector('#desktopChatModel').options.length===2")=="true","installed local chat models");
                 if(app.chatModels.Items.Count!=2)throw new Exception("Compact panel chat models missing");
                 await web.ExecuteScriptAsync("document.querySelector('#desktopChatModel').value='fixture-two.gguf';document.querySelector('#desktopChatModel').dispatchEvent(new Event('change'));");

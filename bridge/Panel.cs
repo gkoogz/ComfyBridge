@@ -17,7 +17,7 @@ partial class Bridge {
     static int loopbackPort=18765, tlsPort=18764;
     static readonly HashSet<TcpClient> sockets=new HashSet<TcpClient>();
     readonly string remoteFile=Path.Combine(Data,"remote-address.txt"), offFile=Path.Combine(Data,"server-off");
-    Label badge,phone,codeLabel,codeHint,jobText; Button power,newCode,civitaiGear; ToolTip civitaiTip;
+    Label badge,phone,codeLabel,codeHint,jobText; Button newCode; StatusButton power,civitaiStatus; ToolTip civitaiTip;
     string powerError;
     ComboBox addressBox,chatModels; Label chatHint; string chatModelError; ActivityMeter bar; bool reading,readingChat,paintingChat;
     sealed class ChatChoice{public string Id,Name;public override string ToString(){return Name;}}
@@ -75,13 +75,59 @@ partial class Bridge {
         }
     }
     static Label L(string s,float pt,Color color,bool bold=false){return new Label{Text=s,UseMnemonic=false,ForeColor=color,Font=new Font("Segoe UI",pt,bold?FontStyle.Bold:FontStyle.Regular),Dock=DockStyle.Fill,TextAlign=ContentAlignment.MiddleLeft,AutoEllipsis=true};}
-    static Image PowerIcon(){var bmp=new Bitmap(20,20);using(var g=Graphics.FromImage(bmp))using(var pen=new Pen(Mint,2.2f)){g.SmoothingMode=System.Drawing.Drawing2D.SmoothingMode.AntiAlias;g.DrawArc(pen,3,4,14,14,-55,290);g.DrawLine(pen,10,1,10,10);}return bmp;}
-    static Image GearIcon(){var bmp=new Bitmap(20,20);using(var g=Graphics.FromImage(bmp))using(var pen=new Pen(Color.FromArgb(214,226,230),1.6f)){g.SmoothingMode=SmoothingMode.AntiAlias;g.DrawEllipse(pen,7,7,6,6);g.DrawEllipse(pen,4.5f,4.5f,11,11);for(int i=0;i<8;i++){double a=i*Math.PI/4+Math.PI/8;g.DrawLine(pen,10+(float)Math.Cos(a)*6.1f,10+(float)Math.Sin(a)*6.1f,10+(float)Math.Cos(a)*9.2f,10+(float)Math.Sin(a)*9.2f);}}return bmp;}
+    sealed class StatusButton : Button {
+        internal bool Power,Active;
+        internal StatusButton(){SetStyle(ControlStyles.UserPaint|ControlStyles.OptimizedDoubleBuffer,true);FlatStyle=FlatStyle.Flat;Cursor=Cursors.Hand;Font=new Font("Segoe UI",9);Margin=Padding.Empty;}
+        protected override void OnPaint(PaintEventArgs e){
+            var g=e.Graphics;g.SmoothingMode=SmoothingMode.AntiAlias;g.Clear(Parent.BackColor);
+            float h=Height-3,w=Width-3;var accent=Active?Mint:Red;
+            using(var shape=new GraphicsPath()){
+                if(Power)shape.AddEllipse(1,1,w,h);
+                else{shape.AddArc(1,1,h,h,90,180);shape.AddArc(1+w-h,1,h,h,270,180);shape.CloseFigure();}
+                using(var fill=new SolidBrush(ClientRectangle.Contains(PointToClient(Cursor.Position))?Color.FromArgb(43,59,62):Panel))g.FillPath(fill,shape);
+                using(var pen=new Pen(Focused?Color.White:Color.FromArgb(65,86,88)))g.DrawPath(pen,shape);
+            }
+            if(Power){
+                g.TranslateTransform(Width/2f,Height/2f);if(!Active)g.RotateTransform(-35);
+                float r=h*.23f;using(var pen=new Pen(accent,Math.Max(2,h*.065f))){pen.StartCap=LineCap.Round;pen.EndCap=LineCap.Round;g.DrawArc(pen,-r,-r,r*2,r*2,-57,294);g.DrawLine(pen,0,-r*1.23f,0,0);}
+            }else{
+                int d=Math.Max(7,Height/4);using(var fill=new SolidBrush(accent))g.FillEllipse(fill,12,(Height-d)/2f,d,d);
+                TextRenderer.DrawText(g,Text,Font,new Rectangle(19+d,0,Width-27-d,Height),Color.Gainsboro,TextFormatFlags.VerticalCenter|TextFormatFlags.Left|TextFormatFlags.SingleLine|TextFormatFlags.NoPadding);
+            }
+        }
+    }
     static bool ValidCivitaiKey(string value){if(String.IsNullOrEmpty(value)||value.Length<20||value.Length>400||!Char.IsLetterOrDigit(value[0]))return false;foreach(char c in value)if(!(Char.IsLetterOrDigit(c)||c=='.'||c=='_'||c=='-'))return false;return true;}
     static string CivitaiKeyFile(){return Path.Combine(Data,"civitai-api-key.txt");}
-    static bool CivitaiKeySaved(){try{return ValidCivitaiKey(File.ReadAllText(CivitaiKeyFile()).Trim());}catch{return false;}}
+    static string ReadCivitaiKey(){try{string key=File.ReadAllText(CivitaiKeyFile()).Trim();return ValidCivitaiKey(key)?key:null;}catch(IOException){return null;}catch(UnauthorizedAccessException){return null;}}
+    static bool CivitaiKeySaved(){return ReadCivitaiKey()!=null;}
+    string checkedKey;DateTime nextKeyCheck;bool keyConnected,keyChecking;
+    Func<string,Task<bool>> checkKey=VerifyCivitaiKey;
+    static async Task<bool> VerifyCivitaiKey(string key){
+        var req=(HttpWebRequest)WebRequest.Create("https://civitai.red/api/v1/me");req.AllowAutoRedirect=false;req.UserAgent="ComfyBridge";req.Headers[HttpRequestHeader.Authorization]="Bearer "+key;
+        using(var deadline=new System.Threading.CancellationTokenSource(TimeSpan.FromSeconds(10)))
+        using(deadline.Token.Register(req.Abort))
+        using(var reply=(HttpWebResponse)await req.GetResponseAsync())
+        using(var reader=new StreamReader(reply.GetResponseStream())){
+            if(reply.StatusCode!=HttpStatusCode.OK)return false;
+            var user=new System.Web.Script.Serialization.JavaScriptSerializer().Deserialize<Dictionary<string,object>>(await reader.ReadToEndAsync());
+            return user!=null&&user.ContainsKey("username")&&!String.IsNullOrWhiteSpace(Convert.ToString(user["username"]));
+        }
+    }
     static void SaveCivitaiKey(string value){string path=CivitaiKeyFile(),tmp=path+".tmp";File.WriteAllText(tmp,value,new System.Text.UTF8Encoding(false));if(File.Exists(path))File.Replace(tmp,path,null);else File.Move(tmp,path);}
-    void RefreshCivitaiTip(){if(civitaiGear==null)return;if(civitaiTip==null)civitaiTip=new ToolTip();civitaiTip.SetToolTip(civitaiGear,CivitaiKeySaved()?"Civitai key saved. Mature listing previews are enabled.":"Add a Civitai API key to show NSFW listing previews.");}
+    async void RefreshCivitaiTip(){
+        if(civitaiStatus==null||civitaiStatus.IsDisposed)return;
+        string key=ReadCivitaiKey();
+        if(key!=checkedKey){checkedKey=key;keyConnected=false;keyChecking=false;nextKeyCheck=DateTime.MinValue;}
+        if(key!=null&&!keyChecking&&DateTime.UtcNow>=nextKeyCheck){
+            keyChecking=true;PaintCivitaiStatus();
+            bool ok=false;try{ok=await checkKey(key);}catch(WebException ex){if(ex.Response!=null)ex.Response.Close();}catch(IOException){}catch(ArgumentException){}catch(InvalidOperationException){}
+            if(key!=checkedKey||civitaiStatus.IsDisposed)return;
+            keyChecking=false;keyConnected=ok;nextKeyCheck=DateTime.UtcNow.AddHours(ok?24:1);
+        }
+        PaintCivitaiStatus();
+    }
+    void PaintCivitaiStatus(){civitaiStatus.Active=keyConnected;civitaiStatus.Text=keyChecking?"Checking Civitai…":keyConnected?"Civitai connected":"Civitai not connected";civitaiStatus.Invalidate();
+        if(civitaiTip==null)civitaiTip=new ToolTip();civitaiTip.SetToolTip(civitaiStatus,"Manage the Civitai API key for this PC.");}
     static Button B(string s,EventHandler action){var b=new Button{Text=s,AutoSize=true,MinimumSize=new Size(70,32),FlatStyle=FlatStyle.Flat,ForeColor=Color.White,BackColor=Color.FromArgb(39,50,59),Font=new Font("Segoe UI",9)};b.FlatAppearance.BorderColor=Color.FromArgb(59,73,82);b.Click+=action;return b;}
     static Button WindowButton(string text,string name,EventHandler action){
         var button=B(text,action);button.AutoSize=false;button.MinimumSize=Size.Empty;button.Dock=DockStyle.Fill;
@@ -89,7 +135,6 @@ partial class Bridge {
         button.Font=new Font("Segoe UI",14);button.FlatAppearance.BorderSize=0;
         button.FlatAppearance.MouseOverBackColor=Panel;button.AccessibleName=name;return button;
     }
-    static FlowLayoutPanel Row(params Control[] cs){var row=new FlowLayoutPanel{Dock=DockStyle.Fill,WrapContents=false,Margin=Padding.Empty};foreach(var c in cs)row.Controls.Add(c);return row;}
     static void Add(TableLayoutPanel t,Control c,int height){int i=t.RowCount++;t.RowStyles.Add(new RowStyle(SizeType.Absolute,height));t.Controls.Add(c,0,i);}
     void Server(bool on,bool remember){
         powerError=null;
@@ -116,28 +161,32 @@ partial class Bridge {
     void RefreshState(){int count=PhoneCount();bool live=online&&count>0;
         tray.Text=TrayText(!online?"server off":live?count+(count==1?" phone connected":" phones connected"):"waiting for phone");
         if(badge==null)return;
-        badge.Text=online?"●  Server on":"●  Server off";badge.ForeColor=online?Mint:Muted;
+        badge.Text=online?"Server on":"Server off";badge.ForeColor=Color.White;
         int bg;lock(phones)bg=watchers.Keys.Count(id=>!phones.ContainsKey(id));
         phone.Text=live?""+count+(count==1?" phone":" phones")+(bg>0?" · "+bg+" in bg":" connected"):"No phones connected";phone.ForeColor=Muted;
-        power.Text=online?"Turn server off":"Turn server on";RefreshCivitaiTip();
+        power.Active=online;power.AccessibleName=online?"Turn server off":"Turn server on";power.Invalidate();RefreshCivitaiTip();
         string hint;codeLabel.Text=Pairing.Display(out hint);codeLabel.AccessibleName="Pairing code "+codeLabel.Text;codeHint.Text=online?hint:powerError??"Turn the server on to pair.";codeHint.ForeColor=powerError!=null?Red:Muted;newCode.Enabled=online;
     }
-    // WebView2 is a child HWND. Leave a real Win32 resize border around both surfaces.
+    // WebView2 is a child HWND. The studio owns a narrow client-area grip so
+    // Windows never paints a second non-client frame around the custom chrome.
     sealed class BridgeWindow : Form {
-        internal BridgeWindow(){Padding=new Padding(6);}
-        protected override CreateParams CreateParams {
-            get { var p=base.CreateParams;p.Style|=0x40000;return p; } // WS_THICKFRAME
+        Point origin,edge;Rectangle initial;
+        internal void EnableGrip(bool enabled){Capture=false;edge=Point.Empty;Padding=new Padding(enabled?5:0);Cursor=Cursors.Default;}
+        internal Point GripAt(Point p){
+            int grip=Padding.Left;if(grip==0)return Point.Empty;
+            return new Point(p.X<grip?-1:p.X>=ClientSize.Width-grip?1:0,p.Y<grip?-1:p.Y>=ClientSize.Height-grip?1:0);
         }
-        protected override void WndProc(ref Message m){
-            if(m.Msg==0x83){m.Result=IntPtr.Zero;return;} // keep the custom chrome in the client area
-            base.WndProc(ref m);
-            if(m.Msg!=0x84||WindowState!=FormWindowState.Normal)return;
-            int packed=unchecked((int)m.LParam.ToInt64());
-            Point p=PointToClient(new Point((short)packed,(short)(packed>>16)));
-            bool left=p.X<Padding.Left,right=p.X>=ClientSize.Width-Padding.Right;
-            bool top=p.Y<Padding.Top,bottom=p.Y>=ClientSize.Height-Padding.Bottom;
-            int hit=top?(left?13:right?14:12):bottom?(left?16:right?17:15):left?10:right?11:0;
-            if(hit!=0)m.Result=(IntPtr)hit;
+        protected override void OnMouseDown(MouseEventArgs e){base.OnMouseDown(e);if(e.Button!=MouseButtons.Left)return;
+            edge=GripAt(e.Location);if(edge.IsEmpty)return;initial=Bounds;origin=PointToScreen(e.Location);Capture=true;}
+        protected override void OnMouseUp(MouseEventArgs e){base.OnMouseUp(e);Capture=false;edge=Point.Empty;}
+        protected override void OnMouseCaptureChanged(EventArgs e){base.OnMouseCaptureChanged(e);if(!Capture)edge=Point.Empty;}
+        protected override void OnMouseMove(MouseEventArgs e){base.OnMouseMove(e);
+            if(!Capture||edge.IsEmpty){
+                var hit=GripAt(e.Location);Cursor=hit.X==0?(hit.Y==0?Cursors.Default:Cursors.SizeNS):hit.Y==0?Cursors.SizeWE:hit.X==hit.Y?Cursors.SizeNWSE:Cursors.SizeNESW;return;
+            }
+            var screen=PointToScreen(e.Location);int dx=screen.X-origin.X,dy=screen.Y-origin.Y;
+            int w=Math.Max(MinimumSize.Width,initial.Width+edge.X*dx),h=Math.Max(MinimumSize.Height,initial.Height+edge.Y*dy);
+            Bounds=new Rectangle(edge.X<0?initial.Right-w:initial.Left,edge.Y<0?initial.Bottom-h:initial.Top,w,h);
         }
     }
     static TableLayoutPanel Group(TableLayoutPanel parent,int height){
@@ -183,7 +232,7 @@ partial class Bridge {
             save.Click+=(s,e)=>{string value=field.Text.Trim();if(value==""){MessageBox.Show(dlg,"Paste a key, or use Clear key.");return;}if(!ValidCivitaiKey(value)){MessageBox.Show(dlg,"That does not look like a Civitai API key. Paste only the key, with no spaces.");return;}SaveCivitaiKey(value);dlg.DialogResult=DialogResult.OK;};
             clear.Click+=(s,e)=>{try{if(File.Exists(CivitaiKeyFile()))File.Delete(CivitaiKeyFile());string tmp=CivitaiKeyFile()+".tmp";if(File.Exists(tmp))File.Delete(tmp);}catch(Exception ex){MessageBox.Show(dlg,ex.Message);return;}dlg.DialogResult=DialogResult.OK;};
             dlg.Controls.AddRange(new Control[]{desc,field,status,save,clear});dlg.AcceptButton=save;dlg.CancelButton=null;
-            if(dlg.ShowDialog(monitor)==DialogResult.OK)RefreshCivitaiTip();
+            if(dlg.ShowDialog(monitor)==DialogResult.OK){nextKeyCheck=DateTime.MinValue;RefreshCivitaiTip();}
         }
     }
     static string VersionLabel(){
@@ -206,14 +255,18 @@ partial class Bridge {
             var grid=new TableLayoutPanel{Padding=new Padding(8,2,8,2),Dock=DockStyle.Fill,ColumnCount=1,AutoScroll=true};grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));monitor.Controls.Add(grid);
             compactPanel=grid;
             var head=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=4,RowCount=1,Margin=Padding.Empty,Padding=Padding.Empty};head.RowStyles.Add(new RowStyle(SizeType.Percent,100));head.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));head.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,100));head.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,43));head.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,43));
-            var openStudio=B("Open studio ↗",(s,e)=>ExpandDesktop());openStudio.Dock=DockStyle.Fill;openStudio.ForeColor=Mint;openStudio.AccessibleName="Expand desktop studio";head.Controls.Add(openStudio,1,0);
+            var openStudio=B("Open studio",(s,e)=>ExpandDesktop());openStudio.AutoSize=false;openStudio.Dock=DockStyle.Fill;openStudio.Margin=new Padding(0,5,6,5);openStudio.Padding=Padding.Empty;openStudio.ForeColor=Mint;openStudio.AccessibleName="Expand desktop studio";head.Controls.Add(openStudio,1,0);
             var title=L("ComfyBridge · "+VersionLabel(),15,Color.White,true);title.Margin=Padding.Empty;head.Controls.Add(title,0,0);
             head.Controls.Add(WindowButton("–","Hide to tray",(s,e)=>HidePanel()),2,0);
             head.Controls.Add(WindowButton("×","Hide to tray",(s,e)=>HidePanel()),3,0);Add(grid,head,44);
-            badge=L("",10,Mint,true);badge.Dock=DockStyle.None;badge.Size=new Size(88,30);phone=L("",10,Red);phone.Dock=DockStyle.None;phone.Size=new Size(155,30);
-            power=B("",(s,e)=>{try{Server(!online,true);}catch(Exception ex){MessageBox.Show(monitor,ex.Message);}});power.AutoSize=false;power.Size=new Size(132,32);power.Image=PowerIcon();power.TextImageRelation=TextImageRelation.ImageBeforeText;
-            civitaiGear=B("",(s,e)=>{try{EditCivitaiKey();}catch(Exception ex){MessageBox.Show(monitor,ex.Message);}});civitaiGear.Text="";civitaiGear.Image=GearIcon();civitaiGear.AutoSize=false;civitaiGear.MinimumSize=new Size(34,32);civitaiGear.Size=new Size(34,32);civitaiGear.AccessibleName="Civitai preview settings";civitaiGear.ImageAlign=ContentAlignment.MiddleCenter;civitaiGear.TextImageRelation=TextImageRelation.Overlay;
-            Add(grid,Fields(Row(badge,phone),civitaiGear,power),38);
+            var serverRow=new TableLayoutPanel{ColumnCount=3,RowCount=1,Dock=DockStyle.Fill,Margin=new Padding(2,0,2,0)};
+            serverRow.RowStyles.Add(new RowStyle(SizeType.Percent,100));
+            serverRow.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,52));serverRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));serverRow.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,164));
+            power=new StatusButton{Power=true,Size=new Size(42,42),Anchor=AnchorStyles.Left};power.Click+=(s,e)=>{try{Server(!online,true);}catch(Exception ex){MessageBox.Show(monitor,ex.Message);}};serverRow.Controls.Add(power,0,0);
+            var serverText=new TableLayoutPanel{RowCount=2,ColumnCount=1,Dock=DockStyle.Fill,Margin=Padding.Empty,Padding=new Padding(0,4,0,4)};
+            serverText.RowStyles.Add(new RowStyle(SizeType.Percent,55));serverText.RowStyles.Add(new RowStyle(SizeType.Percent,45));
+            badge=L("",11,Color.White,true);phone=L("",9,Muted);serverText.Controls.Add(badge,0,0);serverText.Controls.Add(phone,0,1);serverRow.Controls.Add(serverText,1,0);
+            civitaiStatus=new StatusButton{Width=158,Height=32,Anchor=AnchorStyles.Right,AccessibleName="Civitai API key settings"};civitaiStatus.Click+=(s,e)=>{try{EditCivitaiKey();}catch(Exception ex){MessageBox.Show(monitor,ex.Message);}};serverRow.Controls.Add(civitaiStatus,2,0);Add(grid,serverRow,53);
             var pairing=Group(grid,168);
             Add(pairing,L("PC address",9,Muted,true),21);
             addressBox=new PanelChoice{DropDownStyle=ComboBoxStyle.DropDownList,FlatStyle=FlatStyle.Flat,BackColor=Ink,ForeColor=Color.Gainsboro,Font=new Font("Segoe UI",10),Width=270,AccessibleName="PC address"};
@@ -240,7 +293,7 @@ partial class Bridge {
         if(expanded){RememberStudioSize();expanded=false;monitor.MinimumSize=compactMinimum;monitor.Bounds=compactBounds;compactPanel.Visible=true;monitor.TopMost=true;monitor.ShowInTaskbar=false;}
         Pairing.Close("Click New code to pair.");timer.Interval=5000;
     }
-    void RoundPanel(){int w=monitor.Width,h=monitor.Height,r=18;using(var p=new GraphicsPath()){
+    void RoundPanel(){if(beforeFullscreen.HasValue){var oldRegion=monitor.Region;monitor.Region=null;if(oldRegion!=null)oldRegion.Dispose();return;}int w=monitor.Width,h=monitor.Height,r=18;using(var p=new GraphicsPath()){
         p.AddArc(0,0,r,r,180,90);p.AddArc(w-r,0,r,r,270,90);p.AddArc(w-r,h-r,r,r,0,90);p.AddArc(0,h-r,r,r,90,90);p.CloseFigure();
         var old=monitor.Region;monitor.Region=new Region(p);if(old!=null)old.Dispose();
     }}

@@ -223,7 +223,7 @@ class Browser:
         token = self.models.token()
         if not token:
             self.identity = None
-            raise ValueError('Add your Civitai API key in the Windows bridge gear to connect Browse.')
+            raise ValueError('Open the Civitai status button on your PC to add your API key and connect Browse.')
         digest = hashlib.sha256(token.encode()).hexdigest()
         if cached:
             identity=self.identity if self.identity and self.identity['digest']==digest else self.setting('','identity:'+digest)

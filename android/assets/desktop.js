@@ -33,6 +33,7 @@ async function initDesktop(){
  function selectColumns(value){
   document.documentElement.dataset.feedColumns=value;
   for(const button of layout.children)button.setAttribute('aria-pressed',String(button.value===value));
+  desktopLayoutFeed(document.getElementById('browseFeed'));BrowseLoader.refresh();
  }
  for(const count of ['1','2']){
   const button=document.createElement('button');button.type='button';button.value=count;
@@ -43,7 +44,7 @@ async function initDesktop(){
  }
  selectColumns(localStorage.getItem('desktopFeedColumns')==='1'?'1':'2');document.body.append(layout);
  const left=$('#drawerBridge');left.id='desktopBridge';
- left.innerHTML='<div class="desktopServer"><div class="row spread"><div><strong id="desktopServerState">Checking server…</strong><small id="desktopPhones"></small></div><div class="row desktopPowerRow"><button id="desktopCivitai" type="button" aria-label="Civitai preview settings" title="Civitai API key for listing previews">⚙</button><button id="desktopPower" aria-label="Toggle server power">⏻</button></div></div><label for="desktopAddress">PC address · enter on your phone</label><div class="row"><select id="desktopAddress"></select><button id="desktopCopy" title="Copy address">Copy</button><button id="desktopEdit" title="Edit remote address">✎</button></div><div class="row spread desktopPairRow"><label>Pairing code</label><strong id="desktopCode">—</strong><button id="desktopNewCode">New code</button></div><small id="desktopPairHint"></small><div id="desktopError" role="alert" hidden></div></div>'+machinePulse('LOCAL')+bridgeActivityMarkup();
+ left.innerHTML='<div class="desktopServer"><div class="desktopServerHead"><button id="desktopPower" aria-label="Toggle server power"></button><div><strong id="desktopServerState">Checking server…</strong><small id="desktopPhones"></small></div></div><button id="desktopCivitai" type="button" title="Manage Civitai API key"><i aria-hidden="true"></i><span>Civitai not connected</span></button><label for="desktopAddress">PC address · enter on your phone</label><div class="row"><select id="desktopAddress"></select><button id="desktopCopy" title="Copy address">Copy</button><button id="desktopEdit" title="Edit remote address">✎</button></div><div class="row spread desktopPairRow"><label>Pairing code</label><strong id="desktopCode">—</strong><button id="desktopNewCode">New code</button></div><small id="desktopPairHint"></small><div id="desktopError" role="alert" hidden></div></div>'+machinePulse('LOCAL')+bridgeActivityMarkup();
  const chatControls=document.createElement('div');chatControls.className='desktopChatControls';chatControls.innerHTML='<label for="desktopChatModel">Local chat model</label><select id="desktopChatModel" aria-label="Local chat model"></select><small id="desktopChatHint">Checking installed models…</small>';
  $('.desktopServer').append(chatControls);
  let chatLoading=false,chatModelChanged=false;
@@ -66,9 +67,11 @@ async function initDesktop(){
  $('#desktopPower').innerHTML=powerIcon;
  initDesktopSidebar();
  initDesktopCarousel();
+ initDesktopMasonry();
  let status,busy=false,refreshing=false,revision=0;
  const paint=s=>{
-  status=s;$('#desktopServerState').textContent=s.online?'● Server on':'● Server off';$('#desktopServerState').className=s.online?'serverOnline':'serverOffline';
+  status=s;$('#desktopServerState').textContent=s.online?'Server on':'Server off';$('#desktopServerState').className=s.online?'serverOnline':'serverOffline';
+  const keyButton=$('#desktopCivitai');keyButton.classList.toggle('connected',!!s.civitaiConnected);keyButton.querySelector('span').textContent=s.civitaiChecking?'Checking Civitai…':s.civitaiConnected?'Civitai connected':'Civitai not connected';
   $('#desktopPhones').textContent=s.phones?s.phones+(s.phones===1?' phone connected':' phones connected'):'No phones connected';
   $('#desktopCode').textContent=s.code;$('#desktopCode').title=s.hint;$('#desktopPairHint').textContent=s.hint;$('#desktopNewCode').disabled=!s.online;
   $('#desktopError').hidden=!s.error;$('#desktopError').textContent=s.error||'';
@@ -96,6 +99,39 @@ async function initDesktop(){
   finally{refreshing=false;}
  },2000);
  updateBridgeActivity();
+}
+
+function desktopTwoColumns(){return document.documentElement.dataset.feedColumns==='2'&&matchMedia('(min-width:1120px)').matches;}
+function desktopLayoutFeed(host){
+ if(!host)return;
+ host.classList.toggle('desktopMasonry',desktopTwoColumns());
+ if(!desktopTwoColumns())return;
+ const cards=[...host.children].filter(el=>el.matches('.browseTile:not(.cardPending)'));
+ const heights=cards.map(card=>card.offsetHeight),ends=[0,0];
+ for(let i=0;i<cards.length;i++){
+  const col=ends[0]<=ends[1]?0:1,card=cards[i];
+  card.style.setProperty('--tile-y',ends[col]+'px');card.style.setProperty('--tile-x',col?'calc(50% + 4px)':'0px');
+  ends[col]+=heights[i]+5;
+ }
+ const bottom=Math.max(...ends);host.style.setProperty('--feed-height',bottom+'px');
+ const section=host.closest('.civitaiBrowse');
+ if(section)ends.forEach((end,i)=>section.style.setProperty('--drip-offset-'+i,(end-bottom-5)+'px'));
+}
+function initDesktopMasonry(){
+ let host=null;const seen=new Set();
+ const resized=new ResizeObserver(()=>desktopLayoutFeed(host));
+ function sync(){
+  const next=document.getElementById('browseFeed');
+  if(next!==host){resized.disconnect();seen.clear();host=next;if(host)resized.observe(host);}
+  if(!host)return;
+  for(const card of seen)if(card.parentElement!==host){resized.unobserve(card);seen.delete(card);}
+  for(const card of host.children)if(card.matches('.browseTile')&&!seen.has(card)){seen.add(card);resized.observe(card);}
+  desktopLayoutFeed(host);
+ }
+ new MutationObserver(changes=>{
+  if(host!==document.getElementById('browseFeed')||changes.some(c=>c.target===host))sync();
+ }).observe($('#main'),{childList:true,subtree:true});
+ matchMedia('(min-width:1120px)').addEventListener('change',()=>{sync();BrowseLoader.refresh();});sync();
 }
 
 function initDesktopSidebar(){
@@ -159,6 +195,28 @@ function desktopMediaPane(view, closeView){
  pane.before(shade);
  const reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
  let animation=null,drag=null,closing=false;
+ let lightbox=null;
+ function leaveImage(){
+  if(!lightbox)return;
+  const old=lightbox;lightbox=null;old.close();old.remove();desktopCall('imageFullscreen',{on:false}).catch(e=>toast(e.message));
+ }
+ const picture=pane.querySelector('.imagePicture'),image=picture?.querySelector('img');
+ if(image){
+  const toggle=document.createElement('button');toggle.type='button';toggle.className='desktopImageFullscreen';
+  toggle.setAttribute('aria-label','View image full screen');toggle.title='View image full screen';
+  image.replaceWith(toggle);toggle.append(image);picture.append(toggle);
+  toggle.onclick=()=>{
+   if(lightbox)return;
+   lightbox=document.createElement('dialog');lightbox.className='desktopLightbox';lightbox.setAttribute('aria-label','Full-screen image');
+   const full=new Image();full.src=image.currentSrc||image.src;full.alt=image.alt;
+   const exit=document.createElement('button');exit.type='button';exit.className='desktopFullscreenExit';exit.setAttribute('aria-label','Exit full screen');exit.title='Exit full screen';
+   lightbox.append(full,exit);document.body.append(lightbox);lightbox.showModal();
+   exit.onclick=full.onclick=leaveImage;
+   lightbox.oncancel=e=>{e.preventDefault();leaveImage();};
+   lightbox.onkeydown=e=>{if(e.key==='Escape'){e.preventDefault();e.stopPropagation();leaveImage();}};
+   desktopCall('imageFullscreen',{on:true}).catch(e=>{leaveImage();toast(e.message);});
+  };
+ }
  const slide=(from,to,done)=>{
   animation?.cancel();
   if(reduced){done?.();return;}
@@ -172,7 +230,8 @@ function desktopMediaPane(view, closeView){
  };
  shade.onclick=dismiss;pane.querySelector('.civitaiClose').onclick=dismiss;
  pane.addEventListener('pointerdown',e=>{
-  if(!e.isPrimary||e.button!==0||e.target.closest('button,input,textarea,select,a,.videoTimeline,.promptText')||!getSelection().isCollapsed)return;
+  const control=e.target.closest('button,input,textarea,select,a,.videoTimeline,.promptText');
+  if(lightbox||!e.isPrimary||e.button!==0||(control&&!control.classList.contains('desktopImageFullscreen'))||!getSelection().isCollapsed)return;
   drag={id:e.pointerId,x:e.clientX,y:e.clientY,active:false};
  });
  pane.addEventListener('pointermove',e=>{
@@ -195,5 +254,5 @@ function desktopMediaPane(view, closeView){
  pane.addEventListener('pointerup',finish);pane.addEventListener('pointercancel',finish);
  shade.onwheel=e=>e.preventDefault();
  slide('100%','0');
- return ()=>{animation?.cancel();shade.remove();};
+ return ()=>{leaveImage();animation?.cancel();shade.remove();};
 }
