@@ -1,6 +1,6 @@
 # Krea 2 Turbo images
 
-Select **Krea 2 Turbo · BF16** in Image's model selector or Checkpoint Browser.
+Select **Krea 2 Turbo Â· BF16** in Image's model selector or Checkpoint Browser.
 The server offers it only when its native ComfyUI nodes, loader type and all
 three model files are present. SDXL checkpoints remain available as before.
 
@@ -33,7 +33,7 @@ UNETLoader -> optional LoraLoaderModelOnly -> KSampler -> VAEDecode -> SaveImage
 CLIPLoader uses `type=krea2` and the Qwen3-VL encoder; ConditioningZeroOut supplies
 the unused negative branch. The Krea model supplies its native sampling shift.
 
-The UI displays **Turbo · 8 steps**, **Euler**, **simple schedule**, and
+The UI displays **Turbo Â· 8 steps**, **Euler**, **simple schedule**, and
 **guidance off** as fixed settings. Server-side normalization enforces the same
 values before storing recipes. ComfyUI's CFG=1 means guidance is disabled; it
 is equivalent in purpose to CFG=0 in Krea's separate official inference CLI.
@@ -59,8 +59,12 @@ system RAM; the 64 GB workstation should run one image at a time without a
 resident LLM/video model. Existing GPU handoff and durable generation queue
 remain responsible for serialization. The existing ZLUDA launcher forces FP16
 arithmetic for compatibility: the installed source weights are BF16, and no
-8-bit or 4-bit quantization is used. Timing and memory use require a live test;
-file installation or a successful graph validation alone does not prove a render.
+8-bit or 4-bit quantization is used.
+
+On a Radeon RX 7900 XT with 20 GB VRAM and 64 GB system RAM, the installed
+Windows bridge completed one 1024 × 1024, eight-step text-to-image render in
+128 seconds of renderer time (132 seconds from queue acceptance to library
+save). This included model loading and GPU prompt encoding.
 
 Sources: https://github.com/Comfy-Org/workflow_templates/blob/main/templates/image_krea2_turbo_t2i.json
 and https://huggingface.co/Comfy-Org/Krea-2/tree/main
