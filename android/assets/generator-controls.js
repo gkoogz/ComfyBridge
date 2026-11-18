@@ -66,15 +66,20 @@ function setBatchMenu(open){
  trigger.setAttribute('aria-expanded',String(open));
 }
 let promptExpanded={},promptResizeObserver;
-function sizePrompt(field,expanded){
+function sizePrompt(field,expanded,animate=false){
  const key=field.dataset.setting,button=$('[data-prompt-height="'+key+'"]');
  field=field._embeddingEditor?.active?field._embeddingEditor.root:field;
  promptExpanded[key]=expanded;
  button.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>';
  button.setAttribute('aria-expanded',String(expanded));
  button.setAttribute('aria-label',(expanded?'Collapse ':'Show all ')+key+' prompt');
+ const from=field.getBoundingClientRect().height;
+ field._heightAnimation?.cancel();
  field.style.height='118px';
- if(expanded&&field.clientWidth)field.style.height=Math.max(118,field.scrollHeight+2)+'px';
+ const height=expanded&&field.clientWidth?Math.max(118,field.scrollHeight+2):118;
+ field.style.height=height+'px';
+ if(animate&&from&&from!==height&&!matchMedia('(prefers-reduced-motion: reduce)').matches)
+  field._heightAnimation=field.animate([{height:from+'px'},{height:height+'px'}],{duration:210,easing:'ease-out'});
 }
 function bindPromptSizing(){
  promptResizeObserver?.disconnect();
@@ -90,7 +95,8 @@ function bindPromptSizing(){
   const key=field.dataset.setting;
   sizePrompt(field,!!promptExpanded[key]);
   field.addEventListener('input',()=>sizePrompt(field,true));
-  $('[data-prompt-height="'+key+'"]').onclick=()=>sizePrompt(field,!promptExpanded[key]);
+  $('[data-prompt-height="'+key+'"]').onclick=()=>sizePrompt(field,!promptExpanded[key],true);
+  $('[data-open-notes="'+key+'"]').onclick=()=>setNoteColumn(true,true);
   promptResizeObserver.observe(field);
   if(field._embeddingEditor){field._embeddingEditor.root.dataset.setting=key;promptResizeObserver.observe(field._embeddingEditor.root);}
  }

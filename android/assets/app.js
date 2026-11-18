@@ -84,7 +84,7 @@ async function init(){
   if(savedConnection.paired&&String(savedConnection.host||'').trim()){wanted=true;nextProbe=0;renderBridge();heartbeat();}
   else drawer(true);
  }
- setInterval(heartbeat,2500);document.addEventListener('visibilitychange',()=>{if(!document.hidden){nextProbe=0;nextSync=0;nextSettings=0;heartbeat();if(page==='notepad')syncNotes();}else if(profileDirty)flushProfile();});
+ setInterval(heartbeat,2500);document.addEventListener('visibilitychange',()=>{if(!document.hidden){nextProbe=0;nextSync=0;nextSettings=0;heartbeat();if(notesVisible())syncNotes();}else if(profileDirty)flushProfile();});
  window.openJobAlert=async()=>{const route=window.Native?.notificationRoute();if(!route)return;
   if(!connected&&info().paired&&!connecting&&!wanted){navigate('bridge');await $('#connect').onclick();}
   if(route==='library'){navigate('library');return;}
@@ -105,6 +105,7 @@ function navigate(to){
  if(page==='browse'&&to!==page)CivitaiBrowser.suspend();
  if(page!==to){if(['image','video'].includes(to))promptExpanded={};leaveLivePreview();}
  if(viewerOpen())closeViewer(true);
+ if($('#noteColumn'))setNoteColumn(false);
  page=to;archived=false;presetName='';drawer(false);render();$('#workspace').scrollTop=0;
  if(connected){poll();if(['image','video'].includes(to))syncSettings();if(to==='notepad')syncNotes();}
 }
@@ -117,6 +118,7 @@ function connection(value){const changed=connected!==value;connected=value;if(ch
 function dashboardVisible(){return window.Desktop||$('#drawer').classList.contains('open');}
 function render(){
  document.body.dataset.page=page;
+ if(!['image','video'].includes(page))removeNoteColumn();
  $('#browseTop').hidden=page!=='browse';
  $('#browseHello').hidden=page!=='browse';$('#browseRefresh').hidden=page!=='browse';$('#pageTitle').textContent=page[0].toUpperCase()+page.slice(1);$('#presetButton').hidden=!['image','video'].includes(page);$('#presetButton').innerHTML=esc(presetName||'Current settings')+' <span>⌄</span>';
  $$('[data-nav]').forEach(b=>{
@@ -125,7 +127,7 @@ function render(){
  });
  if(page==='browse')CivitaiBrowser.render();
  else if(page==='library'){if(!viewerOpen())renderLibrary();else galleryDirty=true;}
- else if(page==='notepad')renderNotepad();else renderGenerator();
+ else if(page==='notepad')renderNotepad();else {renderGenerator();mountNoteColumn();}
  connection(connected);notice();
 }
 let editPair=false,pairAddress=null,bridgeError="";
@@ -161,7 +163,7 @@ function unreachable(e){
  renderBridge();notice();
 }
 async function heartbeat(){
- if(connected&&!document.hidden){ModelPreviews.wake();ModelPreviews.refresh();if(!catalog&&!catalogLoading&&retryCatalogAt&&Date.now()>=retryCatalogAt)loadCatalog();if(Date.now()>=nextSettings)syncSettings();if(page==='notepad'&&Date.now()>=nextNoteSync)syncNotes();}
+ if(connected&&!document.hidden){ModelPreviews.wake();ModelPreviews.refresh();if(!catalog&&!catalogLoading&&retryCatalogAt&&Date.now()>=retryCatalogAt)loadCatalog();if(Date.now()>=nextSettings)syncSettings();if(notesVisible()&&Date.now()>=nextNoteSync)syncNotes();}
  if(!wanted||probing||connecting||document.hidden||Date.now()<nextProbe)return;const id=epoch;probing=true;
  try{await api('ping');if(id===epoch)reached();}catch(e){if(id===epoch)unreachable(e);}finally{probing=false;}
 }
@@ -415,7 +417,7 @@ function samplingFields(kind,s){
  const selected=s.sampler||fallback||'euler',choices=catalog?.[kind==='image'?'samplers':'videoSamplers']||[];
  return '<div class="field"><label>Sampling method</label><select data-setting="sampler">'+[...new Set([selected,...choices])].map(x=>'<option value="'+esc(x)+'" '+(x===selected?'selected':'')+'>'+esc(x==='euler_ancestral'?'Euler a':x.replaceAll('_',' '))+'</option>').join('')+'</select></div>'+(kind==='image'?'<div class="field"><label>Clip skip</label><input type="number" data-setting="clipSkip" min="1" max="24" step="1" value="'+esc(s.clipSkip??catalog?.defaults?.image?.clipSkip??1)+'"></div>':'');
 }
-function promptField(key,label){return `<section class="card"><div class="promptlabel"><label>${label}</label><button data-expand="${key}" class="textbutton" aria-label="Expand ${label}">⛶</button></div><textarea class="promptEntry" rows="5" data-setting="${key}" placeholder="${key==='negative'?'What should the model avoid?':'Describe your idea…'}">${esc(state.settings[page][key]??'')}</textarea><div class="promptActions"><button type="button" class="savedPrompts" data-saved-prompts="${key}">Saved Prompts</button>${page==='image'&&isKrea()?'':`<button type="button" class="embeddingBrowser" data-embeddings="${key}">Embeddings</button>`}<span class="quickActions" data-quick-actions="${key}"></span><button type="button" class="textbutton promptChat" data-chat-prompt="${key}">Chat about this ↗</button><button type="button" class="textbutton promptHeight" data-prompt-height="${key}" aria-expanded="false" aria-label="Show all ${label}">⌄</button></div><div class="quickPanel" data-quick-panel="${key}"></div>${page==='video'&&key==='negative'?'<small>Optional. Adding text uses extra sampling time. Leave blank for the standard H3 workflow.</small>':''}</section>`;}
+function promptField(key,label){return `<section class="card"><div class="promptlabel"><label>${label}</label><button data-expand="${key}" class="textbutton" aria-label="Expand ${label}">⛶</button></div><textarea class="promptEntry" rows="5" data-setting="${key}" placeholder="${key==='negative'?'What should the model avoid?':'Describe your idea…'}">${esc(state.settings[page][key]??'')}</textarea><div class="promptActions"><button type="button" class="textbutton promptHeight" data-prompt-height="${key}" aria-expanded="false" aria-label="Show all ${label}">⌄</button><span class="promptMiddle"><button type="button" class="savedPrompts" data-saved-prompts="${key}">Saved Prompts</button>${page==='image'&&isKrea()?'':`<button type="button" class="embeddingBrowser" data-embeddings="${key}">Embeddings</button>`}<span class="quickActions" data-quick-actions="${key}"></span><button type="button" class="textbutton promptChat" data-chat-prompt="${key}">Chat about this ↗</button></span><button type="button" class="textbutton promptNext" data-open-notes="${key}" aria-label="Open Notepad"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 7 7-7 7"/></svg></button></div><div class="quickPanel" data-quick-panel="${key}"></div>${page==='video'&&key==='negative'?'<small>Optional. Adding text uses extra sampling time. Leave blank for the standard H3 workflow.</small>':''}</section>`;}
 function wirePrompts(){
  bindQuickEdits();
  $$('[data-chat-prompt]').forEach(b=>b.onclick=()=>chatAboutPrompt(b.dataset.chatPrompt));

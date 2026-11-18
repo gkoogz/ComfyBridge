@@ -72,3 +72,27 @@ body[data-page=notepad] main{max-width:none;padding:0 12px 64px}
 #noteText{touch-action:pan-y pinch-zoom}
 
 #drawerBridge .foldQueueRows,.desktop #desktopBridge .foldQueueRows{max-height:176px;overscroll-behavior-y:contain}
+
+/* Keep the generator's existing scroll container while its adjacent notebook moves with it. */
+body.generatorColumns{
+ --note-space:calc(100vw - var(--desktop-left,0px));
+ --note-width:min(var(--note-space),var(--editor-width,100vw));
+ --note-gap:0px;--note-stride:calc(var(--note-width) + var(--note-gap));
+}
+.desktop body.generatorColumns{--note-gap:12px}
+body.readingNotes{--note-offset:calc(0px - var(--note-stride))}
+.generatorColumns #workspace,#noteColumn{translate:var(--note-offset,0px) 0;transition:translate .24s cubic-bezier(.2,.8,.2,1)}
+#noteColumn{
+ position:fixed;z-index:5;top:var(--status-inset,0px);bottom:0;
+ left:calc(var(--desktop-left,0px) + (var(--note-space) + var(--note-width)) / 2 + var(--note-gap));
+ width:var(--note-width);display:flex;flex-direction:column;overflow:hidden;
+ background:var(--bg);touch-action:pan-y pinch-zoom;
+}
+.desktop #noteColumn{top:var(--desktop-top);border:1px solid var(--line);border-radius:14px;background:var(--panel)}
+.noteColumnBar{flex:none;display:flex;align-items:center;gap:8px;padding:4px 10px;min-height:52px;border-bottom:1px solid var(--line)}
+.noteColumnBar button{display:grid;place-items:center}
+#companionPaper{flex:1;overflow:auto;overscroll-behavior:contain;padding:0 12px var(--chat-clearance,180px)}
+#noteColumn #addSticky{position:absolute}
+body #noteColumn #chatTray{display:flex;position:absolute;left:0;right:0}
+.dragging.generatorColumns #workspace,.dragging #noteColumn{transition:none}
+@media(prefers-reduced-motion:reduce){.generatorColumns #workspace,#noteColumn{transition:none}}

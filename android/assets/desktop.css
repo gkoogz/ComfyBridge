@@ -159,3 +159,5 @@
  .desktop #drawer.open{width:min(300px,80vw);box-shadow:6px 0 22px #0004}
  .desktop #shade:not([hidden]){display:block!important;inset:var(--desktop-top) 0 0;z-index:9}
 }
+
+.desktop .generatorColumns #workspace>header{width:var(--note-width);margin-inline:auto}

@@ -27,7 +27,7 @@ async function syncNotes(){
    await loadNotes();
    if(unpaired?.edit&&!notebook.edit&&!notebook.rev){notebook=unpaired;storeNotes();}
    sent=notebook.edit;
-   if(page==='notepad')paintNote(true);
+   paintNote(true);
   }
   const response=await api('studio/notes',sent?{base:notebook.rev,edit:sent,doc:structuredClone(notebook.doc)}:undefined);
   if(epoch!==session)return;
@@ -40,7 +40,7 @@ async function syncNotes(){
   const changed=response.doc&&JSON.stringify(response.doc)!==JSON.stringify(notebook.doc);
   if(changed)notebook.doc=response.doc;
   notebook.rev=response.rev;notebook.edit=null;storeNotes();
-  if(changed&&page==='notepad')paintNote(true);
+  if(changed)paintNote(true);
   setNoteStatus(response.conflict?'Synced · kept both offline drafts':'Synced with PC');
  }catch(e){setNoteStatus(window.Desktop?'Saved locally · sync pending':'Saved on phone · sync pending');nextNoteSync=Date.now()+15000;}
  finally{noteBusy=false;if(notebook.edit&&notebook.edit!==sent){clearTimeout(noteTimer);noteTimer=setTimeout(syncNotes,500);}}
@@ -132,8 +132,8 @@ function placeSticky(){
  const at=selection?.[0]??paddedRows().slice(0,first).join('\n').length+(first?1:0);
  pad.focus({preventScroll:true});pad.setSelectionRange(at,at);rememberCursor();
 }
-function renderNotepad(){
- $('#main').innerHTML='<small id="noteStatus"></small><div class="noteCanvas"><div id="notePaper" aria-hidden="true"></div><textarea id="noteText" wrap="soft" aria-label="Notepad" spellcheck="true"></textarea></div><button id="addSticky" class="green">＋ Add sticky</button>';
+function renderNotepad(host=$('#main'), frame=$('#workspace')){
+ host.innerHTML='<small id="noteStatus"></small><div class="noteCanvas"><div id="notePaper" aria-hidden="true"></div><textarea id="noteText" wrap="soft" aria-label="Notepad" spellcheck="true"></textarea></div><button id="addSticky" class="green">＋ Add sticky</button>';
  const pad=$('#noteText');noteCursor=null;paintNote(true);setNoteStatus(noteStatus||(connected?'Syncing…':window.Desktop?'Saved on this PC':'Saved on this phone'));
  let old=pad.value,selection=null,restoreDelete=false;
  pad.onbeforeinput=e=>{
@@ -156,5 +156,55 @@ function renderNotepad(){
  pad.onselect=pad.onpointerup=pad.onkeyup=pad.onfocus=rememberCursor;
  $('#addSticky').onpointerdown=e=>{rememberCursor();e.preventDefault();};
  $('#addSticky').onclick=placeSticky;
- mountChat();
+ if(frame!==$('#workspace'))frame.append($('#addSticky'));
+ mountChat(frame);
 }
+
+let noteColumnOpen=false, noteReturnFocus=null;
+function notesVisible(){
+ return page==='notepad'||noteColumnOpen||!!(window.Desktop&&document.getElementById('noteColumn'));
+}
+function setNoteColumn(open,focus=false){
+ const pane=$('#noteColumn');if(!pane)return;
+ const changed=open!==noteColumnOpen;
+ if(open&&changed)noteReturnFocus=$('#workspace').contains(document.activeElement)?document.activeElement:null;
+ noteColumnOpen=open;
+ document.body.classList.toggle('readingNotes',open);
+ pane.inert=!open&&!window.Desktop;
+ $('#workspace').inert=open&&!window.Desktop;
+ if(open&&changed){
+  if(!$('#presetMenu').hidden)$('#presetMenu').hidden=true;
+  if($('#batchMenu')?.hidden===false)setBatchMenu(false);
+  if(connected){syncNotes();syncChat();}sizeChat();animateChatText();
+  if(focus)$('#noteColumnBack').focus({preventScroll:true});
+ }else if(!open&&changed){
+  if(pane.contains(document.activeElement))document.activeElement.blur();
+  if(focus&&noteReturnFocus?.isConnected)noteReturnFocus.focus({preventScroll:true});
+ }
+}
+function removeNoteColumn(){
+ const pane=$('#noteColumn');if(!pane)return;
+ setNoteColumn(false);pane.remove();document.body.classList.remove('generatorColumns');
+ document.body.style.removeProperty('--note-offset');noteReturnFocus=null;
+}
+function mountNoteColumn(){
+ if($('#noteColumn'))return;
+ const pane=document.createElement('section');pane.id='noteColumn';pane.setAttribute('aria-label','Notepad column');
+ pane.innerHTML='<div class="noteColumnBar"><button class="icon" id="noteColumnBack" aria-label="Back to generation page">'+backChevron+'</button><b>Notepad</b></div><div id="companionPaper"></div>';
+ $('#workspace').after(pane);document.body.classList.add('generatorColumns');pane.inert=!window.Desktop;
+ renderNotepad($('#companionPaper'),pane);
+ $('#noteColumnBack').onclick=()=>setNoteColumn(false,true);
+ if(window.Desktop){
+  pane.addEventListener('focusin',()=>setNoteColumn(true));
+  pane.addEventListener('pointerdown',()=>setNoteColumn(true));
+ }
+}
+// The first click on the receding editor returns to it without activating its controls.
+document.addEventListener('pointerdown',e=>{
+ if(window.Desktop&&noteColumnOpen&&e.target.closest('#workspace'))e.preventDefault();
+},true);
+document.addEventListener('click',e=>{
+ if(window.Desktop&&noteColumnOpen&&e.target.closest('#workspace')){
+  e.preventDefault();e.stopImmediatePropagation();setNoteColumn(false);
+ }
+},true);

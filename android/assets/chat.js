@@ -53,7 +53,7 @@ function chatViewport(){const v=window.visualViewport;return {height:v?.height||
 function chatStops(){
  const v=chatViewport(),compose=$('#chatComposer');
  const dock=Math.min(v.height*.65,(compose?.offsetHeight||58)+($('#chatStatus')?.offsetHeight||21)+35);
- const header=$('header')?.getBoundingClientRect().bottom||52;
+ const header=($('#noteColumn .noteColumnBar')||$('header'))?.getBoundingClientRect().bottom||52;
  const roof=Math.min(v.height*.9,Math.max(dock,v.height-header-62));
  return [28,dock,Math.max(dock,Math.min(v.height*.5,roof)),Math.max(dock,roof)];
 }
@@ -69,7 +69,7 @@ function sizeChat(){
  tray.classList.toggle('nested',chat.snap===0);tray.classList.toggle('docked',chat.snap===1);
  $('#chatGrab').setAttribute('aria-valuenow',chat.snap);
  const sticky=$('#addSticky');if(sticky)sticky.style.bottom=(v.bottom+height+9)+'px';
- $('#main')?.style.setProperty('--chat-clearance',(height+70)+'px');
+ ($('#companionPaper')||$('#main'))?.style.setProperty('--chat-clearance',(height+70)+'px');
 }
 function collapseChatComposer(){
  if(chatComposerCollapsed)return;
@@ -92,7 +92,7 @@ function preserveChatScroll(update){const list=$('#chatMessages');if(!list)retur
 function animateChatText(){
  if(chatAnimation)return;
  const frame=()=>{
-  chatAnimation=0;if(page!=='notepad'||document.hidden)return;
+  chatAnimation=0;if(!notesVisible()||document.hidden)return;
   let pending=false;
   preserveChatScroll(()=>{
    for(const item of chatDisplayMessages(chat.snapshot?.messages||[])){
@@ -198,7 +198,7 @@ function bindChatSurfaceDrag(tray){
  const moveTray=height=>{chatDragging=true;tray.classList.add('draggingChat');tray.style.height=rubber(height)+'px';$('#addSticky').style.bottom=(chatViewport().bottom+rubber(height)+9)+'px';};
  const coast=velocity=>{
   let previous=performance.now();
-  const frame=now=>{if(!list.isConnected||page!=='notepad')return;const dt=Math.min(32,now-previous);previous=now;const before=list.scrollTop;list.scrollTop-=velocity*dt;velocity*=Math.pow(.92,dt/16);if(Math.abs(velocity)>.025&&Math.abs(list.scrollTop-before)>.1)inertia=requestAnimationFrame(frame);};
+  const frame=now=>{if(!list.isConnected||!notesVisible())return;const dt=Math.min(32,now-previous);previous=now;const before=list.scrollTop;list.scrollTop-=velocity*dt;velocity*=Math.pow(.92,dt/16);if(Math.abs(velocity)>.025&&Math.abs(list.scrollTop-before)>.1)inertia=requestAnimationFrame(frame);};
   inertia=requestAnimationFrame(frame);
  };
  tray.addEventListener('pointerdown',e=>{
@@ -239,11 +239,11 @@ function bindChatSurfaceDrag(tray){
  tray.addEventListener('pointerup',e=>finish(e));tray.addEventListener('pointercancel',e=>finish(e,true));
  tray.addEventListener('click',e=>{if(performance.now()<suppressUntil){e.preventDefault();e.stopPropagation();}},true);
 }
-function mountChat(){
+function mountChat(frame=$('#workspace')){
  $('#chatTray')?.remove();
  const tray=document.createElement('section');tray.id='chatTray';tray.setAttribute('aria-label','Local AI chat');
  tray.innerHTML='<button id="chatGrab" role="slider" aria-label="Chat tray height" aria-valuemin="0" aria-valuemax="3" aria-valuenow="1"><span></span></button><div id="chatComposer"><textarea id="chatText" rows="1" maxlength="24000" placeholder="Chat about a prompt or idea…" aria-label="Message local AI"></textarea><div class="chatComposerButtons"><button id="chatNew" aria-label="New chat" title="New chat"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 10a8 8 0 1 0-2 8M20 4v6h-6"/></svg></button><button id="chatSend" aria-label="Send message"><span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5M6 11l6-6 6 6"/></svg></span></button></div></div><small id="chatStatus" role="status"></small><div id="chatMessages" aria-label="Conversation, newest messages first"></div>';
- $('#workspace').append(tray);$('#chatText').value=chat.draft;
+ frame.append(tray);$('#chatText').value=chat.draft;
  $('#chatText').onpointerdown=expandChatComposer;$('#chatText').onfocus=expandChatComposer;
  $('#chatMessages').addEventListener('wheel',e=>{if(Math.abs(e.deltaY)>0)collapseChatComposer();},{passive:true});
  $('#chatText').oninput=()=>{chat.draft=$('#chatText').value;chatChanged();sizeChat();paintChatStatus();};
@@ -256,12 +256,14 @@ function mountChat(){
  grab.onpointerup=finish;grab.onpointercancel=()=>{gesture=null;chatDragging=false;tray.classList.remove('draggingChat');sizeChat();};
  grab.onclick=()=>{if(suppress){suppress=false;return;}setChatSnap(chat.snap===3?1:chat.snap+1);};
  grab.onkeydown=e=>{if(['ArrowUp','ArrowDown','Home','End'].includes(e.key)){e.preventDefault();setChatSnap(e.key==='Home'?0:e.key==='End'?3:chat.snap+(e.key==='ArrowUp'?1:-1));}};
- bindChatSurfaceDrag(tray);paintChat();syncChat(true);
+ bindChatSurfaceDrag(tray);paintChat();if(notesVisible())syncChat(true);
 }
 async function chatAboutPrompt(key){
  const text=$('textarea[data-setting="'+key+'"]')?.value??state.settings[page]?.[key]??'',source=page+' '+key;
- await loadChat();chatComposerCollapsed=false;chat.draft=text;chat.source=source;chat.snap=1;chatChanged();navigate('notepad');
+ await loadChat();chatComposerCollapsed=false;chat.draft=text;chat.source=source;chat.snap=1;chatChanged();
+ if($('#noteColumn')){setNoteColumn(true);$('#chatText').value=text;paintChatStatus();}
+ else navigate('notepad');
  $('#chatText').focus({preventScroll:true});$('#chatText').setSelectionRange(text.length,text.length);sizeChat();
 }
 window.addEventListener('resize',sizeChat);window.visualViewport?.addEventListener('resize',sizeChat);window.visualViewport?.addEventListener('scroll',sizeChat);
-setInterval(()=>{if(page==='notepad'&&!document.hidden){syncChat();animateChatText();paintChatTimers();}},400);
+setInterval(()=>{if(notesVisible()&&!document.hidden){syncChat();animateChatText();paintChatTimers();}},400);

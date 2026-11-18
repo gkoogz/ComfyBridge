@@ -1,6 +1,6 @@
 # ComfyBridge
 
-**[Open the beta 122 release page](https://github.com/gkoogz/ComfyBridge/releases/tag/v0.1.0-beta.122)** · [Download the Android APK](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.122/ComfyBridge-0.1.0-beta.122.apk) · [Download Windows](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.122/ComfyBridge-Windows-0.1.0-beta.122.zip) · [All releases](https://github.com/gkoogz/ComfyBridge/releases)
+**[Open the beta 123 release page](https://github.com/gkoogz/ComfyBridge/releases/tag/v0.1.0-beta.123)** · [Download the Android APK](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.123/ComfyBridge-0.1.0-beta.123.apk) · [Download Windows](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.123/ComfyBridge-Windows-0.1.0-beta.123.zip) · [All releases](https://github.com/gkoogz/ComfyBridge/releases)
 
 <img src="artwork/comfybridge.png" width="128" alt="ComfyBridge white cube and play icon on black">
 
@@ -9,6 +9,8 @@ An Android remote for an existing Windows ComfyUI installation. The phone edits 
 **Local project:** this PC's canonical checkout is `E:\ComfyBridge`. Source, builds, installed app data, local LLMs and archived work are consolidated there. See [the local folder map](docs/local-layout.md) for private-data exclusions, compatibility links and external ComfyUI dependencies. Run `Start-ComfyBridge.ps1` to open the installed PC panel.
 
 **Working on the project:** agents and contributors should start with [AGENTS.md](AGENTS.md) for the code map, build/test commands, live queue preservation and delivery instructions.
+
+**Beta 123** places the synced Notepad and chat beside the Image and Video editors. Swipe left or use the right caret under a prompt to open Notepad. Swipe back, use the back caret, or click the exposed desktop editor to return. The left caret animates the prompt height.
 
 **Beta 122** uses BF16 diffusion compute for HomoFidelis, including when regenerating older jobs, to fix black output with LoRAs.
 

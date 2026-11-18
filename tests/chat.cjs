@@ -31,12 +31,13 @@ const assert=require('node:assert/strict'),path=require('node:path');
   const chatButton=await p.locator('[data-chat-prompt]').first().boundingBox();
   const caret=await p.locator('[data-prompt-height]').first().boundingBox();
   const quickButton=await p.locator('[data-quick-actions=positive] [data-quick-action=open]').boundingBox();
-  assert(Math.abs(quickButton.x-actions.x)<2,'Quick edit belongs at the left edge');
-  assert(chatButton.x>quickButton.x+quickButton.width,'Chat follows Quick edit');
-  assert(Math.abs(caret.x+caret.width-actions.x-actions.width)<2,'Caret belongs at the right edge');
+  assert(Math.abs(caret.x-actions.x)<2,'Height toggle belongs at the left edge');
+  assert(chatButton.x>=caret.x+caret.width&&quickButton.x>=caret.x+caret.width);
+  const next=await p.locator('[data-open-notes]').first().boundingBox();
+  assert(Math.abs(next.x+next.width-actions.x-actions.width)<2,'Caret belongs at the right edge');
 
   await p.locator('[data-chat-prompt=positive]').click();await p.waitForSelector('#chatText');
-  assert.equal(await p.evaluate(()=>page),'notepad');
+  assert(await p.evaluate(()=>page==='image'&&noteColumnOpen));
   assert.equal(await p.locator('#chatText').inputValue(),'A mountain valley at sunrise.\nSoft mist and natural colors.');
   assert.equal(await p.evaluate(()=>chat.snap),1);
   assert.equal(await p.locator('#desktopChatModel').count(),0);

@@ -32,10 +32,10 @@ body[data-page=notepad] #main{padding-bottom:var(--chat-clearance,180px)}
 .desktop #chatTray{left:var(--desktop-left);border-radius:18px 18px 0 0}.desktop #chatTray .chatMessage{max-width:85%}
 .promptActions{display:flex;justify-content:space-between;align-items:center;gap:7px;margin-top:6px}
 .promptActions button{display:inline-flex;align-items:center;justify-content:center;height:36px;min-height:36px;margin:0;border:1px solid #52636b;border-radius:8px;background:transparent;padding:0 11px;color:var(--mint)}
-.promptActions .promptHeight{width:36px;min-width:36px;padding:0;font-size:22px}
+.promptActions :is(.promptHeight,.promptNext){width:36px;min-width:36px;padding:0;font-size:22px}
 .promptActions .promptChat{font-size:12px}
-.promptActions{justify-content:flex-start;flex-wrap:wrap}
-.promptActions .promptHeight{margin-left:auto}
+.promptActions{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:start}.promptMiddle{display:flex;gap:7px;flex-wrap:wrap;align-items:center;min-width:0}
+.promptActions .promptNext{margin-left:auto}
 .quickActions{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
 .promptActions .quickActions button{font-size:12px;padding:0 8px}
 .quickThinking{display:flex;align-items:center;gap:9px;font-size:12px;min-height:36px}
@@ -54,7 +54,7 @@ body[data-page=notepad] #main{padding-bottom:var(--chat-clearance,180px)}
 .promptActions button:active{background:#a2f3ce16;border-color:var(--mint)}
 @media(prefers-reduced-motion:reduce){#chatTray,#addSticky{transition:none}.chatDots i{animation:none}}
 
-.chatComposerButtons svg,.promptHeight svg{display:block;width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.chatComposerButtons svg,.promptHeight svg,.promptNext svg{display:block;width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 #chatNew svg{width:21px;height:21px}
 #chatSend span{display:grid;place-items:center;line-height:1}
 #chatSend.sending svg{display:none}
