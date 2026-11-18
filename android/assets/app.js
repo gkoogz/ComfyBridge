@@ -72,13 +72,15 @@ async function init(){
   if(e.key!=='Escape'||$('#batchMenu')?.hidden!==false||$('#modal').open)return;
   setBatchMenu(false);$('#batchButton').focus();
  });
- if(window.Native&&JSON.parse(Native.configuration()).paired){try{setShelf(await local('list'));}catch(e){shelfError=e.message;}}
+ if(!window.desktopPreload&&window.Native&&JSON.parse(Native.configuration()).paired){try{setShelf(await local('list'));}catch(e){shelfError=e.message;}}
  const version=window.Desktop?info().version:window.Native?.appVersion?.();
  if(version){
   const label=$('#appVersion'),beta=version.match(/-beta\.(\d+)$/i);
   label.textContent=beta?'Beta '+beta[1]:'v'+version;label.title=version;label.hidden=false;
  }
  await loadNotes();await loadChat();await initDesktop();if(!window.Desktop)initBridgeDrawer();render();
+ if(window.desktopPreload)local('list').then(setShelf).catch(e=>{shelfError=e.message;});
+
  if(!window.Desktop){
   const savedConnection=info();
   if(savedConnection.paired&&String(savedConnection.host||'').trim()){wanted=true;nextProbe=0;renderBridge();heartbeat();}

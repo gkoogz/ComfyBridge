@@ -18,7 +18,7 @@ partial class Bridge {
         Data=Path.Combine(Home,"fixture","ComfyBridge");Directory.CreateDirectory(Data);
         token="isolated-desktop-test";python=args[0];loopbackPort=tlsPort=0;
         File.WriteAllText(Path.Combine(Data,"server-off"),"off");
-        var app=new Bridge();app.ShowMonitor();
+        var app=new Bridge();app.EnsureMonitor();
         app.Server(true,false);
         loopbackPort=((System.Net.IPEndPoint)server.LocalEndpoint).Port;
         tlsPort=((System.Net.IPEndPoint)tlsServer.LocalEndpoint).Port;
@@ -30,9 +30,15 @@ partial class Bridge {
         kick.Tick+=async(s,e)=>{
             kick.Stop();
             try{
+                await Until(()=>Task.FromResult(app.desktopReady&&app.desktop!=null&&app.desktop.CoreWebView2.IsSuspended),"hidden preload suspended");
+                if(app.monitor.Visible||online)throw new Exception("Preload exposed the window or enabled the server");
+                app.ShowMonitor();
+                var openClock=System.Diagnostics.Stopwatch.StartNew();
                 app.ExpandDesktop();
                 await Until(async()=>app.desktop!=null&&app.desktop.CoreWebView2!=null&&await app.desktop.CoreWebView2.ExecuteScriptAsync("!!document.querySelector('#desktopPower')")=="true","desktop startup");
+                Console.WriteLine("Open Studio to editor ready: "+openClock.ElapsedMilliseconds+" ms");
                 var web=app.desktop.CoreWebView2;
+                await Until(()=>Task.FromResult(app.expansion==null),"expanded window geometry");
                 var studioBounds=app.monitor.Bounds;
                 await web.ExecuteScriptAsync("CivitaiBrowser.open({id:'desktop-fixture',type:'image',width:320,height:480,credit:'Fixture',tags:[],resources:[],reactions:[],stats:{},path:'',prompt:'A vase'},[]);document.querySelector('.desktopImageFullscreen').click()");
                 await Until(()=>Task.FromResult(app.beforeFullscreen.HasValue&&app.monitor.Bounds==Screen.FromControl(app.monitor).Bounds&&app.monitor.Region==null),"monitor fullscreen without frame");
@@ -98,8 +104,21 @@ partial class Bridge {
                 bool rejected=false;try{ExternalListing("https://evil.test/user/Fixture");}catch{rejected=true;}
                 if(!rejected)throw new Exception("Untrusted listing allowed");
                 var processId=web.BrowserProcessId;
+                await web.ExecuteScriptAsync("window.parkMarker=42");
                 app.CollapseDesktop();
-                await Until(()=>Task.FromResult(!app.expanded&&app.desktop==null&&app.compactPanel.Visible),"collapse");
+                await Until(()=>Task.FromResult(!app.expanded&&app.desktop!=null&&web.IsSuspended&&app.compactPanel.Visible),"collapse suspended");
+                var processes=web.Environment.GetProcessInfos().Select(info=>System.Diagnostics.Process.GetProcessById(info.ProcessId)).ToList();
+                try{
+                    var cpuStart=processes.Sum(p=>p.TotalProcessorTime.TotalMilliseconds);
+                    await Task.Delay(2000);
+                    foreach(var proc in processes)proc.Refresh();
+                    Console.WriteLine("Parked WebView2 processes: "+processes.Count+", private commit: "+processes.Sum(p=>p.PrivateMemorySize64)/1048576+" MiB, CPU over 2s: "+(processes.Sum(p=>p.TotalProcessorTime.TotalMilliseconds)-cpuStart)+" ms");
+                }finally{foreach(var proc in processes)proc.Dispose();}
+                app.ExpandDesktop();
+                if(web!=app.desktop.CoreWebView2||await web.ExecuteScriptAsync("window.parkMarker")!="42")throw new Exception("Studio state lost on resume");
+                app.CollapseDesktop();
+                await Until(()=>Task.FromResult(web.IsSuspended&&app.compactPanel.Visible),"repark");
+                app.ReleaseDesktop();
                 await Until(()=>Task.FromResult(!System.Diagnostics.Process.GetProcessesByName("msedgewebview2").Any(p=>p.Id==processId)),"browser process release");
                 app.ExpandDesktop();
                 await Until(async()=>app.desktop!=null&&app.desktop.CoreWebView2!=null&&await app.desktop.CoreWebView2.ExecuteScriptAsync("!!document.querySelector('#desktopPower')")=="true","reopen");
@@ -113,7 +132,7 @@ partial class Bridge {
                 await Until(async()=>await app.desktop.CoreWebView2.ExecuteScriptAsync("window.previewReopen!==null")=="true","preview cache after browser restart");
                 if(await app.desktop.CoreWebView2.ExecuteScriptAsync("window.previewReopen")!="true")throw new Exception(await app.desktop.CoreWebView2.ExecuteScriptAsync("window.previewReopen"));
                 await app.desktop.CoreWebView2.ExecuteScriptAsync("setTimeout(()=>document.querySelector('.desktopClose').click(),100)");
-                await Until(()=>Task.FromResult(app.desktop==null&&!app.expanded&&!app.monitor.Visible),"X hides studio");
+                await Until(()=>Task.FromResult(app.desktop!=null&&app.desktopReady&&app.desktop.CoreWebView2.IsSuspended&&!app.expanded&&!app.monitor.Visible),"X hides studio");
                 app.ShowMonitor();app.Server(true,false);
                 app.monitor.Close();
                 if(app.monitor.IsDisposed||app.monitor.Visible||!app.tray.Visible||!online)throw new Exception("Window close must hide and keep server running");

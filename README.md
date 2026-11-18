@@ -1,6 +1,6 @@
 # ComfyBridge
 
-**[Open the beta 123 release page](https://github.com/gkoogz/ComfyBridge/releases/tag/v0.1.0-beta.123)** · [Download the Android APK](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.123/ComfyBridge-0.1.0-beta.123.apk) · [Download Windows](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.123/ComfyBridge-Windows-0.1.0-beta.123.zip) · [All releases](https://github.com/gkoogz/ComfyBridge/releases)
+**[Open the beta 124 release page](https://github.com/gkoogz/ComfyBridge/releases/tag/v0.1.0-beta.124)** · [Download the Android APK](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.124/ComfyBridge-0.1.0-beta.124.apk) · [Download Windows](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.124/ComfyBridge-Windows-0.1.0-beta.124.zip) · [All releases](https://github.com/gkoogz/ComfyBridge/releases)
 
 <img src="artwork/comfybridge.png" width="128" alt="ComfyBridge white cube and play icon on black">
 
@@ -9,6 +9,8 @@ An Android remote for an existing Windows ComfyUI installation. The phone edits 
 **Local project:** this PC's canonical checkout is `E:\ComfyBridge`. Source, builds, installed app data, local LLMs and archived work are consolidated there. See [the local folder map](docs/local-layout.md) for private-data exclusions, compatibility links and external ComfyUI dependencies. Run `Start-ComfyBridge.ps1` to open the installed PC panel.
 
 **Working on the project:** agents and contributors should start with [AGENTS.md](AGENTS.md) for the code map, build/test commands, live queue preservation and delivery instructions.
+
+**Beta 124** preloads the Windows Studio editor when the tray starts. Opening Studio resumes its suspended browser and retains your place between visits.
 
 **Beta 123** places the synced Notepad and chat beside the Image and Video editors. Swipe left or use the right caret under a prompt to open Notepad. Swipe back, use the back caret, or click the exposed desktop editor to return. The left caret animates the prompt height.
 
@@ -114,7 +116,7 @@ Prompt fields start reduced when entering a generator, grow as text is typed or 
 
 The compact header has extra vertical space and borderless window controls. Click **↖** at the top left of the Windows tray panel to expand it into the desktop studio. The sidebar keeps server power, phone connection count, address and pairing code, machine telemetry, progress and the shared queue above the navigation buttons. Desktop connects locally without pairing or routing through the VPN, and uses the same saved settings, presets and notes as your phones.
 
-**↘** returns to the compact tray panel; **–** and **×** hide it to the tray. To exit, right-click the tray icon and choose **Close ComfyBridge**. Collapse or hide disposes the WebView2 browser; the compact tray remains lightweight and queued generations continue. The expanded window can be moved by dragging its title bar. Microsoft Edge WebView2 Runtime is required (normally included with Windows/Edge).
+**↘** returns to the compact tray panel; **–** and **×** hide it to the tray. To exit, right-click the tray icon and choose **Close ComfyBridge**. The tray preloads the editor in RAM and suspends its browser while hidden. Opening Studio resumes it. The tray releases the hidden editor if available physical memory drops below 2 GiB. Queued generations continue independently. The expanded window can be moved by dragging its title bar. Microsoft Edge WebView2 Runtime is required (normally included with Windows/Edge).
 
 In the desktop Library viewer, **Open file location** selects the original in Windows Explorer. **Save a copy** opens a Windows save dialog. Videos play directly from the PC file with byte-range seeking. Desktop queue controls can manage batches submitted by either phone; phone cancellation ownership rules remain unchanged.
 

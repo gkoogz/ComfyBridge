@@ -21,8 +21,8 @@ using Microsoft.Win32;
 [assembly: System.Reflection.AssemblyTitle("Comfy Bridge")]
 [assembly: System.Reflection.AssemblyDescription("Phone to ComfyUI bridge")]
 [assembly: System.Reflection.AssemblyVersion("0.1.0.0")]
-[assembly: System.Reflection.AssemblyFileVersion("0.1.0.123")]
-[assembly: System.Reflection.AssemblyInformationalVersion("0.1.0-beta.123")]
+[assembly: System.Reflection.AssemblyFileVersion("0.1.0.124")]
+[assembly: System.Reflection.AssemblyInformationalVersion("0.1.0-beta.124")]
 
 partial class Bridge : ApplicationContext {
     static readonly string Home = AppDomain.CurrentDomain.BaseDirectory;
@@ -103,6 +103,7 @@ partial class Bridge : ApplicationContext {
         try{Server(!File.Exists(offFile),false);}catch(Exception ex){MessageBox.Show("Could not start the bridge: "+ex.Message);}
         timer=new System.Windows.Forms.Timer {Interval=5000};
         timer.Tick+=(s,e)=>{
+            if(!expanded&&desktop!=null&&DesktopMemoryTight())ReleaseDesktop();
             bool connected=online&&PhoneCount()>0;
             RefreshState();RefreshJobs();
             if(!connected && !expanded && (worker==null || worker.HasExited)) { lock(Json){
@@ -116,6 +117,10 @@ partial class Bridge : ApplicationContext {
         panelSignal=new EventWaitHandle(false,EventResetMode.AutoReset,"Local\\ComfyBridgeOpenPanel");
         ThreadPool.RegisterWaitForSingleObject(panelSignal,(s,t)=>{if(!dispatch.IsDisposed)dispatch.BeginInvoke((Action)(()=>{ShowMonitor();CheckForRelease();}));},null,Timeout.Infinite,false);
         ResumeSavedQueue();
+        Application.ThreadExit+=(s,e)=>ReleaseDesktop();
+        dispatch.BeginInvoke((Action)(()=>{
+            if(desktop==null&&!DesktopMemoryTight()){EnsureMonitor();OpenDesktop();}
+        }));
     }
     async void ResumeSavedQueue(){
         try{

@@ -160,7 +160,7 @@ partial class Bridge {
     }
     void RefreshState(){int count=PhoneCount();bool live=online&&count>0;
         tray.Text=TrayText(!online?"server off":live?count+(count==1?" phone connected":" phones connected"):"waiting for phone");
-        if(badge==null)return;
+        if(badge==null||!monitor.Visible)return;
         badge.Text=online?"Server on":"Server off";badge.ForeColor=Color.White;
         int bg;lock(phones)bg=watchers.Keys.Count(id=>!phones.ContainsKey(id));
         phone.Text=live?""+count+(count==1?" phone":" phones")+(bg>0?" · "+bg+" in bg":" connected"):"No phones connected";phone.ForeColor=Muted;
@@ -244,7 +244,7 @@ partial class Bridge {
         var text="ComfyBridge · "+VersionLabel()+" · "+status;
         return text.Length<=63?text:text.Substring(0,63);
     }
-    void ShowMonitor(){
+    void EnsureMonitor(){
         if(monitor==null){
             monitor=new BridgeWindow{Text="ComfyBridge",Icon=tray.Icon,ClientSize=new Size(500,487),MinimumSize=new Size(462,455),BackColor=Ink,ForeColor=Color.White,ShowInTaskbar=false,TopMost=true,StartPosition=FormStartPosition.Manual,FormBorderStyle=FormBorderStyle.None,AutoScaleMode=AutoScaleMode.Dpi};
             monitor.SizeChanged+=(s,e)=>RoundPanel();RoundPanel();
@@ -283,14 +283,19 @@ partial class Bridge {
             var generation=Group(grid,95);Add(generation,L("Generation",9,Muted,true),21);jobText=L("No active generation",10,Muted);Add(generation,jobText,39);
             bar=new ActivityMeter();Add(generation,bar,8);
         }
+    }
+    void ShowMonitor(){
+        EnsureMonitor();
         if(!monitor.Visible){AddressesList();if(online)Pairing.Issue();monitor.Show();}
         if(!expanded)DockPanel();
         monitor.WindowState=FormWindowState.Normal;monitor.Activate();timer.Interval=1400;RefreshState();RefreshJobs();RefreshChatModels();
     }
     void HidePanel(){
-        monitor.Hide();ReleaseDesktop();
+        if(expanded)RememberStudioSize();
+        monitor.Hide();SetStudioFullscreen(false);((BridgeWindow)monitor).EnableGrip(false);
         if(expansion!=null){expansion.Stop();expansion.Dispose();expansion=null;}
-        if(expanded){RememberStudioSize();expanded=false;monitor.MinimumSize=compactMinimum;monitor.Bounds=compactBounds;compactPanel.Visible=true;monitor.TopMost=true;monitor.ShowInTaskbar=false;}
+        if(expanded){expanded=false;monitor.MinimumSize=compactMinimum;monitor.Bounds=compactBounds;monitor.TopMost=true;monitor.ShowInTaskbar=false;}
+        compactPanel.Visible=true;ParkDesktop();
         Pairing.Close("Click New code to pair.");timer.Interval=5000;
     }
     void RoundPanel(){if(beforeFullscreen.HasValue){var oldRegion=monitor.Region;monitor.Region=null;if(oldRegion!=null)oldRegion.Dispose();return;}int w=monitor.Width,h=monitor.Height,r=18;using(var p=new GraphicsPath()){

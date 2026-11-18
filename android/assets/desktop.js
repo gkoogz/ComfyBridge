@@ -63,7 +63,7 @@ async function initDesktop(){
   catch(e){chatModelChanged=true;$('#desktopChatHint').textContent=e.message;}
   finally{await refreshChatModels();}
  };
- refreshChatModels();setInterval(refreshChatModels,5000);
+
  $('#desktopPower').innerHTML=powerIcon;
  initDesktopSidebar();
  initDesktopCarousel();
@@ -93,6 +93,15 @@ async function initDesktop(){
  $('#desktopCivitai').onclick=()=>desktopCall('civitaiKey');
  $('#desktopNewCode').onclick=()=>command('code');$('#desktopEdit').onclick=()=>command('address');
  $('#desktopCopy').onclick=()=>command('copy',{address:$('#desktopAddress').value});
+ if(window.desktopPreload){
+  // Show cached editor state without starting the bridge, polling feeds or fetching media.
+  if(page==='image'||page==='video')render();
+  await desktopCall('studioReady');
+  document.addEventListener('visibilitychange',()=>{
+   if(document.hidden)document.querySelectorAll('video,audio').forEach(media=>media.pause());
+  });
+ }
+ refreshChatModels();setInterval(refreshChatModels,5000);
  await command('status');setInterval(async()=>{
   if(busy||refreshing||document.hidden)return;refreshing=true;const stamp=revision;
   try{const s=await desktopCall('status');if(stamp===revision)paint(s);}catch{/* A user command reports failures in the panel. */}

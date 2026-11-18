@@ -19,7 +19,12 @@ partial class Bridge {
     static string desktopDevice;
     Control compactPanel;
     WebView2 desktop;
-    bool expanded;
+    bool expanded,desktopReady;
+    TaskCompletionSource<bool> firstDesktopOpen;
+    static bool DesktopMemoryTight(){
+        var memory=new MemoryStatus();
+        return GlobalMemoryStatusEx(memory)&&memory.availablePhysical<2UL*1024*1024*1024;
+    }
     System.Windows.Forms.Timer expansion;
     Rectangle compactBounds;
     Size compactMinimum;
@@ -31,7 +36,7 @@ partial class Bridge {
         RoundPanel();
     }
     void RememberStudioSize(){
-        if(desktop==null && expansion!=null)return;
+        if(expansion!=null)return;
         var bounds=beforeFullscreen??monitor.Bounds;
         try{File.WriteAllText(Path.Combine(Data,"desktop-size.txt"),bounds.Width+","+bounds.Height);}catch(IOException){}
     }
@@ -69,19 +74,45 @@ partial class Bridge {
             }
         }catch(IOException){}
         var target=new Rectangle(area.Left+(area.Width-w)/2,area.Top+(area.Height-h)/2,w,h);
-        AnimatePanel(target,()=>{if(expanded){monitor.MinimumSize=new Size(Math.Min(w,780),Math.Min(h,460));((BridgeWindow)monitor).EnableGrip(true);OpenDesktop();}});
+        OpenDesktop();
+        AnimatePanel(target,()=>{if(expanded){monitor.MinimumSize=new Size(Math.Min(w,780),Math.Min(h,460));((BridgeWindow)monitor).EnableGrip(true);}});
     }
     void CollapseDesktop(){
-        if(!expanded)return;RememberStudioSize();expanded=false;monitor.MinimumSize=compactMinimum;ReleaseDesktop();
+        if(!expanded)return;RememberStudioSize();expanded=false;monitor.MinimumSize=compactMinimum;SetStudioFullscreen(false);((BridgeWindow)monitor).EnableGrip(false);ParkDesktop();
         monitor.TopMost=true;monitor.ShowInTaskbar=false;
         AnimatePanel(compactBounds,()=>{compactPanel.Visible=true;DockPanel();RefreshState();});
     }
     void ReleaseDesktop(){
-        SetStudioFullscreen(false);((BridgeWindow)monitor).EnableGrip(false);
-        if(desktop!=null){var old=desktop;desktop=null;old.Dispose();}
+        var old=desktop;desktop=null;desktopReady=false;
+        if(firstDesktopOpen!=null){firstDesktopOpen.TrySetResult(false);firstDesktopOpen=null;}
+        if(old!=null)old.Dispose();
+    }
+    async void ParkDesktop(){
+        var view=desktop;if(view==null||expanded)return;
+        view.Visible=false;
+        if(!desktopReady||view.CoreWebView2==null)return;
+        try{
+            var web=view.CoreWebView2;
+            if(!web.IsSuspended){
+                bool paused=await web.TrySuspendAsync();
+                if(desktop!=view)return;
+                if(expanded){if(web.IsSuspended)web.Resume();}
+                else if(!paused&&!web.IsSuspended)ReleaseDesktop();
+            }
+        }catch(Exception){if(desktop==view&&!expanded)ReleaseDesktop();}
     }
     async void OpenDesktop(){
-        var view=new WebView2{Dock=DockStyle.Fill,DefaultBackgroundColor=Ink};desktop=view;monitor.Controls.Add(view);view.BringToFront();
+        if(desktop!=null){
+            if(expanded){
+                desktop.Visible=true;desktop.BringToFront();
+                if(desktop.CoreWebView2!=null&&desktop.CoreWebView2.IsSuspended)desktop.CoreWebView2.Resume();
+                firstDesktopOpen.TrySetResult(true);
+            }
+            return;
+        }
+        firstDesktopOpen=new TaskCompletionSource<bool>();if(expanded)firstDesktopOpen.SetResult(true);
+        var view=new WebView2{Dock=DockStyle.Fill,DefaultBackgroundColor=Ink,Visible=expanded};
+        desktop=view;monitor.Controls.Add(view);var handle=view.Handle;if(expanded)view.BringToFront();
         try{
             var env=await CoreWebView2Environment.CreateAsync(null,Path.Combine(Data,"desktop-webview"));
             if(desktop!=view||view.IsDisposed)return;
@@ -97,11 +128,23 @@ partial class Bridge {
             web.AddWebResourceRequestedFilter("*",CoreWebView2WebResourceContext.All);
             web.WebResourceRequested+=(s,e)=>DesktopResource(view,e);
             web.WebMessageReceived+=(s,e)=>DesktopMessage(view,e);
+            web.ProcessFailed+=(s,e)=>{
+                if(desktop!=view)return;
+                if(e.ProcessFailedKind==CoreWebView2ProcessFailedKind.BrowserProcessExited||
+                   e.ProcessFailedKind==CoreWebView2ProcessFailedKind.RenderProcessExited){
+                    view.BeginInvoke((Action)(()=>{if(desktop==view){ReleaseDesktop();if(expanded)CollapseDesktop();}}));
+                }
+            };
             var cfg=DesktopJson().Serialize(new{device=DesktopDevice(),name="This PC",paired=true,host="This PC",fingerprint="desktop-local",version=Application.ProductVersion});
-            await web.AddScriptToExecuteOnDocumentCreatedAsync("window.Desktop=true;window.desktopConfiguration="+cfg+";");
+            await web.AddScriptToExecuteOnDocumentCreatedAsync("window.Desktop=true;window.desktopPreload=true;window.desktopConfiguration="+cfg+";");
             web.Navigate(DesktopOrigin+"/index.html");
+            if(!expanded){
+                await Task.Delay(15000);
+                if(desktop==view&&!expanded&&!desktopReady)ReleaseDesktop();
+            }
         }catch(Exception ex){
             if(desktop!=view)return;
+            ReleaseDesktop();if(!expanded)return;
             CollapseDesktop();
             MessageBox.Show(monitor,"Could not open the desktop studio. Install or repair Microsoft Edge WebView2 Runtime if it is missing.\n\n"+ex.Message,"ComfyBridge",MessageBoxButtons.OK,MessageBoxIcon.Error);
         }
@@ -123,6 +166,11 @@ partial class Bridge {
             id=Convert.ToInt32(msg["id"]);string op=Convert.ToString(msg["op"]);
             var args=msg.ContainsKey("args")?(Dictionary<string,object>)msg["args"]:new Dictionary<string,object>();
             switch(op){
+            case "studioReady":
+                desktopReady=true;
+                var opening=firstDesktopOpen.Task;
+                if(!expanded)ParkDesktop();
+                result=await opening;break;
             case "request":result=await DesktopApi(Convert.ToString(args["path"]),Convert.ToString(args["method"]),Convert.ToString(args["body"]));break;
             case "local":result=await DesktopMedia(Convert.ToString(args["action"]),(Dictionary<string,object>)args["value"]);break;
             case "status":result=DesktopStatus();break;
