@@ -64,7 +64,10 @@ The BF16 diffusion weights exceed 20 GB VRAM. ComfyUI must offload portions to
 system RAM; the 64 GB workstation should run one image at a time without a
 resident LLM/video model. Existing GPU handoff and durable generation queue
 remain responsible for serialization. The existing ZLUDA launcher forces FP16
-arithmetic for compatibility: the installed source weights are BF16, and no
+arithmetic for compatibility by default. For HomoFidelis the bridge explicitly selects
+BF16 diffusion compute after applying the LoRAs. FP16 compute produced nonfinite
+latents in a 1024 × 1536 test on ZLUDA. This setting also applies when regenerating
+a saved HomoFidelis job. The installed source weights are BF16, and no
 8-bit or 4-bit quantization is used.
 
 On a Radeon RX 7900 XT with 20 GB VRAM and 64 GB system RAM, the installed

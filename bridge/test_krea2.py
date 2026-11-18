@@ -35,6 +35,23 @@ class KreaTests(unittest.TestCase):
         self.assertEqual(g['19']['inputs']['vae_name'],im.KREA_VAE)
         self.assertEqual(g['3']['inputs']['steps'],8)
 
+    def test_homofidelis_precision_after_last_lora_and_on_saved_graph(self):
+        s = {**im.KREA_DEFAULTS, 'model': im.HOMOFIDELIS_BF16,
+             'loras': [dict(name='a', strength=.5), dict(name='b', strength=1)]}
+        graph = im.build(s, 'test/precision')
+        key, slot = graph['3']['inputs']['model']
+        node = graph[key]
+        self.assertEqual((slot, node['class_type'], node['inputs']),
+                         (0, 'ModelComputeDtype', {'model': ['101', 0], 'dtype': 'bf16'}))
+        # Simulate Regenerate on a job recorded before this precision fix.
+        graph['3']['inputs']['model'] = graph.pop(key)['inputs']['model']
+        im.set_homofidelis_precision(graph)
+        im.set_homofidelis_precision(graph)
+        self.assertEqual(graph[key], node)
+        self.assertEqual(graph['3']['inputs']['model'], [key, 0])
+        base = im.build({**s, 'model': im.KREA_MODEL}, 'test/base')
+        self.assertEqual(base['3']['inputs']['model'], ['101', 0])
+
     def test_image_and_mask_use_krea_vae(self):
         for mask in (None,'ComfyBridge/mask.png'):
             g=im.build({**im.KREA_DEFAULTS,'upload':'ComfyBridge/source.png','mask':mask,'denoise':.6},'test')

@@ -61,6 +61,8 @@ def compatible(target, item_family):
 def profile(obj, choices, model=KREA_MODEL):
     required = ('UNETLoader','CLIPLoader','VAELoader','CLIPTextEncode',
                 'ConditioningZeroOut','EmptyLatentImage','KSampler','VAEDecode','SaveImage')
+    if model == HOMOFIDELIS_BF16:
+        required += ('ModelComputeDtype',)
     missing = [node for node in required if node not in obj]
     for node, field, value in (('UNETLoader','unet_name',model),
                                ('CLIPLoader','clip_name',KREA_ENCODER),
@@ -75,6 +77,21 @@ def normalize(settings):
         raise ValueError('SDXL textual inversions cannot be used by the Krea 2 text encoder.')
     settings.update(steps=8,cfg=1,sampler='euler',scheduler='simple',negative='')
     settings.pop('clipSkip',None)
+
+def set_homofidelis_precision(graph):
+    # Old saved Krea recipes also pass through here before first submission.
+    loader = graph.get('4', {})
+    sampler = graph.get('3', {})
+    if (loader.get('class_type') != 'UNETLoader' or
+            loader['inputs'].get('unet_name') != HOMOFIDELIS_BF16 or
+            sampler.get('class_type') != 'KSampler'):
+        return
+    inputs = sampler['inputs']
+    key = 'cb_homofidelis_compute'
+    if inputs['model'] != [key, 0]:
+        graph[key] = dict(class_type='ModelComputeDtype', inputs=dict(model=inputs['model'], dtype='bf16'))
+        inputs['model'] = [key, 0]
+
 
 def build(settings, prefix):
     s = dict(settings)
@@ -113,4 +130,5 @@ def build(settings, prefix):
                   seed=int(s['seed']),steps=8,cfg=1,sampler_name='euler',scheduler='simple',denoise=denoise)
     image = node(8,'VAEDecode',samples=latent,vae=vae)
     node(9,'SaveImage',images=image,filename_prefix=prefix)
+    set_homofidelis_precision(g)
     return g

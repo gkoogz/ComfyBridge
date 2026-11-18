@@ -511,6 +511,8 @@ async def run_jobs():
                 update(j['id'], status='submitting')
                 # Old queued recipes are wrapped only before their first submission.
                 # Never replace the sampler of a generation already in progress.
+                if settings.get('model') == image_models.HOMOFIDELIS_BF16:
+                    image_models.set_homofidelis_precision(graph)
                 graph = gpu.resumable_graph(graph, j['id'])
                 if gpu.supports_pause(graph):
                     gpu.check_assets(DATA,j['id'],ROOT,graph)
@@ -904,7 +906,7 @@ async def api(request):
                     j['etaSeconds']=None
                 else:
                     j['progress'],j['current_node']=TRACKER.sample()
-        return web.json_response(dict(protocol=20,build='0.1.0-beta.121',jobs=jobs, active=ACTIVE, preview=bool(PREVIEW), previewRevision=PREVIEW_REV,ownedComfy=bool(OWNED),queueEtaSeconds=total_eta))
+        return web.json_response(dict(protocol=20,build='0.1.0-beta.122',jobs=jobs, active=ACTIVE, preview=bool(PREVIEW), previewRevision=PREVIEW_REV,ownedComfy=bool(OWNED),queueEtaSeconds=total_eta))
     if path.startswith('preview/'):
         job=str(uuid.UUID(path[8:]))
         after=int(request.query.get('after','-1'))
