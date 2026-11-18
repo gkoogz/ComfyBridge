@@ -166,7 +166,7 @@ body:is([data-page=image],[data-page=video]) .modeRow{margin:2px 0 7px}
 #carousel .thumb.inflightThumb{width:auto!important;min-width:0;flex:none;height:120px}
 #carousel .inflightThumb img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain}
 .foldRecent .foldLive{position:relative;height:55.2px;width:auto!important;flex:none}.foldLive .foldThumb{position:absolute;inset:0;width:100%;height:100%;object-fit:contain}
-.watchGeneration .watchPixels{width:100%;height:100%;object-fit:contain;position:absolute;inset:0}
+.watchGeneration .watchPixels{width:100%;height:auto}
 /* Starting-image operations stay below the picker, with a separate compact metadata row. */
 .imageSourceTools{gap:8px;align-items:center}.sourceEditActions{display:flex;gap:6px;align-items:center;flex-wrap:wrap}.imageSourceTools>#clearUpload{margin-left:auto;flex:none}.imageSourceTools button{padding:8px 10px}.imageSourceInfo{display:flex;justify-content:flex-start;align-items:baseline;gap:8px;flex-wrap:wrap;margin-top:7px;text-align:left}.imageSourceInfo strong{font-size:16px}.imageSourceInfo small{font-size:12px}.imageSourceInfo .warning{font-size:11px;margin:0;color:#e9c86d}#upscaleRemacri .spinner{width:12px;height:12px;vertical-align:middle}@media(max-width:360px){.imageSourceTools{gap:5px}.imageSourceTools button{padding:8px 6px;font-size:11px}.sourceEditActions{gap:4px}}
 .kreaSettings{display:grid;gap:5px;padding:8px 0 16px}.kreaSettings small{color:var(--muted)}

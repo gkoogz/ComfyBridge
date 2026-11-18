@@ -90,7 +90,7 @@ function renderLiveGeneration(box){
   $('.skipImage',box).onclick=()=>skipLiveGeneration(view);
   $('.retryImage',box).onclick=()=>{view.error='';renderLiveGeneration(box);};
  }
- $('.watchGeneration',box).style.aspectRatio=generationAspect(job||view);
+ $('.watchGeneration',box).style.setProperty('--generation-aspect',generationAspect(job||view));
  const skip=$('.skipImage',box),retry=$('.retryImage',box);
  skip.hidden=!(connected&&(window.Desktop||job?.owner===info().device)&&job?.id===active&&job.status==='running'&&imagePreviewProtocol);
  skip.disabled=view.skip;skip.textContent=view.skip?'Skipping…':'Skip '+kind;

@@ -1,6 +1,6 @@
 # ComfyBridge
 
-**[Open the beta 120 release page](https://github.com/gkoogz/ComfyBridge/releases/tag/v0.1.0-beta.120)** · [Download the Android APK](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.120/ComfyBridge-0.1.0-beta.120.apk) · [Download Windows](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.120/ComfyBridge-Windows-0.1.0-beta.120.zip) · [All releases](https://github.com/gkoogz/ComfyBridge/releases)
+**[Open the beta 121 release page](https://github.com/gkoogz/ComfyBridge/releases/tag/v0.1.0-beta.121)** · [Download the Android APK](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.121/ComfyBridge-0.1.0-beta.121.apk) · [Download Windows](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.121/ComfyBridge-Windows-0.1.0-beta.121.zip) · [All releases](https://github.com/gkoogz/ComfyBridge/releases)
 
 <img src="artwork/comfybridge.png" width="128" alt="ComfyBridge white cube and play icon on black">
 
@@ -9,6 +9,8 @@ An Android remote for an existing Windows ComfyUI installation. The phone edits 
 **Local project:** this PC's canonical checkout is `E:\ComfyBridge`. Source, builds, installed app data, local LLMs and archived work are consolidated there. See [the local folder map](docs/local-layout.md) for private-data exclusions, compatibility links and external ComfyUI dependencies. Run `Start-ComfyBridge.ps1` to open the installed PC panel.
 
 **Working on the project:** agents and contributors should start with [AGENTS.md](AGENTS.md) for the code map, build/test commands, live queue preservation and delivery instructions.
+
+**Beta 121** sizes the expanded Latest Result preview to the full available width and the aspect ratio of the displayed image, live preview, or video.
 
 **Beta 120** adds the HomoFidelis v1 BF16 checkpoint to the Krea 2 Turbo image workflow when installed. On desktop, videos autoplay with the sidebar pinned, narrow windows use a compact navigation rail, and the collection carousel supports mouse dragging. Each post joins the shorter of the two feed columns, with a separate loading animation below each column. Click a photo in the media pane to view it across the monitor. The compact tray has a fixed size, a circular power button, and a Civitai connection indicator.
 

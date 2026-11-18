@@ -72,6 +72,19 @@ const assert=require('node:assert/strict'),path=require('node:path');
     return Math.abs(r.left-work.left)<1&&Math.abs(r.right-work.right)<1;
    });
   }));
+  await p.route('**/local/image/portrait-result/**',r=>r.fulfill({contentType:'image/svg+xml',body:'<svg xmlns="http://www.w3.org/2000/svg" width="400" height="600"/>'}));
+  await p.evaluate(()=>{const item={kind:'image',id:'portrait-result',local:'hash'};library.push(item);mountResult(item);});
+  await p.waitForSelector('#result img.original');
+  for(const width of [1440,960]){
+   await p.setViewportSize({width,height:780});
+   const geometry=await p.locator('#result img.original').evaluate(img=>({
+    width:img.offsetWidth,height:img.offsetHeight,panel:img.closest('#result').clientWidth,ratio:img.naturalWidth/img.naturalHeight
+   }));
+   assert.equal(geometry.ratio,2/3);
+   assert.equal(geometry.width,geometry.panel);
+   assert(Math.abs(geometry.height-geometry.panel/geometry.ratio)<=1,'Desktop portrait fills the panel at its natural ratio');
+  }
+  await p.setViewportSize({width:1440,height:900});
   await p.locator('#queueList .foldToggle').click();
   assert.equal(await p.locator('#queueList .foldSummary .jobThumb').count(),1);
   assert.equal(await p.locator('#queueList .foldSummary .foldQueueCount').textContent(),'0 in the last 24 hours');

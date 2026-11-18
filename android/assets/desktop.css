@@ -64,7 +64,7 @@
 .desktop #toast{left:calc(var(--desktop-left) + (100vw - var(--desktop-left))/2);max-width:calc(100vw - var(--desktop-left) - 30px)}
 .desktop .librarygrid{grid-template-columns:repeat(auto-fill,minmax(160px,1fr))}
 .desktop #shelfInfo{display:none}
-.desktop .upload{max-height:280px}.desktop .asset:not(.galleryAsset) img.original,.desktop .asset:not(.galleryAsset) video{max-height:70vh}
+.desktop .upload{max-height:280px}
 .desktop .gentoolbar{z-index:15}.desktop .promptEntry{user-select:text}
 @media(max-width:1150px){.desktop{--desktop-left:300px}}
 @media(max-height:800px){
