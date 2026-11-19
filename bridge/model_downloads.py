@@ -94,30 +94,45 @@ class Downloads:
                 CREATE TABLE IF NOT EXISTS model_download_plans(id TEXT PRIMARY KEY,version TEXT,payload TEXT,created REAL);
             ''')
 
-    def installed(self, version, digest=''):
+    def local_versions(self, versions, model_ids=(), digest=''):
+        folders=roots(self.library.root)
         with self.library.db() as db:
-            rows=db.execute("SELECT kind,name,stamp,hash,payload FROM assets WHERE kind IN ('loras','embeddings')").fetchall()
+            rows=db.execute('SELECT kind,name,stamp,hash,payload FROM assets').fetchall()
         for row in rows:
             item=json.loads(row['payload'])
-            if str(item.get('versionId',''))!=version and (not digest or row['hash'].lower()!=digest):continue
-            for folder in roots(self.library.root)[row['kind']]:
+            version=str(item.get('versionId') or '')
+            model=str(item.get('modelId') or '')
+            if version not in versions and model not in model_ids and not (digest and (row['hash'] or '').lower()==digest):continue
+            for folder in folders.get(row['kind'],[]):
                 path=folder/row['name']
                 try:
                     stat=path.stat()
-                    if path.is_file() and row['stamp']==f'{stat.st_size}:{stat.st_mtime_ns}':return row['name']
+                    if path.is_file() and row['stamp']==f'{stat.st_size}:{stat.st_mtime_ns}':
+                        yield version,model,str(item.get('version') or version),row['name']
+                        break
                 except OSError:pass
-        return ''
 
-    def status(self, versions):
-        if not isinstance(versions,list) or len(versions)>64:raise ValueError('At most 64 LoRA versions can be checked at once.')
+    def installed(self, version, digest=''):
+        return next((name for _,_,_,name in self.local_versions({version},digest=digest)),'')
+
+    def status(self, versions, models=None):
+        if not isinstance(versions,list) or len(versions)>64:raise ValueError('At most 64 resource versions can be checked at once.')
+        if models is not None and not isinstance(models,dict):raise ValueError('Expected a mapping of version IDs to model IDs.')
+        versions={version_id(v) for v in versions}
+        models={v:str((models or {}).get(v) or '') for v in versions}
+        local=list(self.local_versions(versions,{m for m in models.values() if m}))
+        exact={v:name for v,_,_,name in local}
         result={}
-        for value in dict.fromkeys(versions):
-            version=version_id(value);name=self.installed(version)
-            if name:result[version]=dict(status='installed',name=name);continue
-            with self.library.db() as db:row=db.execute('SELECT * FROM model_downloads WHERE version=?',(version,)).fetchone()
-            if row and row['status'] in ('queued','downloading','verifying','error'):
-                result[version]=dict(status=row['status'],received=row['received'],total=row['total'],error=row['error'])
-            else:result[version]=dict(status='available')
+        with self.library.db() as db:
+            for version in versions:
+                if version in exact:
+                    result[version]=dict(status='installed',name=exact[version]);continue
+                row=db.execute('SELECT * FROM model_downloads WHERE version=?',(version,)).fetchone()
+                if row and row['status'] in ('queued','downloading','verifying','error'):
+                    result[version]=dict(status=row['status'],received=row['received'],total=row['total'],error=row['error'])
+                else:result[version]=dict(status='available')
+                others=sorted({label for v,m,label,_ in local if v and m and m==models[version] and v!=version})
+                if others:result[version]['otherVersions']=others
         return result
 
     def prepare(self, value):

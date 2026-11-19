@@ -86,7 +86,7 @@ body[data-page=browse] #browseError:not(:empty),.preferenceError:not(:empty){mar
 .civitaiPromptBlocks .modelPreviewPrompt{margin-bottom:5px}
 .promptCopy{display:grid;place-items:center;width:36px;height:36px;min-height:36px;padding:7px;margin:0 0 18px}
 [data-origin],.modelPreviewLinks{margin-top:25px;margin-bottom:25px}
-.civitaiViewer{background:rgba(11,16,20,var(--viewer-shade,1));padding-top:0}
+.civitaiViewer{background:rgba(0,0,0,var(--viewer-shade,1));padding-top:0}
 .civitaiViewerHead{position:absolute;right:8px;top:calc(var(--status-inset,0px) + 8px);height:auto;padding:0;z-index:8;background:none}
 .civitaiClose{width:40px;height:40px;min-height:40px;font-size:26px;background:#101b24b8}
 .civitaiViewerScroll{inset:var(--status-inset,0px) 0 0;background:transparent;scrollbar-gutter:auto}
@@ -364,3 +364,23 @@ header.hasBrowseSubject #headerIdentity{min-height:44px}
 
 .civitaiViewer .modelPreviewDetails{touch-action:pan-y pinch-zoom}
 .mediaReturnSurface{position:fixed!important;z-index:220!important;pointer-events:none!important;transition:none!important;visibility:visible!important;background:var(--bg);box-shadow:8px 0 30px #0008}
+
+.civitaiViewer .metadataCard,.metadataLoading{background:#000}
+.metadataLoading{position:relative;height:200px;overflow:hidden}
+.metadataLoading[hidden],.metadataCard[hidden]{display:none}
+.civitaiAuthor .creatorName,.browseCaption .feedAuthor,.subjectHeading .profileName,.civitaiResources .resourceName{font-weight:700}
+.civitaiAuthor .avatarFeed{flex:none;border:0;padding:0;background:none;border-radius:50%;line-height:1}
+.browseCaption .creatorProfile,.subjectHeading .creatorProfile,.browseCaption .feedReactions button,.browseCaption .feedCollect,.socialTop .civitaiReactions button[data-civi-react],.socialTop .civitaiReactions .viewerCollect{
+ display:inline-flex;align-items:center;justify-content:center;flex:none;box-sizing:border-box;height:34px;min-height:34px;min-width:34px;border:1px solid white;border-radius:8px;padding:4px 6px;color:white;background:#0009
+}
+.browseCaption .creatorProfile,.subjectHeading .creatorProfile{font-size:16px}
+.civitaiResources>li{display:grid;grid-template-columns:36px minmax(0,1fr);column-gap:8px;align-items:center}
+.civitaiResources>li>.resourceDownload{grid-column:1;grid-row:1 / span 2;align-self:center}
+.civitaiResources>li>.civitaiResourceRow,.civitaiResources>li>.resourceMeta{grid-column:2}
+.civitaiResources>li>.civitaiResourceRow{grid-row:1}
+.civitaiResources>li>.resourceMeta{grid-row:2}
+.civitaiResources>li>[data-download-status]{grid-column:1 / -1}
+.civitaiResources>li>.resourceMeta:empty,.civitaiResources .resourceVersion:empty{display:none}
+.civitaiResources .differentVersion .resourceName,.civitaiResources .differentVersion .resourceVersion{color:#ffda75}
+.civitaiPromptBlock .modelPreviewPrompt{padding-left:9px;border-left:2px solid var(--mint)}
+.civitaiPromptBlock[data-prompt-kind=negativePrompt] .modelPreviewPrompt{border-left-color:#ff797d}

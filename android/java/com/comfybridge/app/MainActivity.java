@@ -94,8 +94,8 @@ public class MainActivity extends Activity {
   getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN);
   getWindow().setStatusBarColor(Color.TRANSPARENT);
   if(android.os.Build.VERSION.SDK_INT>=29)getWindow().setStatusBarContrastEnforced(false);
-  getWindow().setNavigationBarColor(Color.rgb(11,16,20));
-  web=new WebView(this);web.setBackgroundColor(Color.rgb(11,16,20));FrameLayout root=new FrameLayout(this);root.addView(web,new FrameLayout.LayoutParams(-1,-1));setContentView(root);
+  getWindow().setNavigationBarColor(Color.BLACK);
+  web=new WebView(this);web.setBackgroundColor(Color.BLACK);FrameLayout root=new FrameLayout(this);root.addView(web,new FrameLayout.LayoutParams(-1,-1));setContentView(root);
   root.setOnApplyWindowInsetsListener((v,insets)->{
    v.setPadding(insets.getSystemWindowInsetLeft(),0,insets.getSystemWindowInsetRight(),insets.getSystemWindowInsetBottom());
    int top=insets.getSystemWindowInsetTop();

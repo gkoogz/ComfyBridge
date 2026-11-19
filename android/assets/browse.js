@@ -230,7 +230,7 @@ const CivitaiBrowser=(()=>{
  function promptHTML(item,state='loading'){
   return '<div class="civitaiPromptBlocks">'+[['prompt','Positive prompt'],['negativePrompt','Negative prompt']].map(([key,label])=>{
    if(key==='negativePrompt'&&!item[key])return '';
-   return '<section class="civitaiPromptBlock"><div class="civitaiPromptHeading"><h2>'+label+'</h2>'+
+   return '<section class="civitaiPromptBlock" data-prompt-kind="'+key+'"><div class="civitaiPromptHeading"><h2>'+label+'</h2>'+
     (item[key]?button(copyIcon,'class="promptCopy" data-copy-prompt="'+key+'" aria-label="Copy '+label.toLowerCase()+'"'):'')+'</div><p class="modelPreviewPrompt"'+(!item[key]&&state==='loading'&&!item.generationDataAvailable?' role="status" aria-busy="true"':'')+'>'+esc(item[key]||(item.generationDataAvailable?'No prompt is available in this media’s generation data.':state==='loading'?'Loading prompt details…':'Could not load prompt details.'))+'</p>'+
     (key==='prompt'&&state==='failed'?button('Retry details','class="retryPromptDetails"'):'')+'</section>';
   }).join('')+'</div>';
@@ -701,7 +701,7 @@ const CivitaiBrowser=(()=>{
   if(!small){
    const caption=document.createElement('div');
    caption.className='browseCaption';
-   caption.innerHTML=(view.kind==='creator'?'':button(esc(item.credit||'Creator'),'class="feedAuthor"')+'<span class="feedFollowing" aria-label="Following" '+(following(item)?'':'hidden')+'>✓</span>'+button('<svg viewBox="0 0 24 24"><path d="M9 2h6M12 2v3m6 1 2 2M12 9v5l3 2"/><circle cx="12" cy="14" r="8"/></svg>','class="feedTimeout" aria-label="Silence creator for two hours"'))+
+   caption.innerHTML=(view.kind==='creator'?'':button(esc(item.credit||'Creator'),'class="feedAuthor"')+profileButton(item.credit)+'<span class="feedFollowing" aria-label="Following" '+(following(item)?'':'hidden')+'>✓</span>'+button('<svg viewBox="0 0 24 24"><path d="M9 2h6M12 2v3m6 1 2 2M12 9v5l3 2"/><circle cx="12" cy="14" r="8"/></svg>','class="feedTimeout" aria-label="Silence creator for two hours"'))+
     '<div class="feedReactions">'+button(reactionLabel(item),'data-feed-react="Like" aria-label="Like" aria-pressed="'+(item.reactions||[]).includes('Like')+'"')+'</div>'+
     button('<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h12v18l-6-4-6 4z"/></svg>','class="feedCollect '+(membershipIds(item.collections).length?'bookmarked':'')+'" aria-label="Add to collection"');
    el.append(caption);
@@ -714,6 +714,7 @@ const CivitaiBrowser=(()=>{
      openSubject('creator',item.creatorId,item.credit);
     }catch(error){toast(error.message);}
    });
+   $('[data-creator-profile]',caption)?.addEventListener('click',()=>profile(item.credit));
    const boundAccount=account;
    $('.feedTimeout',caption)?.addEventListener('click',async e=>{
     const b=e.currentTarget;b.disabled=true;
@@ -784,10 +785,10 @@ const CivitaiBrowser=(()=>{
   saveView();
   view={kind,id:String(id),name,filter:'all'};
   feed=[];cursor='';feedEnded=false;emptyPages=0;
-  $('#main').innerHTML='<section class="civitaiBrowse"><div class="subjectHeading">'+button('‹','class="browseBack" aria-label="Back"')+(kind==='creator'?avatarHTML({creatorId:String(id),credit:name}):'')+'<h2>'+(kind==='creator'?button(esc(name),'class="profileName" aria-label="Open '+esc(name)+' profile"'):esc(name))+'</h2>'+(kind==='creator'?button('Follow','class="creatorFollow" data-follow-creator="'+esc(id)+'"'):'')+'<div class="subjectFilters">'+
+  $('#main').innerHTML='<section class="civitaiBrowse"><div class="subjectHeading">'+button('‹','class="browseBack" aria-label="Back"')+(kind==='creator'?avatarHTML({creatorId:String(id),credit:name}):'')+'<h2>'+(kind==='creator'?button(esc(name),'class="profileName" aria-label="Open '+esc(name)+' profile"'):esc(name))+'</h2>'+(kind==='creator'?profileButton(name)+button('Follow','class="creatorFollow" data-follow-creator="'+esc(id)+'"'):'')+'<div class="subjectFilters">'+
    [['image','▧','Images'],['video','▷','Videos'],['all','▦','All media']].map(([value,icon,label])=>button(icon,'data-media-filter="'+value+'" aria-label="'+label+'" title="'+label+'" aria-pressed="'+(value==='all')+'"')).join('')+'</div></div><p id="browseError" class="warning" role="status"></p><div id="browseFeed" class="browseFeed"></div>'+pullerHTML()+'</section>';
   $('.browseBack').onclick=back;wireAvatars($('.subjectHeading'));
-  if(kind==='creator'){$('.profileName').onclick=()=>profile(name);$('.creatorFollow').onclick=e=>changeFollow(e.currentTarget,id);paintSocial();}
+  if(kind==='creator'){$('.profileName').onclick=()=>profile(name);$('[data-creator-profile]',$('.subjectHeading')).onclick=()=>profile(name);$('.creatorFollow').onclick=e=>changeFollow(e.currentTarget,id);paintSocial();}
   $$('[data-media-filter]').forEach(b=>b.onclick=()=>{
    view.filter=b.dataset.mediaFilter;
    $$('[data-media-filter]').forEach(other=>other.setAttribute('aria-pressed',String(other===b)));
@@ -1139,16 +1140,21 @@ const CivitaiBrowser=(()=>{
  function resourcesHTML(resources,chosen={}){return '<ul class="modelPreviewResources civitaiResources">'+[...resources].sort((a,b)=>Number(/checkpoint/i.test(b.type))-Number(/checkpoint/i.test(a.type))).map(r=>{
   const isLora=/lora|locon|lycoris|embedding|textualinversion/i.test(r.type),url=r.modelId?'https://civitai.com/models/'+r.modelId+(r.versionId?'?modelVersionId='+r.versionId:''):'';
   const hasWeight=r.weight!==''&&r.weight!=null;
-  return '<li><div class="civitaiResourceRow">'+(url?button(esc(r.name||r.type),'class="resourceName '+(chosen.kind==='lora'&&String(chosen.id)===String(r.versionId)?'chosenSource':'')+'" data-civi-link="'+esc(url)+'"'):'<strong class="resourceName">'+esc(r.name||r.type)+'</strong>')+
-   (isLora&&r.versionId?button('＋','class="resourceDownload" data-resource-download="'+esc(r.versionId)+'" data-civi-download="'+esc(r.versionId)+'" aria-label="Download LoRA"'):'')+
-   '<span class="resourceType">'+esc(r.type)+'</span></div>'+((r.version||hasWeight)?'<small class="resourceMeta">'+(r.version?'<span class="resourceVersion">'+esc(r.version)+'</span>':'')+(r.version&&hasWeight?'<span aria-hidden="true">·</span>':'')+(hasWeight?'<span class="resourceStrength">Strength '+esc(r.weight)+'</span>':'')+'</small>':'')+'<div data-download-status="'+esc(r.versionId)+'"></div></li>';
+  const version=r.version||r.versionId||'';
+  return '<li data-listed-version="'+esc(r.versionId||'')+'" data-model-id="'+esc(r.modelId||'')+'">'+
+   (isLora&&r.versionId?button('＋','class="resourceDownload" data-resource-download="'+esc(r.versionId)+'" data-civi-download="'+esc(r.versionId)+'" aria-label="Download resource"'):'')+
+   '<div class="civitaiResourceRow">'+(url?button(esc(r.name||r.type),'class="resourceName '+(chosen.kind==='lora'&&String(chosen.id)===String(r.versionId)?'chosenSource':'')+'" data-civi-link="'+esc(url)+'"'):'<strong class="resourceName">'+esc(r.name||r.type)+'</strong>')+
+   '<span class="resourceType">'+esc(r.type)+'</span></div><small class="resourceMeta"><span class="resourceVersion" data-label="'+esc(version)+'">'+esc(version)+'</span>'+(version&&hasWeight?'<span aria-hidden="true">·</span>':'')+(hasWeight?'<span class="resourceStrength">Strength '+esc(r.weight)+'</span>':'')+'</small><div data-download-status="'+esc(r.versionId)+'"></div></li>';
 
  }).join('')+'</ul>';}
  function parametersHTML(parameters){return Object.entries(parameters||{}).map(([key,value])=>'<div class="modelParameter"><dt>'+esc(key)+'</dt><dd>'+esc(value)+'</dd></div>').join('');}
  async function wireResources(host){
   $$('[data-civi-link]',host).forEach(b=>b.onclick=()=>openModelSource(b.dataset.civiLink));
-  const buttons=$$('[data-civi-download]',host);if(!buttons.length)return;
-  const versions=buttons.map(b=>b.dataset.civiDownload);
+  const buttons=$$('[data-civi-download]',host);
+  const rows=$$('[data-listed-version]',host).filter(row=>/^[1-9][0-9]*$/.test(row.dataset.listedVersion));
+  if(!rows.length)return;
+  const models=Object.fromEntries(rows.map(row=>[row.dataset.listedVersion,row.dataset.modelId]));
+  const versions=Object.keys(models);
   function paintDownload(b,status){
    const installed=status==='installed',busy=['preparing','starting','queued','downloading','verifying'].includes(status);
    b.innerHTML=installed?'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12l4 4L19 6"/></svg>':busy?'<i class="spinner" aria-hidden="true"></i>':'＋';
@@ -1157,7 +1163,13 @@ const CivitaiBrowser=(()=>{
   }
   async function update(){
    if(!host.isConnected||document.hidden)return;
-   try{const r=await api('lora-download/status',{versions});let running=false,finished=false;
+   try{const r=await api('lora-download/status',{versions,models});
+    for(const row of rows){
+     const others=r[row.dataset.listedVersion]?.otherVersions||[],label=$('.resourceVersion',row);
+     row.classList.toggle('differentVersion',others.length>0);
+     label.textContent=label.dataset.label+(others.length?'. Yours: '+others.join(', '):'');
+    }
+    let running=false,finished=false;
     for(const b of buttons){if(b.dataset.downloadPhase)continue;const s=(r.items||r.statuses||[]).find?.(x=>String(x.versionId)===b.dataset.civiDownload)||r[b.dataset.civiDownload]||{};
      const installed=s.status==='installed',active=['queued','downloading','verifying'].includes(s.status);running ||= active;finished ||= installed&&b.dataset.wasActive==='true';if(active)b.dataset.wasActive='true';if(installed)delete b.dataset.wasActive;
      paintDownload(b,s.status);
@@ -1191,8 +1203,11 @@ const CivitaiBrowser=(()=>{
   $$('[data-follow-creator]',host).forEach(b=>b.onclick=()=>changeFollow(b,b.dataset.followCreator));
   $$('.sourceLora',host).forEach(b=>b.onclick=()=>openModelSource(b.dataset.civiLink));
  }
+ function profileButton(name){
+  return name?button('↗','class="creatorProfile" data-creator-profile aria-label="Open Civitai profile for '+esc(name)+'"'):'';
+ }
  function socialHTML(item,collections){
-  return '<div class="socialTop"><div class="civitaiAuthor">'+avatarHTML(item)+button(esc(item.credit||'Unknown creator'),'class="creatorName '+(item.chosenBy?.kind==='creator'&&String(item.chosenBy.id)===String(item.creatorId)?'chosenSource':'')+'" data-civi-link="https://civitai.red/user/'+esc(encodeURIComponent(item.credit||''))+'"')+(item.creatorId?button(following(item)?'Following ✓':'Follow','class="viewerFollow '+(following(item)?'selected':'')+'" data-follow-creator="'+esc(item.creatorId)+'" aria-pressed="'+following(item)+'"')+button('Feed','data-creator-feed class="creatorFeed"'):'')+button('↗','data-creator-profile class="creatorProfile" aria-label="Open creator profile"')+(item.chosenBy?.kind==='curation'?discoveryHTML(item):'')+'</div><div class="civitaiReactions">'+button(reactionLabel(item),'data-civi-react="Like" aria-label="Like" aria-pressed="'+(item.reactions||[]).includes('Like')+'"')+button(ribbonIcon,'class="viewerCollect '+(membershipIds(item.collections).length?'bookmarked':'')+'" aria-label="Add to collection"')+'</div></div>'+(item.chosenBy?.kind==='lora'?discoveryHTML(item):'')+'<p class="civitaiActionError warning" role="status"></p>';
+  return '<div class="socialTop"><div class="civitaiAuthor">'+button(avatarHTML(item),'class="avatarFeed" data-creator-feed aria-label="Open creator feed"')+button(esc(item.credit||'Unknown creator'),'class="creatorName '+(item.chosenBy?.kind==='creator'&&String(item.chosenBy.id)===String(item.creatorId)?'chosenSource':'')+'" data-creator-feed')+(item.creatorId?button(following(item)?'Following ✓':'Follow','class="viewerFollow '+(following(item)?'selected':'')+'" data-follow-creator="'+esc(item.creatorId)+'" aria-pressed="'+following(item)+'"'):'')+(item.chosenBy?.kind==='curation'?discoveryHTML(item):'')+'</div><div class="civitaiReactions">'+button(reactionLabel(item),'data-civi-react="Like" aria-label="Like" aria-pressed="'+(item.reactions||[]).includes('Like')+'"')+button(ribbonIcon,'class="viewerCollect '+(membershipIds(item.collections).length?'bookmarked':'')+'" aria-label="Add to collection"')+'</div></div><p class="civitaiActionError warning" role="status"></p>';
  }
  function membershipIds(raw){
   if(!raw)return [];
@@ -1208,8 +1223,13 @@ const CivitaiBrowser=(()=>{
  function wireSocial(host,item,collections){
   wireDiscovery(host,item);wireAvatars(host);
   hydrate(host);$$('[data-civi-link]',host).forEach(b=>b.onclick=()=>openModelSource(b.dataset.civiLink));
-  $('[data-creator-feed]',host)?.addEventListener('click',()=>showCreatorFeed(item));
-  $('[data-creator-profile]',host)?.addEventListener('click',()=>profile(item.credit));
+  $$('[data-creator-feed]',host).forEach(b=>b.onclick=async()=>{
+   try{
+    if(!item.creatorId&&/^[1-9][0-9]*$/.test(String(item.id)))Object.assign(item,(await fetchDetail(item)).item);
+    if(!host.isConnected)return;
+    if(item.creatorId)showCreatorFeed(item);else toast('Creator feed unavailable');
+   }catch(e){toast(e.message);}
+  });
   const error=$('.civitaiActionError',host),boundAccount=account;
   async function run(b,payload,done){b.disabled=true;error.textContent='';try{const r=await action({...payload,account:boundAccount});if(host.isConnected)done(r);}catch(e){error.textContent=e.message;if(b.type==='checkbox')b.checked=!b.checked;}finally{b.disabled=false;}}
   $('[data-civi-follow]',host)?.addEventListener('click',e=>run(e.currentTarget,{kind:'follow',creatorId:item.creatorId,selected:!following(item)},r=>{updateFollowing(item.creatorId,r.selected);e.target.textContent=r.selected?'Following ✓':'Follow';e.target.classList.toggle('selected',r.selected);}));
@@ -1281,25 +1301,29 @@ const CivitaiBrowser=(()=>{
  }
  async function enrich(host,image,fresh=false){
   if(!image.id)return;
-  let target=$('.civitaiSocial',host);
-  if(!target){target=document.createElement('div');target.className='civitaiSocial';$('.modelPreviewDetails',host)?.prepend(target);}
-  target.innerHTML=socialHTML(image,status?.collections||[]);wireSocial(target,image,status?.collections||[]);
-  function paintPrompt(state){
-   const prompts=$('.civitaiPromptBlocks',host);if(!prompts)return;
-   prompts.outerHTML=promptHTML(image,state);wirePromptCopies(host,image);
-   $('.retryPromptDetails',host)?.addEventListener('click',()=>enrich(host,image,true));
+  const target=$('.civitaiSocial',host),card=$('.metadataCard',host);
+  if(!card||viewer?.el!==host)return;
+  const pending=$('.metadataLoading',host),v=viewer;
+  function pendingState(){
+   card.hidden=true;pending.hidden=false;
+   if(!v.drip)v.drip=BrowseLoader.metadata(pending,$('.civitaiViewerScroll',host));
   }
-  if(fresh)paintPrompt('loading');
+  function reveal(state){
+   const animate=card.hidden;
+   v.drip?.dispose();v.drip=null;pending.hidden=true;
+   const markup=metadataHTML(image,state);
+   if(!animate&&card.renderedMetadata===markup)return;
+   card.innerHTML=markup;card.renderedMetadata=markup;card.hidden=false;
+   wireMetadata(card,image);$('.retryPromptDetails',card)?.addEventListener('click',()=>enrich(host,image,true));
+   if(animate&&!matchMedia('(prefers-reduced-motion: reduce)').matches)card.animate([{opacity:0,transform:'translateY(5px)'},{opacity:1,transform:'none'}],{duration:160,easing:'ease-out'});
+  }
+  if(fresh||card.hidden)pendingState();
   try{
    const result=await fetchDetail(image,fresh);if(!target.isConnected)return;
-   account=result.account;Object.assign(image,result.item);const item=image;
-   paintPrompt(item.generationDataAvailable||item.detailVersion===2?'ready':'failed');
-   target.innerHTML=socialHTML(item,result.collections);wireSocial(target,item,result.collections);
-   const parameters=$('.modelPreviewParameters',host);if(parameters)parameters.innerHTML=parametersHTML(item.parameters);
-   const resourceHost=$('.civitaiResourceHost',host);if(resourceHost){resourceHost.innerHTML=resourcesHTML(item.resources,item.chosenBy);wireResources(resourceHost);}
-   let tags=$('.civitaiTagHost',host);if(!tags){tags=document.createElement('section');tags.className='civitaiTagHost';$('.modelPreviewDetails',host)?.append(tags);}
-   paintTags(tags,item);
-  }catch(e){if(target.isConnected){paintPrompt('failed');$('.civitaiActionError',target).textContent=e.message;}}
+   account=result.account;Object.assign(image,result.item);
+   target.innerHTML=socialHTML(image,result.collections);wireSocial(target,image,result.collections);
+   reveal(image.generationDataAvailable||image.detailVersion===2?'ready':'failed');
+  }catch(e){if(target.isConnected){reveal('failed');$('.civitaiActionError',target).textContent=e.message;}}
  }
  function peek(host){host.addEventListener('scroll',()=>host.classList.toggle('pastPeek',host.scrollTop>20),{passive:true});}
  function metadataBackGesture(v){
@@ -1477,28 +1501,37 @@ const CivitaiBrowser=(()=>{
     v.transitioning=true;v.entryScroll=$('.civitaiViewerScroll',v.el).scrollTop;target.style.visibility='';
     const options={duration:210,easing:'cubic-bezier(.2,.75,.3,1)',fill:'both'};
     flight=target.animate([{transformOrigin:'0 0',transform:`translate(${start.left-end.left}px,${start.top-end.top}px) scale(${start.width/end.width},${start.height/end.height})`},{transformOrigin:'0 0',transform:'none'}],options);
-    shade=v.el.animate([{backgroundColor:'rgba(11,16,20,0)'},{backgroundColor:'rgba(11,16,20,1)'}],options);
+    shade=v.el.animate([{backgroundColor:'rgba(0,0,0,0)'},{backgroundColor:'rgba(0,0,0,1)'}],options);
     flight.onfinish=finish;
    });
   });
  }
  function close(restore=true){const prior=viewer;viewer=null;if(prior){prior.cancelEntry?.();prior.dispose?.();prior.el.remove();prior.source?.release?.();}document.body.classList.remove('civitaiViewerOpen');if(restore!==false){prior?.restoreWorkspace?.();prior?.options?.onClose?.();}}
+ function metadataHTML(item,state){
+  return (item.chosenBy?.kind==='lora'?discoveryHTML(item):'')+promptHTML(item,state)+'<h2>Resources</h2><div class="civitaiResourceHost">'+resourcesHTML(item.resources||[],item.chosenBy)+'</div><dl class="modelPreviewParameters">'+parametersHTML(item.parameters)+'</dl><div class="civitaiTagHost"></div>'+button('Open on Civitai ↗','data-origin');
+ }
+ function wireMetadata(card,item){
+  wireResources(card);wirePromptCopies(card,item);
+  paintTags($('.civitaiTagHost',card),item);
+  $('[data-origin]',card).onclick=()=>openModelSource(item.imageUrl);
+ }
  function open(item,list,origin=null,options={}){
   if(view.kind==='mix'&&list===feed)markSeen(item.id);
   const cached=details.get(detailKey(item.id));if(cached)Object.assign(item,cached.result.item);
   const source=origin?takeFeedMedia(origin,item):null;
   close(false);const el=document.createElement('section');el.className='civitaiViewer';el.setAttribute('role','dialog');el.setAttribute('aria-modal','true');el.setAttribute('aria-label','Civitai media details');
   registerMedia([item]);const v={el,item,list,source,options};
+  const ready=item.detailVersion===2;
   if(window.Desktop){
    const workspace=$('#workspace'),position=workspace.scrollTop,previous=document.activeElement;
    v.restoreWorkspace=()=>{if(previous?.isConnected)previous.focus({preventScroll:true});workspace.scrollTop=position;};
   }
   viewer=v;warm();document.body.append(el);document.body.classList.add('civitaiViewerOpen');
-  el.innerHTML='<div class="civitaiViewerHead">'+button('×','class="civitaiClose" aria-label="Close media"')+'</div><div class="civitaiViewerScroll modelPreviewViewer"><div class="modelPreviewHero">'+(item.type==='video'?(source?.media?'<video playsinline></video>':imageHTML(item,true)):'<div class="imagePicture">'+(source?'<img alt="Civitai image">':imageHTML(item,true))+'</div>')+'<div class="modelPreviewNavigation">'+button('‹','data-prev aria-label="Previous media"')+button('›','data-next aria-label="Next media"')+'</div></div><div class="modelPreviewDetails"><div class="civitaiSocial">'+socialHTML(item,status?.collections||[])+'</div>'+promptHTML(item)+'<h2>Resources</h2><div class="civitaiResourceHost">'+resourcesHTML(item.resources||[],item.chosenBy)+'</div><dl class="modelPreviewParameters">'+parametersHTML(item.parameters)+'</dl><div class="civitaiTagHost"></div>'+button('Open on Civitai ↗','data-origin')+'</div></div>';
+  el.innerHTML='<div class="civitaiViewerHead">'+button('×','class="civitaiClose" aria-label="Close media"')+'</div><div class="civitaiViewerScroll modelPreviewViewer"><div class="modelPreviewHero">'+(item.type==='video'?(source?.media?'<video playsinline></video>':imageHTML(item,true)):'<div class="imagePicture">'+(source?'<img alt="Civitai image">':imageHTML(item,true))+'</div>')+'<div class="modelPreviewNavigation">'+button('‹','data-prev aria-label="Previous media"')+button('›','data-next aria-label="Next media"')+'</div></div><div class="modelPreviewDetails"><div class="civitaiSocial">'+socialHTML(item,status?.collections||[])+'</div>'+'<div class="metadataLoading" role="status" aria-label="Loading metadata" '+(ready?'hidden':'')+'><canvas class="browseFluid"></canvas><canvas class="browseFlung"></canvas></div><div class="metadataCard" '+(ready?'':'hidden')+'>'+(ready?metadataHTML(item,'ready'):'')+'</div>'+'</div></div>';
   if(source?.media){$('img,video',$('.modelPreviewHero',el)).replaceWith(source.media);if(source.playing)source.media.play().catch(()=>{});}
   else if(source?.poster)$('video',el).poster=source.poster;
-  $('.civitaiClose',el).onclick=close;$('.civitaiClose',el).focus({preventScroll:true});$('[data-origin]',el).onclick=()=>openModelSource(item.imageUrl);
-  wirePromptCopies(el,item);
+  $('.civitaiClose',el).onclick=close;$('.civitaiClose',el).focus({preventScroll:true});
+  if(ready){const card=$('.metadataCard',el);card.renderedMetadata=metadataHTML(item,'ready');wireMetadata(card,item);}
   const position=list.findIndex(i=>i.id===item.id);$('[data-prev]',el).disabled=position<=0;$('[data-next]',el).disabled=position>=list.length-1&&!options.more?.();
   $('[data-prev]',el).onclick=()=>open(list[position-1],list,null,options);$('[data-next]',el).onclick=async()=>{const b=$('[data-next]',el);b.disabled=true;try{if(position+1>=list.length)await options.loadMore?.(list);if(viewer===v&&list[position+1])open(list[position+1],list,null,options);}catch(e){toast(e.message);}finally{if(b.isConnected)b.disabled=position>=list.length-1&&!options.more?.();}};
   if(item.type==='video'){
@@ -1507,7 +1540,7 @@ const CivitaiBrowser=(()=>{
    VideoPlayer.mount(video,{duration:item.duration,width:item.width,height:item.height,
     bounds:()=>({width:hero.clientWidth,height:hero.clientHeight-Math.min(scroll.scrollTop,video.sharedPlayer?.peekHeight||110)}),error:e=>toast(e.message)});
   }
-  const scroll=$('.civitaiViewerScroll',el);peek(scroll);hydrate($('.modelPreviewDetails',el));wireResources(el);const motion=viewerMotion(v),metadataGesture=window.Desktop?desktopMediaPane(v,close):metadataBackGesture(v);v.dispose=()=>{metadataGesture();motion();};v.entered=window.Desktop?Promise.resolve():animateEntry(v);detail(v);
+  const scroll=$('.civitaiViewerScroll',el);peek(scroll);hydrate($('.modelPreviewDetails',el));wireSocial($('.civitaiSocial',el),item,status?.collections||[]);if(!ready)v.drip=BrowseLoader.metadata($('.metadataLoading',el),scroll);const motion=viewerMotion(v),metadataGesture=window.Desktop?desktopMediaPane(v,close):metadataBackGesture(v);v.dispose=()=>{v.drip?.dispose();metadataGesture();motion();};v.entered=window.Desktop?Promise.resolve():animateEntry(v);detail(v);
   if(item.type!=='video'&&item.fullPath){
    const img=$('.modelPreviewHero img',el);imageBlob(path(item.fullPath)).then(async url=>{if(!url)return;const full=new Image();full.src=url;await full.decode();await v.entered;if(viewer===v&&img.isConnected)img.src=url;}).catch(()=>{/* Keep the visible preview if the full image fails. */});
   }
@@ -1519,7 +1552,11 @@ const CivitaiBrowser=(()=>{
   try{await v.options?.prepare?.(v.item);}catch{/* Cached metadata remains usable offline. */}
   if(viewer!==v)return;
   if(/^[1-9][0-9]*$/.test(String(v.item.id)))await enrich(v.el,v.item);
-  else {wireSocial($('.civitaiSocial',v.el),v.item,status?.collections||[]);$('.civitaiReactions',v.el).hidden=true;}
+  else {
+   v.drip?.dispose();v.drip=null;$('.metadataLoading',v.el).hidden=true;
+   const card=$('.metadataCard',v.el);card.innerHTML=metadataHTML(v.item,'ready');card.hidden=false;wireMetadata(card,v.item);
+   $('.civitaiReactions',v.el).hidden=true;
+  }
  }
  document.addEventListener('click',e=>{
   if(!e.target.closest('#browseCollections,#browseSources'))closeMenus();

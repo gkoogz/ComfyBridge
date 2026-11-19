@@ -794,7 +794,8 @@ async def api(request):
         payload=await request.json()
         return web.json_response(MODELS.archive(payload.get('id'),payload.get('archived')))
     if path == 'lora-download/status' and request.method=='POST':
-        return web.json_response(await asyncio.to_thread(MODEL_DOWNLOADS.status,(await request.json()).get('versions')))
+        payload=await request.json()
+        return web.json_response(await asyncio.to_thread(MODEL_DOWNLOADS.status,payload.get('versions'),payload.get('models')))
     if path.startswith('lora-download/prepare/') and request.method=='GET':
         return web.json_response(await asyncio.to_thread(MODEL_DOWNLOADS.prepare,path.split('/')[-1]))
     if path == 'lora-download/start' and request.method=='POST':
@@ -906,7 +907,7 @@ async def api(request):
                     j['etaSeconds']=None
                 else:
                     j['progress'],j['current_node']=TRACKER.sample()
-        return web.json_response(dict(protocol=20,build='0.1.0-beta.125',jobs=jobs, active=ACTIVE, preview=bool(PREVIEW), previewRevision=PREVIEW_REV,ownedComfy=bool(OWNED),queueEtaSeconds=total_eta))
+        return web.json_response(dict(protocol=20,build='0.1.0-beta.126',jobs=jobs, active=ACTIVE, preview=bool(PREVIEW), previewRevision=PREVIEW_REV,ownedComfy=bool(OWNED),queueEtaSeconds=total_eta))
     if path.startswith('preview/'):
         job=str(uuid.UUID(path[8:]))
         after=int(request.query.get('after','-1'))

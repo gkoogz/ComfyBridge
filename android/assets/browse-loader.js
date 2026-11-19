@@ -82,23 +82,25 @@ const BrowseLoader=(()=>{
    frame=requestAnimationFrame(animate);
   }
   const interactive=target=>target.closest('button,summary,input,textarea,select,a,video,.browseCarousel')||(column&&!host.contains(target));
-  on(workspace,'touchstart',e=>{
-   if(!running||!atBottom()||e.touches.length!==1||interactive(e.target))return;
-   gesture={x:e.touches[0].clientX,y:e.touches[0].clientY,claimed:false};
-  },{passive:true});
-  on(workspace,'touchmove',e=>{
-   if(!gesture)return;if(e.touches.length!==1){release(true);return;}
-   const dx=e.touches[0].clientX-gesture.x,dy=gesture.y-e.touches[0].clientY;
-   if(!gesture.claimed&&(Math.abs(dx)>Math.abs(dy)||dy<0)){gesture=null;return;}
-   if(dy<6&&!gesture.claimed)return;
-   if(!atBottom()){release(true);return;}gesture.claimed=true;e.preventDefault();tug(dy);
-  },{passive:false});
-  on(workspace,'touchend',()=>release());on(workspace,'touchcancel',()=>release(true));
-  on(workspace,'wheel',e=>{if(!running||!atBottom()||e.deltaY<=0||Math.abs(e.deltaX)>Math.abs(e.deltaY)||interactive(e.target))return;e.preventDefault();tug(pull+e.deltaY*(e.deltaMode===1?16:1));clearTimeout(wheelTimer);wheelTimer=setTimeout(()=>release(),140);},{passive:false});
-  on(workspace,'pointerdown',e=>{if(e.pointerType!=='mouse'||e.button!==0||!running||!atBottom()||!host.contains(e.target))return;gesture={x:e.clientX,y:e.clientY,claimed:false};mouseId=e.pointerId;});
-  on(workspace,'pointermove',e=>{if(e.pointerId!==mouseId||!gesture)return;const dy=gesture.y-e.clientY,dx=e.clientX-gesture.x;if(!gesture.claimed&&Math.abs(dx)>Math.abs(dy)){release(true);return;}if(dy<6&&!gesture.claimed)return;gesture.claimed=true;workspace.setPointerCapture(e.pointerId);e.preventDefault();tug(dy);});
-  on(workspace,'pointerup',e=>{if(e.pointerId===mouseId)release();});on(workspace,'pointercancel',e=>{if(e.pointerId===mouseId)release(true);});
-  on(host,'click',e=>{if(rebound||edgeOffset>0){e.preventDefault();e.stopImmediatePropagation();}},true);
+  if(spring){
+   on(workspace,'touchstart',e=>{
+    if(!running||!atBottom()||e.touches.length!==1||interactive(e.target))return;
+    gesture={x:e.touches[0].clientX,y:e.touches[0].clientY,claimed:false};
+   },{passive:true});
+   on(workspace,'touchmove',e=>{
+    if(!gesture)return;if(e.touches.length!==1){release(true);return;}
+    const dx=e.touches[0].clientX-gesture.x,dy=gesture.y-e.touches[0].clientY;
+    if(!gesture.claimed&&(Math.abs(dx)>Math.abs(dy)||dy<0)){gesture=null;return;}
+    if(dy<6&&!gesture.claimed)return;
+    if(!atBottom()){release(true);return;}gesture.claimed=true;e.preventDefault();tug(dy);
+   },{passive:false});
+   on(workspace,'touchend',()=>release());on(workspace,'touchcancel',()=>release(true));
+   on(workspace,'wheel',e=>{if(!running||!atBottom()||e.deltaY<=0||Math.abs(e.deltaX)>Math.abs(e.deltaY)||interactive(e.target))return;e.preventDefault();tug(pull+e.deltaY*(e.deltaMode===1?16:1));clearTimeout(wheelTimer);wheelTimer=setTimeout(()=>release(),140);},{passive:false});
+   on(workspace,'pointerdown',e=>{if(e.pointerType!=='mouse'||e.button!==0||!running||!atBottom()||!host.contains(e.target))return;gesture={x:e.clientX,y:e.clientY,claimed:false};mouseId=e.pointerId;});
+   on(workspace,'pointermove',e=>{if(e.pointerId!==mouseId||!gesture)return;const dy=gesture.y-e.clientY,dx=e.clientX-gesture.x;if(!gesture.claimed&&Math.abs(dx)>Math.abs(dy)){release(true);return;}if(dy<6&&!gesture.claimed)return;gesture.claimed=true;workspace.setPointerCapture(e.pointerId);e.preventDefault();tug(dy);});
+   on(workspace,'pointerup',e=>{if(e.pointerId===mouseId)release();});on(workspace,'pointercancel',e=>{if(e.pointerId===mouseId)release(true);});
+   on(host,'click',e=>{if(rebound||edgeOffset>0){e.preventDefault();e.stopImmediatePropagation();}},true);
+  }
   let lastScroll=workspace.scrollTop;
   on(workspace,'scroll',()=>{const delta=workspace.scrollTop-lastScroll;lastScroll=workspace.scrollTop;queuePosition();if(running)stir=Math.min(4,stir+Math.abs(delta)*.015);},{passive:true});
   on(document,'visibilitychange',refresh);on(reduced,'change',refresh);
@@ -186,5 +188,5 @@ const BrowseLoader=(()=>{
   size();refresh();
   return {host,refresh,dispose(){disposed=true;running=false;cancelAnimationFrame(frame);cancelAnimationFrame(positionFrame);clearPull();listeners.forEach(off=>off());visibility.disconnect();resize.disconnect();mutation.disconnect();host.classList.remove('fluidRunning');}};
  }
- return {attach,stop,refresh};
+ return {attach,stop,refresh,metadata:(host,scroll)=>create(host,scroll,()=>true)};
 })();

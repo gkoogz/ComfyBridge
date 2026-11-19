@@ -41,6 +41,15 @@ class DownloadTests(unittest.TestCase):
         self.assertEqual(plan['status'],'confirm');self.assertEqual(plan['baseModel'],'SDXL')
         self.assertEqual(plan['filename'],'pottery.safetensors');self.assertEqual(plan['bytes'],len(self.payload))
         self.open.assert_not_called();self.assertFalse(self.folder.exists());self.assertFalse(self.downloads.busy())
+    def test_show_other_installed_version_only_for_same_model_and_current_file(self):
+        self.queue();self.finish()
+        statuses=self.downloads.status(['7','11','12'],{'7':'8','11':'8','12':'17'})
+        self.assertEqual(statuses['7'],dict(status='installed',name='pottery.safetensors'))
+        self.assertEqual(statuses['11'],dict(status='available',otherVersions=['Version 2']))
+        self.assertEqual(statuses['12'],dict(status='available'))
+        (self.folder/'pottery.safetensors').unlink()
+        self.assertEqual(self.downloads.status(['11'],{'11':'8'})['11'],dict(status='available'))
+
     def test_embedding_download_goes_to_embeddings_and_preserves_extension(self):
         self.raw['model']['type']='TextualInversion';self.raw['files'][0]['name']='pottery token.pt'
         plan=self.queue();self.assertEqual(plan['filename'],'pottery_token.pt');self.assertTrue(plan['destination'].endswith('embeddings'))
