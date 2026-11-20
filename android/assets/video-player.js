@@ -54,7 +54,6 @@ const VideoPlayer=(()=>{
    try{await prepare();if(!disposed&&video.isConnected)await video.play();}catch(e){options.error?.(e);}finally{tick();}
   }
   toggle.onclick=e=>{e.stopPropagation();playPause();};
-  toggle.addEventListener('pointerdown',e=>e.stopPropagation());
   const timeline=shell.querySelector('.videoTimeline');
   timeline.addEventListener('pointerdown',e=>e.stopPropagation());timeline.addEventListener('click',e=>e.stopPropagation());
   function applySeek(){if(pendingSeek!==null&&Number.isFinite(video.duration)){video.currentTime=Math.min(pendingSeek,video.duration);pendingSeek=null;}tick();}

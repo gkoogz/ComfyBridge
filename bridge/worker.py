@@ -844,7 +844,7 @@ async def api(request):
     if path.startswith('model-gallery-detail/'):
         try:
             _,identity,image=path.split('/')
-            return web.json_response(await asyncio.to_thread(MODEL_GALLERY.details,identity,image))
+            return web.json_response(await asyncio.to_thread(MODEL_GALLERY.details,identity,image,CIVITAI_BROWSER.generation_data))
         except (ValueError,FileNotFoundError):raise web.HTTPNotFound()
     if path.startswith('model-preview/gallery/'):
         try:
@@ -908,7 +908,7 @@ async def api(request):
                     j['etaSeconds']=None
                 else:
                     j['progress'],j['current_node']=TRACKER.sample()
-        return web.json_response(dict(protocol=20,build='0.1.0-beta.132',jobs=jobs, active=ACTIVE, preview=bool(PREVIEW), previewRevision=PREVIEW_REV,ownedComfy=bool(OWNED),queueEtaSeconds=total_eta))
+        return web.json_response(dict(protocol=20,build='0.1.0-beta.133',jobs=jobs, active=ACTIVE, preview=bool(PREVIEW), previewRevision=PREVIEW_REV,ownedComfy=bool(OWNED),queueEtaSeconds=total_eta))
     if path.startswith('preview/'):
         job=str(uuid.UUID(path[8:]))
         after=int(request.query.get('after','-1'))

@@ -10,6 +10,7 @@ import urllib.error
 import urllib.parse
 
 from PIL import Image
+from civitai_requests import Deferred
 from model_library import API, MATURE_API, BROWSING_MATURE, fetch, safe_preview
 
 PAGE_SIZE = 20
@@ -193,26 +194,41 @@ class Gallery:
             db.execute('DELETE FROM gallery_resources WHERE rowid IN (SELECT rowid FROM gallery_resources ORDER BY checked DESC LIMIT -1 OFFSET 10000)')
         return value
 
-    def details(self, identity, image):
+    def details(self, identity, image, generation_lookup=None):
         asset=self.asset(identity)
         if not positive_id(image):raise ValueError('Invalid gallery image')
         with self.library.db() as db:
             row=db.execute('SELECT payload FROM gallery_images WHERE asset=? AND image=?',(identity,image)).fetchone()
-        if not row:raise FileNotFoundError('Reload the model gallery to retrieve its details')
-        sample=json.loads(row['payload'])
-        if not self.visible(sample) or sample.get('assetVersion')!=positive_id(asset.get('versionId')):
+        version=positive_id(asset.get('versionId'))
+        sample=json.loads(row['payload']) if row else {}
+        if sample.get('assetVersion')!=version:
+            sample={}
+        if not sample:
+            sample=next((preview for preview in asset.get('images',[]) if positive_id(preview.get('id'))==image),{})
+        if not sample or not self.visible(sample):
             raise FileNotFoundError('Preview unavailable')
+        resources=sample.get('resources',[])
         token=self.library.token()
-        versions={x['versionId'] for x in sample['resources'] if x.get('versionId') and (not x.get('name') or not x.get('modelId'))}
+        result=dict(prompt=sample.get('prompt',''),negativePrompt=sample.get('negativePrompt',''),
+                    parameters=sample.get('parameters',{}),resources=resources)
+        if generation_lookup and not result['prompt']:
+            try:
+                generation=generation_lookup(token,image)
+                generation['parameters']={**result['parameters'],**generation.get('parameters',{})}
+                result.update({key:value for key,value in generation.items() if value})
+            except (Deferred,ValueError):
+                pass
+        resources=result['resources']
+        versions={x['versionId'] for x in resources if x.get('versionId') and (not x.get('name') or not x.get('modelId'))}
         tasks={version:self.resources.submit(self.resource,version,token) for version in sorted(versions)[:12]}
-        for resource in sample['resources']:
+        for resource in resources:
             task=tasks.get(resource.get('versionId'))
             if not task:continue
             value=task.result()
             for key in ('name','modelId','type'):
                 if value.get(key) and (not resource.get(key) or key=='type' and resource[key]=='resource'):resource[key]=value[key]
-        if not self.visible(sample):raise FileNotFoundError('Preview unavailable')
-        return dict(resources=sample['resources'])
+        if token!=self.library.token() or not self.visible(sample):raise FileNotFoundError('Preview unavailable')
+        return result
 
     def trim_cache(self, keep):
         files=sorted((p for p in self.files.iterdir() if p.suffix in ('.jpg','.mp4')),key=lambda p:p.stat().st_mtime)

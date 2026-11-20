@@ -904,6 +904,19 @@ class Browser:
             outcome='deferred';raise
         finally:api_debug.recorder.finish(diagnostic,'detail','detail.prefetch' if prefetch else 'detail.open',outcome,background=prefetch)
 
+    def generation_data(self, token, image_id):
+        # Same endpoint as the website's Generation data panel. A caller serving
+        # a listing sample must first verify it belongs to that visible listing.
+        generation=self.call(token,'image.getGenerationData',{'id':ident(image_id)})
+        meta=generation.get('meta') or {}
+        raw=generation.get('resources') or []
+        return dict(prompt=str(meta.get('prompt') or ''),negativePrompt=str(meta.get('negativePrompt') or ''),
+                    parameters={k:meta[k] for k in ('seed','steps','cfgScale','sampler','Size','Model','clipSkip','Clip skip','denoise') if k in meta},
+                    resources=[dict(versionId=str(r.get('modelVersionId') or r.get('versionId') or ''),modelId=str(r.get('modelId') or ''),
+                                    name=str(r.get('modelName') or r.get('name') or 'Resource'),version=str(r.get('versionName') or r.get('modelVersionName') or ''),
+                                    type=str(r.get('modelType') or r.get('type') or 'Resource'),weight=r.get('strength',r.get('weight',''))) for r in raw],
+                    generationDataAvailable=True)
+
     def _detail(self, image_id, prefetch):
         me, token=self.account();account=me['id'];image_id=str(ident(image_id))
         if not prefetch and self.setting(account,'follows') is None:self.sync_follows(account,token)
@@ -912,19 +925,8 @@ class Browser:
             items,_=self.images(account,token,{'imageId':int(image_id)},1)
             if not items:raise ValueError('This media is no longer available to your account.')
             item=items[0]
-        # This is the same endpoint used by the website's Generation data panel.
-        # withMeta on getInfinite is not a promise of full metadata.
         try:
-            generation=self.call(token,'image.getGenerationData',{'id':int(image_id)})
-            meta=generation.get('meta') or {}
-            item['prompt']=str(meta.get('prompt') or '')
-            item['negativePrompt']=str(meta.get('negativePrompt') or '')
-            item['parameters']={k:meta[k] for k in ('seed','steps','cfgScale','sampler','Size','Model','clipSkip','Clip skip','denoise') if k in meta}
-            raw=generation.get('resources') or []
-            item['resources']=[dict(versionId=str(r.get('modelVersionId') or r.get('versionId') or ''),modelId=str(r.get('modelId') or ''),
-                name=str(r.get('modelName') or r.get('name') or 'Resource'),version=str(r.get('versionName') or r.get('modelVersionName') or ''),
-                type=str(r.get('modelType') or r.get('type') or 'Resource'),weight=r.get('strength',r.get('weight',''))) for r in raw]
-            item['generationDataAvailable']=True;item['detailVersion']=2
+            item.update(self.generation_data(token,image_id));item['detailVersion']=2
         except Deferred:
             if prefetch:raise
             item['generationDataAvailable']=False;item['detailVersion']=0

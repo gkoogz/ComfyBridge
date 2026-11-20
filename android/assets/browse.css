@@ -90,7 +90,7 @@ body[data-page=browse] #browseError:not(:empty),.preferenceError:not(:empty){mar
 .civitaiViewerHead{position:absolute;right:8px;top:calc(var(--status-inset,0px) + 8px);height:auto;padding:0;z-index:8;background:none}
 .civitaiClose{width:40px;height:40px;min-height:40px;font-size:26px;background:#101b24b8}
 .civitaiViewerScroll{inset:var(--status-inset,0px) 0 0;background:transparent;scrollbar-gutter:auto}
-.civitaiViewer .modelPreviewHero{height:calc(100dvh - 76px - var(--status-inset,0px));background:transparent;touch-action:pinch-zoom;will-change:transform}
+.civitaiViewer .modelPreviewHero{height:calc(100dvh - 76px - var(--status-inset,0px));background:transparent;touch-action:pan-y pinch-zoom;will-change:transform}
 .civitaiViewer .modelPreviewHero img{user-select:none;-webkit-user-drag:none}
 .civitaiViewer .modelPreviewPeek,.civitaiViewer .pastPeek .modelPreviewPeek{height:56px;padding:6px 16px;border:0;overflow:hidden;position:relative;background:transparent;z-index:2}
 .civitaiViewer .modelPreviewDetails{position:relative;z-index:3;background:var(--bg)}
@@ -141,7 +141,6 @@ body[data-page=browse] #workspace{overscroll-behavior-y:contain}
 /* The real social rows peek into the viewport, then scroll with the details. */
 .civitaiViewer .modelPreviewHero{height:calc(100dvh - var(--status-inset,0px));display:block}
 .civitaiViewer .modelPreviewHero img,.civitaiViewer .modelPreviewHero video{display:block;width:100%;object-fit:contain}
-.civitaiViewer .modelPreviewHero.isVideo{touch-action:pinch-zoom}
 .civitaiViewerScroll{overflow-anchor:none}
 .civitaiViewerHead{transition:transform .18s ease,opacity .18s ease}
 .civitaiViewer.mediaOnly .civitaiViewerHead{transform:translateY(-80px);opacity:0;pointer-events:none}

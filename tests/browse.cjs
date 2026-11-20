@@ -186,7 +186,7 @@ const assert=require('node:assert/strict'),path=require('node:path');
   await p.waitForTimeout(100);
   const video=await p.locator('.civitaiViewer video').boundingBox(),author=await p.locator('.civitaiViewer .civitaiAuthor').boundingBox();
   assert(author.y-(video.y+video.height)>=40,'Video controls need a scrollable gutter');
-  assert.equal(await p.locator('.modelPreviewHero.isVideo').evaluate(el=>getComputedStyle(el).touchAction),'pinch-zoom');
+  assert.equal(await p.locator('.modelPreviewHero.isVideo').evaluate(el=>getComputedStyle(el).touchAction),'pan-y pinch-zoom');
   if(process.env.BROWSE_SHOTS)await p.screenshot({path:path.join(process.env.BROWSE_SHOTS,'browse-video-'+width+'.png')});
   await p.evaluate(()=>CivitaiBrowser.close());
   assert.deepEqual(errors,[]);await p.close();

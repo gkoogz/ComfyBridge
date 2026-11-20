@@ -118,5 +118,19 @@ class GalleryTests(unittest.TestCase):
         self.assertEqual(result['resources'][0]['name'],'Watercolor finish')
         self.assertEqual(result['resources'][0]['modelId'],'42');self.assertEqual(result['resources'][0]['weight'],'0.8')
 
+    def test_first_cached_preview_can_load_generation_data_without_a_browse_entry(self):
+        self.asset['images']=[dict(id='1',mature=False),dict(id='2',mature=True)]
+        self.put_asset()
+        with patch('model_gallery.fetch') as fetch, patch.object(self.gallery, 'resource') as resource:
+            lookup=lambda token,image:dict(prompt='A blue bowl.',parameters={'steps':20})
+            result=self.gallery.details(self.id,'1',lookup)
+            self.assertEqual(result['prompt'],'A blue bowl.')
+            self.assertEqual(result['parameters'],{'steps':20})
+            for image in ('2','3'):
+                with self.assertRaises(FileNotFoundError):
+                    self.gallery.details(self.id,image,lambda *_:self.fail('Looked up an unavailable preview'))
+        fetch.assert_not_called()
+        resource.assert_not_called()
+
 
 if __name__=='__main__':unittest.main()

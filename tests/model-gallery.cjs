@@ -3,11 +3,20 @@ const assert=require('node:assert/strict'),path=require('node:path');
 (async()=>{
  const browser=await chromium.launch();
  try{
-  const p=await browser.newPage({viewport:{width:390,height:844},hasTouch:true}),errors=[];
+  const p=await browser.newPage({viewport:{width:390,height:844},hasTouch:true,isMobile:true}),errors=[];
+  const cdp=await p.context().newCDPSession(p);
+  async function touchDrag(x,y,dx,dy){
+   await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x,y}]});
+   for(let n=1;n<=12;n++){
+    await cdp.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:x+dx*n/12,y:y+dy*n/12}]});
+   }
+   await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+  }
   p.on('pageerror',error=>errors.push(error.message));
   await p.route('https://bridge.test/**',r=>r.fulfill({path:path.join(__dirname,'../android/assets',new URL(r.request().url()).pathname.slice(1)||'index.html')}));
   await p.route('**/model-preview/**',r=>{
    const wide=r.request().url().includes('/2/');
+   if(wide&&r.request().url().endsWith('/full'))return r.fulfill({path:path.join(__dirname,'fixtures/feed-video.mp4'),contentType:'video/mp4'});
    return r.fulfill({contentType:'image/svg+xml',body:`<svg xmlns="http://www.w3.org/2000/svg" width="${wide?600:200}" height="${wide?300:400}"><rect width="100%" height="100%" fill="#638d89"/></svg>`});
   });
   await p.addInitScript(()=>window.Native={configuration:()=>JSON.stringify({device:'one',paired:false}),notificationRoute:()=>'',copyText:text=>window.copied=text,openListing:url=>window.opened=url});
@@ -24,8 +33,10 @@ const assert=require('node:assert/strict'),path=require('node:path');
      galleryRequests.push(route);await new Promise(r=>setTimeout(r,30));
      if(route.includes('cursor=empty'))return {items:[],nextCursor:'second'};
      if(route.includes('cursor=second'))return {items:[sample(2),sample(3)],nextCursor:null};
-     return {items:[sample(1),sample(2)],nextCursor:'empty'};
+     return {items:[{...sample(1),prompt:'',negativePrompt:'',resources:[],parameters:{}},{...sample(2),type:'video',duration:4}],nextCursor:'empty'};
     }
+    if(route.startsWith('model-gallery-detail/')){galleryRequests.push(route);return sample(1);}
+    if(route.startsWith('browse/detail/'))throw Error('HTTP 400: This media is no longer available to your account.');
     return {};
    };
    ModelPreviews.synced();await ModelPreviews.start(catalog);navigate('image');openModelBrowser('loras',item.name);
@@ -39,11 +50,37 @@ const assert=require('node:assert/strict'),path=require('node:path');
   await p.locator('.modelSample').first().click();await p.waitForSelector('.civitaiViewer');
   await p.locator('.civitaiViewer .modelPreviewHero img').evaluate(image=>image.decode());
   assert.equal(await p.locator('.modelPreviewPeek').count(),0);assert.equal(await p.locator('.civitaiClose').count(),1);
-  assert(await p.locator('.modelPreviewPrompt').first().textContent().then(t=>t.includes('<script>')));assert.equal(await p.evaluate(()=>window.bad),undefined);
+  await p.waitForFunction(()=>document.querySelector('.modelPreviewPrompt')?.textContent.includes('<script>'));
+  assert(await p.evaluate(()=>galleryRequests.some(route=>route.startsWith('model-gallery-detail/'))));
+  assert.equal(await p.evaluate(()=>window.bad),undefined);
   await p.locator('[data-copy-prompt="prompt"]').click();assert.match(await p.evaluate(()=>copied),/ceramic bowl/);
   assert.match(await p.locator('.modelPreviewResources').textContent(),/Pottery glaze.*0.6/s);
   await p.locator('[data-origin]').click();assert.equal(await p.evaluate(()=>opened),'https://civitai.red/images/1');
-  await p.locator('.civitaiClose').click();assert.equal(await p.locator('.civitaiViewer').count(),0);assert(await p.locator('#modal').evaluate(x=>x.open));
+  assert.equal(await p.locator('.civitaiActionError').textContent(),'');
+  await p.locator('.civitaiViewerScroll').evaluate(el=>el.scrollTop=120);
+  await touchDrag(170,405,0,-220);
+  assert(await p.locator('.civitaiViewerScroll').evaluate(el=>el.scrollTop)>240,'A vertical gesture starting on the image scrolls into metadata');
+  await p.locator('.civitaiViewerScroll').evaluate(el=>el.scrollTop=120);
+  await touchDrag(60,362,265,0);
+  await p.waitForSelector('.civitaiViewer',{state:'detached'});
+  assert.equal(await p.locator('.civitaiViewer').count(),0);assert(await p.locator('#modal').evaluate(x=>x.open));
+  await p.locator('.modelSample').nth(1).click();
+  await p.waitForFunction(()=>document.querySelector('.civitaiViewer video')?.readyState>=2);
+  await p.locator('.civitaiViewerScroll').evaluate(el=>el.scrollTop=120);
+  const toggle=p.locator('.civitaiViewer .videoToggle');
+  await toggle.tap();await p.waitForFunction(()=>!document.querySelector('.civitaiViewer video')?.paused);
+  const hit=await toggle.boundingBox(),centerY=hit.y+hit.height/2;
+  await touchDrag(hit.x+hit.width/2,centerY,0,-220);
+  assert(await p.locator('.civitaiViewerScroll').evaluate(el=>el.scrollTop)>240,'Dragging from the video play region scrolls');
+  assert(await p.locator('.civitaiViewer video').evaluate(video=>!video.paused),'A scroll does not pause playback');
+  await p.locator('.civitaiViewerScroll').evaluate(el=>el.scrollTop=120);
+  await p.waitForFunction(()=>{
+   const r=document.querySelector('.civitaiViewer .videoToggle').getBoundingClientRect();
+   return document.elementFromPoint(r.x+r.width/2,r.y+r.height/2)?.classList.contains('videoToggle');
+  });
+  const resetHit=await toggle.boundingBox();
+  await touchDrag(resetHit.x+resetHit.width/2,resetHit.y+resetHit.height/2,-175,0);
+  await p.waitForSelector('.civitaiViewer',{state:'detached'});
   await strip.evaluate(x=>x.scrollLeft=x.scrollWidth);
   await p.waitForFunction(()=>galleryRequests.some(x=>x.includes('cursor=second')));
   await p.waitForFunction(()=>document.querySelectorAll('.modelSample').length===3);
@@ -63,6 +100,6 @@ const assert=require('node:assert/strict'),path=require('node:path');
   assert(Math.abs(await strip.evaluate(x=>x.scrollLeft)-before)<2);
   await p.locator('#modalClose').click();assert.equal(await p.locator('#modal').evaluate(x=>x.open),false);
   assert.deepEqual(errors,[]);
-  console.log('Model gallery: top-right X, aspect ratios, full viewer, prompt and LoRA details, source links, cursor loading through empty pages, deduplication and return position passed.');
+  console.log('Model gallery: image and video touch scroll and toss, listing metadata fallback, source links, cursor loading, and carousel return position passed.');
  }finally{await browser.close();}
 })().catch(error=>{console.error(error);process.exitCode=1;});

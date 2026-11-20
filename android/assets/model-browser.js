@@ -237,14 +237,20 @@ function openModelPreview(view,gallery,index,origin){
  // Both a toss and a metadata swipe reveal its exact retained scroll position.
  $('#modal').close();$('#modal').setAttribute('open','');$('#modal').classList.add('modelPreviewBehind');
  const options={
+  listing:true,
   previousScreen:()=>$('#modal'),
   onClose:()=>{if(modelBrowser!==view)return;view.preview=null;$('#modal').removeAttribute('open');$('#modal').classList.remove('modelPreviewBehind');$('#modal').showModal();origin?.focus({preventScroll:true});ModelPreviews.wake();},
   more:()=>moreModelSamples(gallery),
   loadMore:async target=>{await loadModelSamples(view,gallery);for(let n=target.length;n<gallery.items.length;n++)target.push(sharedModelSample(gallery,gallery.items[n],n));},
   prepare:async item=>{
    if(!/^[1-9][0-9]*$/.test(String(item.id))&&!gallery.started)await loadModelSamples(view,gallery,true);
-   const sample=[...gallery.items,...gallery.buffer].find(x=>x.source===item.source&&x.id);
+   const sample=[...gallery.items,...gallery.buffer].find(x=>x.id&&(x.id===item.id||x.source&&x.source===item.source));
    if(sample)Object.assign(item,sample);
+   if(gallery.item.id&&gallery.item.source==='Civitai'&&/^[1-9][0-9]*$/.test(String(item.id))&&
+      (!item.prompt||item.resources?.some(resource=>resource.versionId&&(!resource.name||!resource.modelId)))){
+    const data=await api('model-gallery-detail/'+gallery.item.id+'/'+item.id);
+    for(const [key,value] of Object.entries(data))if(Array.isArray(value)?value.length:value) item[key]=value;
+   }
   }
  };
  CivitaiBrowser.open(list[index],list,null,options);
