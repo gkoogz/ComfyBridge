@@ -67,7 +67,7 @@ async function openModelBrowser(type,only=null,promptKey=null){
 }
 function paintModelBrowser(view){
  const host=$('#modelCards');if(!host||modelBrowser!==view)return;
- const expanded=new Set($$('details[open]',host).map(x=>x.dataset.modelDetails));
+ const expanded=new Set($$('[data-model-details][aria-expanded=true]',host).map(x=>x.dataset.modelDetails));
  const query=view.remote?'':($('#modelSearch')?.value||'').trim().toLowerCase();
  const items=browserItems(view).filter(x=>[x.title,x.name,x.author,x.version,...(x.keywords||[])].join(' ').toLowerCase().includes(query));
  const note=$('#modelNsfwNote');
@@ -82,6 +82,7 @@ function paintModelBrowser(view){
   const compatibility=isEmbedding?embeddingCompatibility(item,view.kind):null;
   const selected=isCheckpoint?state.settings[view.kind].model===item.name:!isVideo&&!isEmbedding&&activeLora(view.kind,item.name);
   const gallery=modelSampleGallery(view,item);
+  const open=expanded.has(item.name),description=item.description||item.note||'No confirmed online description is available for this file.';
   const previewNote=item.previewWarning||(view.nsfwHidden!==false?'NSFW previews are hidden. Add a Civitai API key using the Civitai status button on the PC panel.':'');
   const previewHtml='<div class="modelSampleHost" data-sample-gallery="'+esc(gallery.key)+'"></div>'+(previewNote?'<p class="modelNsfwNote">'+esc(previewNote)+'</p>':'');
   return '<article class="modelCard" data-model-index="'+index+'"><div class="modelCardHeading"><div><h2>'+esc(item.title||item.name)+'</h2><small>'+esc([item.version,item.author&&'by '+item.author].filter(Boolean).join(' · '))+'</small></div>'+
@@ -91,12 +92,13 @@ function paintModelBrowser(view){
    previewHtml+
    '<div class="modelFacts"><span>'+esc(item.baseModel||'Base model unconfirmed')+'</span><span>'+modelSize(item.bytes)+'</span><span>'+esc(item.match||'Lookup pending')+'</span></div>'+
    (isEmbedding?'<small class="embeddingHotkey">Prompt token: <code>'+esc('embedding:'+item.name)+'</code></small>':(item.keywords||[]).length?'<div class="modelKeywords"><small>Activation keywords</small><p>'+item.keywords.map(esc).join(' · ')+'</p><button data-model-keywords="'+index+'">Copy keywords</button><button data-model-insert="'+index+'">Insert Keywords</button></div>':'<small class="modelNoKeywords">No verified activation keywords supplied.</small>')+
-   (item.description?'<p class="modelExcerpt">'+esc(item.description.slice(0,360))+'</p>':'')+
-   '<details data-model-details="'+esc(item.name)+'" '+(expanded.has(item.name)?'open':'')+'><summary>Author description & file details</summary><div class="modelDescription">'+esc(item.description||item.note||'No confirmed online description is available for this file.')+'</div>'+
+   '<p class="modelDescription" id="model-description-'+index+'" '+(open?'':'data-collapsed')+'>'+esc(description)+'</p>'+
+   '<button type="button" class="modelDetailsToggle" data-model-details="'+esc(item.name)+'" aria-controls="model-description-'+index+' model-extra-'+index+'" aria-expanded="'+open+'">'+(open?'Collapse':'Expand')+' description</button>'+
+   '<div id="model-extra-'+index+'" '+(open?'':'hidden')+'>'+
    (item.versionDescription?'<h3>Version notes</h3><div class="modelDescription">'+esc(item.versionDescription)+'</div>':'')+
    '<dl><dt>Local file</dt><dd>'+esc(item.name)+'</dd><dt>SHA-256</dt><dd>'+esc(item.sha256||'Waiting for first scan')+'</dd></dl>'+
    (item.fileMetadata?'<small>'+esc(Object.values(item.fileMetadata).join(' · '))+'</small>':'')+
-   (item.merge?'<details><summary>Local merge recipe</summary><pre>'+esc(item.merge)+'</pre></details>':'')+'</details>'+
+   (item.merge?'<details><summary>Local merge recipe</summary><pre>'+esc(item.merge)+'</pre></details>':'')+'</div>'+
    (item.sourceUrl?'<button class="modelSource" data-model-source="'+index+'">Open '+esc(item.source||'original')+' listing ↗</button>':'<small>Source not confirmed · the local file is still selectable</small>')+'</article>';
  }).join('')||'<p class="muted">No matching models.</p>';
  $$('[data-model-use]',host).forEach(button=>button.onchange=()=>{
@@ -118,6 +120,14 @@ function paintModelBrowser(view){
  $$('[data-model-keywords]',host).forEach(button=>button.onclick=async()=>{
   const text=items[+button.dataset.modelKeywords].keywords.join(', ');
   try{if(window.Native?.copyText)await Native.copyText(text);else await navigator.clipboard.writeText(text);toast('Keywords copied');}catch{toast('Could not copy keywords');}
+ });
+ $$('[data-model-details]',host).forEach(button=>button.onclick=()=>{
+  const open=button.getAttribute('aria-expanded')==='false';
+  const [description,extra]=button.getAttribute('aria-controls').split(' ').map(id=>document.getElementById(id));
+  description.toggleAttribute('data-collapsed',!open);
+  extra.hidden=!open;
+  button.setAttribute('aria-expanded',String(open));button.textContent=(open?'Collapse':'Expand')+' description';
+  if(!open)button.scrollIntoView({block:'nearest'});
  });
  $$('[data-model-source]',host).forEach(button=>button.onclick=()=>{
   openModelSource(items[+button.dataset.modelSource].sourceUrl);
