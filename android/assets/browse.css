@@ -316,12 +316,7 @@ header.hasBrowseSubject #headerIdentity{min-height:44px}
 .browseTile.hasFeedVideo .browseMedia{position:relative}
 .browseTile .feedVideo{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;pointer-events:none;opacity:0}
 .browseTile .feedVideo.ready{opacity:1}
-.browseTile .feedVideoToggle{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:var(--feed-video-target,0px);height:var(--feed-video-target,0px);min-height:0;padding:0;border:0;border-radius:50%;clip-path:circle(50%);background:transparent;color:white;box-shadow:none;display:grid;place-items:center;touch-action:pan-y}
-.feedVideoGlyph{display:grid;place-items:center;box-sizing:border-box;width:min(64px,100%);height:min(64px,100%);padding:min(19px,27%);border:1px solid #ffffff80;border-radius:50%;background:#15212845;backdrop-filter:blur(5px);box-shadow:0 1px 8px #0002;pointer-events:none;transition:opacity .18s ease}
-.feedVideoToggle.playing:not(:focus-visible) .feedVideoGlyph{opacity:0;transition-delay:1.5s}
-.feedVideoToggle:focus-visible .feedVideoGlyph{outline:2px solid white;outline-offset:-3px}
-@media(prefers-reduced-motion:reduce){.feedVideoGlyph{transition-duration:0s}}
-.feedVideoToggle svg,.feedSound svg{width:100%;height:100%;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;pointer-events:none}
+.feedSound svg{width:100%;height:100%;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;pointer-events:none}
 .feedVideoToggle.loading{opacity:.55}
 .browseCaption .feedCollectStack{position:relative;flex:none;align-self:center}
 .browseCaption .feedSound{position:absolute;bottom:100%;right:-7px;width:44px;height:44px;padding:10px;color:white;filter:drop-shadow(0 1px 3px #0008);touch-action:pan-y}

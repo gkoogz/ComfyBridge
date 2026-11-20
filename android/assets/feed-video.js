@@ -2,15 +2,10 @@
 const FeedVideo=(()=>{
  const records=new Set(),states=new WeakMap();let observer,geometry,scheduled=false;
  const svg=body=>'<svg viewBox="0 0 24 24" aria-hidden="true">'+body+'</svg>';
- const pauseIcon=svg('<path d="M8 5v14M16 5v14"/>'),playIcon=svg('<path d="m9 5 10 7-10 7z"/>');
  const speaker=muted=>svg('<path d="M11 4 6 8H3v8h3l5 4z"/>'+(muted?'<path d="M21 3 3 21"/>':'<path d="M15 8a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14"/>'));
  function allowed(){return !document.hidden&&document.body.dataset.page==='browse'&&!document.body.classList.contains('civitaiViewerOpen')&&!document.querySelector('#drawer.open,#modal[open]');}
  function paint(r){
-  const playing=!r.video.paused,label=playing?'Pause video':'Play video';
-  r.toggle.classList.toggle('playing',playing);
-  if(r.toggle.getAttribute('aria-label')!==label){
-   r.glyph.innerHTML=playing?pauseIcon:playIcon;r.toggle.setAttribute('aria-label',label);
-  }
+  r.control.paint(!r.video.paused);
   r.sound.innerHTML=speaker(r.video.muted);r.sound.setAttribute('aria-label',r.video.muted?'Unmute video':'Mute video');r.sound.setAttribute('aria-pressed',String(!r.video.muted));
   const seconds=Math.max(0,Math.ceil(r.video.duration-r.video.currentTime));r.badge.textContent=Number.isFinite(seconds)?Math.floor(seconds/60)+':'+String(seconds%60).padStart(2,'0'):'–:––';
  }
@@ -41,8 +36,7 @@ const FeedVideo=(()=>{
   geometry=new ResizeObserver(entries=>{
    for(const {target,contentRect:{width,height}} of entries){
     const r=states.get(target.parentElement);if(!r)continue;
-    const diameter=Math.min(width*.3,height*.9);
-    r.toggle.style.setProperty('--feed-video-target',diameter+'px');
+    r.control.size(width,height);
    }
   });
   observer=new IntersectionObserver(entries=>{for(const e of entries){const r=states.get(e.target);if(!r)continue;const h=Math.min(e.boundingClientRect.height,e.rootBounds?.height||innerHeight);r.visible=e.isIntersecting&&e.intersectionRect.height>=Math.min(100,h*.3);update(r);}},{root:document.querySelector('#workspace'),threshold:[0,.1,.25,.5,.75,1]});
@@ -54,10 +48,10 @@ const FeedVideo=(()=>{
  function attach(card,source,fallback){init();card.classList.add('hasFeedVideo');
   const media=card.querySelector('.browseMedia'),video=document.createElement('video');video.className='feedVideo';video.muted=true;video.defaultMuted=true;video.loop=true;video.playsInline=true;video.preload='none';video.setAttribute('aria-hidden','true');media.prepend(video);
   const toggle=document.createElement('button');toggle.type='button';toggle.className='feedVideoToggle';
-  const glyph=document.createElement('span');glyph.className='feedVideoGlyph';toggle.append(glyph);card.append(toggle);
+  const control=VideoPlayer.styleToggle(toggle);card.append(toggle);
   const collect=card.querySelector('.feedCollect'),stack=document.createElement('div');stack.className='feedCollectStack';collect.replaceWith(stack);stack.append(collect);
   const sound=document.createElement('button');sound.type='button';sound.className='feedSound';stack.prepend(sound);
-  const r={card,media,video,toggle,glyph,sound,badge:card.querySelector('.browseVideo'),source,fallback,visible:false,userPaused:false};states.set(card,r);records.add(r);
+  const r={card,media,video,toggle,control,sound,badge:card.querySelector('.browseVideo'),source,fallback,visible:false,userPaused:false};states.set(card,r);records.add(r);
   toggle.onclick=e=>{e.stopPropagation();r.userPaused=!r.video.paused;if(r.userPaused)r.video.pause();else{r.failed=false;update(r);}paint(r);};
   sound.onclick=e=>{e.stopPropagation();r.video.muted=!r.video.muted;if(!r.video.muted)for(const other of records)if(other!==r){other.video.muted=true;paint(other);}paint(r);};
   bind(r);

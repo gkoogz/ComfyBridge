@@ -27,7 +27,14 @@ const assert=require('node:assert/strict'),path=require('node:path'),fs=require(
   await button.click();await p.waitForFunction(root=>{const v=document.querySelector(root+' video');return v&&!v.paused&&v.currentTime>.1;},root);
   assert.equal(await video.evaluate(v=>v.controls),false);assert.equal(await p.locator(root+' .transportPlay').count(),0);
   const rect=await video.boundingBox();await video.click({position:{x:rect.width*.3,y:rect.height*.2}});assert.equal(await video.evaluate(v=>v.paused),false,'Outer video tap does not pause');
-  await button.click();assert.equal(await video.evaluate(v=>v.paused),true);assert.equal(await button.getAttribute('aria-label'),'Play video');
+  const hit=await button.boundingBox();
+  assert(Math.abs(hit.width-Math.min(rect.width*.3,rect.height*.9))<1,'Full screen target scales to the video');
+  const glyph=button.locator('.videoPlayPauseGlyph');
+  assert.equal(await glyph.evaluate(el=>getComputedStyle(el).transitionDelay),'1.5s');
+  await p.waitForFunction(root=>getComputedStyle(document.querySelector(root+' .videoPlayPauseGlyph')).opacity==='0',root);
+  const tapTarget={position:{x:hit.width*.82,y:hit.height/2}};
+  if(width===390)await button.tap(tapTarget);else await button.click(tapTarget);
+  assert.equal(await video.evaluate(v=>v.paused),true);assert.equal(await button.getAttribute('aria-label'),'Play video');
   const box=await seek.boundingBox();await seek.click({position:{x:box.width*.25,y:8}});await p.waitForFunction(root=>Math.abs(document.querySelector(root+' video').currentTime-1)<.15,root);
   if(width===390){
    const cdp=await p.context().newCDPSession(p),r=await seek.boundingBox();

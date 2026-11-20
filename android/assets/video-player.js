@@ -2,13 +2,28 @@
 const VideoPlayer=(()=>{
  const players=new Map();
  const icon=playing=>'<svg viewBox="0 0 24 24" aria-hidden="true">'+(playing?'<path d="M8 5v14M16 5v14"/>':'<path d="m9 5 10 7-10 7z"/>')+'</svg>';
+ function styleToggle(toggle){
+  const glyph=document.createElement('span');
+  glyph.className='videoPlayPauseGlyph';toggle.classList.add('videoPlayPause');toggle.append(glyph);
+  return {
+   paint(playing){
+    const label=playing?'Pause video':'Play video';
+    toggle.classList.toggle('playing',playing);
+    if(toggle.getAttribute('aria-label')!==label){glyph.innerHTML=icon(playing);toggle.setAttribute('aria-label',label);}
+   },
+   size(width,height){
+    toggle.style.setProperty('--video-target',Math.min(width*.3,height*.9)+'px');
+   }
+  };
+ }
  const time=value=>{value=Math.max(0,Math.floor(Number(value)||0));return Math.floor(value/60)+':'+String(value%60).padStart(2,'0');};
  function mount(video,options={}){
   video.controls=false;video.playsInline=true;
   const shell=document.createElement('div');shell.className='unifiedVideo';
-  shell.innerHTML='<div class="videoPicture"><button type="button" class="videoToggle bigPlay" aria-label="Play video"></button></div><div class="videoTimeline transport"><div class="videoTrack"><i></i><b></b></div><input class="videoSeek" type="range" min="0" max="1" value="0" step="any" aria-label="Video position"><div class="videoTimes"><strong class="videoCurrent">0:00</strong><span class="videoSlash" hidden>/</span><span class="videoTotal">0:00</span></div></div>';
+  shell.innerHTML='<div class="videoPicture"><button type="button" class="videoToggle bigPlay"></button></div><div class="videoTimeline transport"><div class="videoTrack"><i></i><b></b></div><input class="videoSeek" type="range" min="0" max="1" value="0" step="any" aria-label="Video position"><div class="videoTimes"><strong class="videoCurrent">0:00</strong><span class="videoSlash" hidden>/</span><span class="videoTotal">0:00</span></div></div>';
   video.before(shell);const picture=shell.querySelector('.videoPicture');picture.prepend(video);
   const toggle=shell.querySelector('.videoToggle'),seek=shell.querySelector('input'),line=shell.querySelector('.videoTrack'),current=shell.querySelector('.videoCurrent'),total=shell.querySelector('.videoTotal'),slash=shell.querySelector('.videoSlash');
+  const control=styleToggle(toggle);
   let preparing=null,pendingSeek=null,disposed=false,posterWidth=options.width||0,posterHeight=options.height||0;
   const end=()=>Number.isFinite(video.duration)&&video.duration>0?video.duration:Number(options.duration)||0;
   function tick(){
@@ -21,13 +36,13 @@ const VideoPlayer=(()=>{
    const limit=Math.max(0,width-total.offsetWidth-current.offsetWidth-34);
    current.style.left=Math.max(0,Math.min(target,limit))+'px';
    slash.hidden=target<limit;slash.style.right=(total.offsetWidth+16)+'px';
-   toggle.innerHTML=icon(!video.paused);toggle.setAttribute('aria-label',video.paused?'Play video':'Pause video');
+   control.paint(!video.paused);
   }
   function refresh(){
    const bounds=options.bounds?.()||{width:shell.parentElement.clientWidth,height:Infinity};
    const w=video.videoWidth||posterWidth||16,h=video.videoHeight||posterHeight||9;
    const scale=Math.min(bounds.width/w,Math.max(1,bounds.height-54)/h);
-   const width=w*scale,height=h*scale;shell.style.width=bounds.width+'px';picture.style.width=width+'px';picture.style.height=height+'px';tick();
+   const width=w*scale,height=h*scale;shell.style.width=bounds.width+'px';picture.style.width=width+'px';picture.style.height=height+'px';control.size(width,height);tick();
    return {width,height,totalHeight:height+54};
   }
   async function prepare(){
@@ -57,5 +72,5 @@ const VideoPlayer=(()=>{
   players.set(video,api);video.sharedPlayer=api;refresh();return api;
  }
  new MutationObserver(()=>{for(const [video,player] of players)if(!video.isConnected)player.dispose();}).observe(document.body,{childList:true,subtree:true});
- return {mount};
+ return {mount,styleToggle};
 })();
