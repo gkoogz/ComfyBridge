@@ -1,4 +1,4 @@
-"""Confirmed, durable Civitai LoRA downloads. Never loads weights or overwrites a model."""
+"""Confirmed, durable Civitai model downloads. Never loads weights or overwrites a model."""
 import errno
 import hashlib
 import json
@@ -19,14 +19,16 @@ import psutil
 from model_library import API, LOCK, CivitaiRedirect, fetch, plain, request_for, roots
 
 MAX_BYTES=16*1024**3
+CHECKPOINT_MAX_BYTES=64*1024**3
 RESERVE=512*1024**2
 LORA_TYPES={'lora','locon','lycoris','dora'}
 EMBEDDING_TYPES={'textualinversion','embedding'}
+DOWNLOAD_KINDS={**dict.fromkeys(LORA_TYPES,'loras'),**dict.fromkeys(EMBEDDING_TYPES,'embeddings'),'checkpoint':'checkpoints'}
 
 
 def version_id(value):
     value=str(value or '')
-    if not re.fullmatch('[1-9][0-9]{0,18}',value):raise ValueError('A Civitai LoRA version is required.')
+    if not re.fullmatch('[1-9][0-9]{0,18}',value):raise ValueError('A Civitai model version is required.')
     return value
 
 
@@ -140,12 +142,13 @@ class Downloads:
         if current['status'] in ('installed','queued','downloading','verifying'):return dict(current,versionId=version)
         try:raw=json.loads(fetch(API+'model-versions/'+version,token=self.library.token()))
         except urllib.error.HTTPError as error:
-            if error.code in (401,403):raise ValueError('Civitai requires access to this LoRA. Check the PC Civitai key and your account access.') from None
-            if error.code==404:raise ValueError('This LoRA version is no longer available on Civitai.') from None
-            raise ValueError('Civitai could not load this LoRA. Try again.') from None
-        if not isinstance(raw,dict) or not re.fullmatch('[1-9][0-9]{0,18}',str(raw.get('modelId',''))) or str(raw.get('id'))!=version or str((raw.get('model') or {}).get('type','')).lower() not in LORA_TYPES|EMBEDDING_TYPES:
-            raise ValueError('This resource is not a downloadable LoRA or embedding.')
-        kind='embeddings' if str(raw['model']['type']).lower() in EMBEDDING_TYPES else 'loras'
+            if error.code in (401,403):raise ValueError('Civitai requires access to this model. Check the PC Civitai key and your account access.') from None
+            if error.code==404:raise ValueError('This model version is no longer available on Civitai.') from None
+            raise ValueError('Civitai could not load this model. Try again.') from None
+        if not isinstance(raw,dict) or not re.fullmatch('[1-9][0-9]{0,18}',str(raw.get('modelId',''))) or str(raw.get('id'))!=version or str((raw.get('model') or {}).get('type','')).lower() not in DOWNLOAD_KINDS:
+            raise ValueError('This resource is not a downloadable checkpoint, LoRA or embedding.')
+        kind=DOWNLOAD_KINDS[str(raw['model']['type']).lower()]
+        limit=CHECKPOINT_MAX_BYTES if kind=='checkpoints' else MAX_BYTES
         extensions=('.safetensors','.pt','.bin') if kind=='embeddings' else ('.safetensors',)
         files=[];rejected=[]
         for file in raw.get('files') or []:
@@ -155,11 +158,13 @@ class Downloads:
             try:name=filename(file['name'],kind);url=download_url(file.get('downloadUrl',''),version,file.get('id'))
             except ValueError as error:rejected.append(str(error));continue
             size=file.get('sizeKB')
-            if type(size) not in (int,float) or not math.isfinite(size) or not 0<size<=MAX_BYTES/1024:rejected.append('The file size is missing, invalid or exceeds the 16 GB limit.');continue
+            if type(size) not in (int,float) or not math.isfinite(size) or not 0<size<=limit/1024:rejected.append(f'The file size is missing, invalid or exceeds the {limit//1024**3} GiB limit.');continue
             if file.get('virusScanResult')=='Danger' or file.get('pickleScanResult')=='Danger':rejected.append('Civitai flagged this file as unsafe.');continue
             files.append((file,name,url,digest,round(size*1024)))
-        if not files:raise ValueError(rejected[0] if rejected else 'This LoRA listing has no downloadable SafeTensor model file.')
-        file,name,url,digest,size=next((f for f in files if f[0].get('primary')),files[0])
+        if not files:raise ValueError(rejected[0] if rejected else 'This listing has no downloadable supported model file.')
+        full = [entry for entry in files if str((entry[0].get('metadata') or {}).get('size','')).lower()=='full']
+        eligible = full if kind=='checkpoints' and full else files
+        file,name,url,digest,size=next((entry for entry in eligible if entry[0].get('primary')),eligible[0])
         existing=self.installed(version,digest)
         if existing:return dict(status='installed',name=existing,versionId=version)
         folder=roots(self.library.root)[kind][0]
@@ -233,24 +238,25 @@ class Downloads:
             except urllib.error.HTTPError as error:
                 self.update(row['version'],status='error',error='Civitai denied the download. Check the PC key and account access.' if error.code in (401,403) else 'Model download failed (HTTP '+str(error.code)+'). Tap + to retry.')
             except (OSError,ValueError,sqlite3.Error) as error:
-                message=str(error) if isinstance(error,ValueError) else 'The LoRA download was interrupted or the PC could not save it. Tap + to retry.'
+                message=str(error) if isinstance(error,ValueError) else 'The model download was interrupted or the PC could not save it. Tap + to retry.'
                 self.update(row['version'],status='error',error=message[:500])
 
     def transfer(self, plan):
         kind=plan.get('kind','loras')
-        if kind not in ('loras','embeddings'):raise ValueError('Unsupported download destination')
+        if kind not in DOWNLOAD_KINDS.values():raise ValueError('Unsupported download destination')
+        limit=CHECKPOINT_MAX_BYTES if kind=='checkpoints' else MAX_BYTES
         folder=roots(self.library.root)[kind][0];folder.mkdir(parents=True,exist_ok=True)
         staging=folder/'.comfybridge-downloads';staging.mkdir(exist_ok=True)
         part=staging/(plan['versionId']+'-'+plan['sha256']+'.part')
         digest=hashlib.sha256();received=0;last=0
         try:
-            if shutil.disk_usage(folder).free<plan['bytes']+RESERVE:raise ValueError('Not enough free disk space on the PC for this LoRA.')
+            if shutil.disk_usage(folder).free<plan['bytes']+RESERVE:raise ValueError('Not enough free disk space on the PC for this model.')
             with open_download(download_url(plan['url'],plan['versionId']),self.library.token()) as response, part.open('wb') as out:
                 length=response.headers.get('Content-Length')
-                if length and (not length.isdigit() or int(length)>MAX_BYTES):raise ValueError('The model download exceeds the supported file size.')
+                if length and (not length.isdigit() or int(length)>limit):raise ValueError('The model download exceeds the supported file size.')
                 for block in iter(lambda:response.read(1024*1024),b''):
                     received+=len(block)
-                    if received>MAX_BYTES or received>plan['bytes']+1024*1024:raise ValueError('Civitai returned a different file size. Nothing was installed.')
+                    if received>limit or received>plan['bytes']+1024*1024:raise ValueError('Civitai returned a different file size. Nothing was installed.')
                     out.write(block);digest.update(block)
                     if time.monotonic()-last>=.5:self.update(plan['versionId'],received=received);last=time.monotonic()
                 out.flush();os.fsync(out.fileno())

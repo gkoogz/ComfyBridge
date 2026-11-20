@@ -13,7 +13,7 @@ let syncing=false,filling=false,nextSync=0,inventory='',shelfError='';
 function local(op,args={}){return new Promise((resolve,reject)=>{const id=++rpcId;pending.set(id,{resolve,reject});Native.localMedia(id,op,JSON.stringify(args));});}
 const signature=items=>items.map(j=>j.id+':'+j.archived+':'+(j.rating||0)).sort().join(',');
 function showShelf(){if(page==='library'){if(!viewerOpen())renderLibrary();else galleryDirty=true;}else if($('#result'))renderResults();}
-function setShelf(items){library=items.filter(j=>j.source!=='missing'||j.local).sort((a,b)=>b.created-a.created||b.id.localeCompare(a.id));showShelf();refreshRatings();notice();}
+function setShelf(items){library=items.filter(j=>!j.expired&&(j.source!=='missing'||j.local)).sort((a,b)=>b.created-a.created||b.id.localeCompare(a.id));showShelf();refreshRatings();notice();}
 function updateItem(j){setShelf(library.filter(x=>x.id!==j.id).concat(j));}
 const originalTransfers=new Map();
 function fetchOriginal(id,prefetch=false){

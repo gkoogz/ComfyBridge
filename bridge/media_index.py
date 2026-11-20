@@ -37,7 +37,66 @@ def with_ratings(items, data):
     return items
 
 
+ARCHIVE_RETENTION = 30*24*60*60
+
+
+def archive_media(db, identity, archived, now=None):
+    stamp = time.time() if now is None else now
+    with db:
+        changed = db.execute('UPDATE media SET archived=? WHERE id=? AND archived<2',
+                             (int(archived), identity)).rowcount
+        if not changed:
+            return False
+        if archived:
+            db.execute('INSERT OR IGNORE INTO media_archive_dates VALUES (?,?)', (identity, stamp))
+        else:
+            db.execute('DELETE FROM media_archive_dates WHERE id=?', (identity,))
+    return True
+
+
+def expire_archive(db, root, now=None):
+    """Remove expired media from the library after moving the original to recovery."""
+    now = time.time() if now is None else now
+    with db:
+        db.execute('INSERT OR IGNORE INTO media_archive_dates SELECT id,? FROM media WHERE archived=1', (now,))
+    if db.execute("SELECT 1 FROM jobs WHERE status IN ('pending','submitting','running','cancelling') LIMIT 1").fetchone():
+        return
+    output = (root/'output').resolve()
+    generated = (output/'ComfyBridge').resolve()
+    recovery = output/'.comfybridge-recycle'
+    if not generated.is_dir() or recovery.is_symlink() or recovery.resolve() != recovery:
+        return
+    due = db.execute("""
+        SELECT media.id,media.path FROM media JOIN media_archive_dates USING(id)
+        WHERE media.archived=1 AND media_archive_dates.stamp<=?
+    """, (now-ARCHIVE_RETENTION,)).fetchall()
+    for identity, original in due:
+        if len(identity)!=32 or any(ch not in '0123456789abcdef' for ch in identity):
+            continue
+        try:
+            src = Path(original).resolve()
+            if not src.is_relative_to(generated):
+                continue
+            folder = recovery/identity
+            if folder.resolve() != folder:
+                continue
+            dest = folder/src.name
+            if src.is_file():
+                folder.mkdir(parents=True, exist_ok=True)
+                if dest.exists():
+                    continue
+                src.rename(dest)
+            elif not dest.is_file():
+                continue
+        except (OSError, RuntimeError):
+            continue
+        with db:
+            db.execute('UPDATE media SET archived=2 WHERE id=?', (identity,))
+
+
 def media_manifest(items, root, cache_dir):
+    expired = [item['id'] for item in items if item['archived']==2]
+    items = [item for item in items if item['archived']!=2]
     with_ratings(items, cache_dir)
     # The worker sleeps between visits. Keep hashes across restarts so checking
     # the library normally requires only a file stat, not rereading every MP4.
@@ -80,7 +139,7 @@ def media_manifest(items, root, cache_dir):
             pass  # A busy/readonly hash cache cannot invalidate a verified transfer.
         finally:
             cache.close()
-    return {'version': 1, 'items': items}
+    return {'version': 1, 'items': items, 'expired': expired}
 
 if __name__ == '__main__':
     root = Path(json.loads(Path(__file__).with_name('config.json').read_text(encoding='utf-8-sig'))['comfyRoot'])

@@ -701,7 +701,7 @@ const CivitaiBrowser=(()=>{
   if(!small){
    const caption=document.createElement('div');
    caption.className='browseCaption';
-   caption.innerHTML=(view.kind==='creator'?'':button(esc(item.credit||'Creator'),'class="feedAuthor"')+profileButton(item.credit)+'<span class="feedFollowing" aria-label="Following" '+(following(item)?'':'hidden')+'>✓</span>'+button('<svg viewBox="0 0 24 24"><path d="M9 2h6M12 2v3m6 1 2 2M12 9v5l3 2"/><circle cx="12" cy="14" r="8"/></svg>','class="feedTimeout" aria-label="Silence creator for two hours"'))+
+   caption.innerHTML=(view.kind==='creator'?'':button(esc(item.credit||'Creator'),'class="feedAuthor"')+'<span class="feedFollowing" aria-label="Following" '+(following(item)?'':'hidden')+'>✓</span>'+button('<svg viewBox="0 0 24 24"><path d="M9 2h6M12 2v3m6 1 2 2M12 9v5l3 2"/><circle cx="12" cy="14" r="8"/></svg>','class="feedTimeout" aria-label="Silence creator for two hours"'))+
     '<div class="feedReactions">'+button(reactionLabel(item),'data-feed-react="Like" aria-label="Like" aria-pressed="'+(item.reactions||[]).includes('Like')+'"')+'</div>'+
     button('<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h12v18l-6-4-6 4z"/></svg>','class="feedCollect '+(membershipIds(item.collections).length?'bookmarked':'')+'" aria-label="Add to collection"');
    el.append(caption);
@@ -714,7 +714,6 @@ const CivitaiBrowser=(()=>{
      openSubject('creator',item.creatorId,item.credit);
     }catch(error){toast(error.message);}
    });
-   $('[data-creator-profile]',caption)?.addEventListener('click',()=>profile(item.credit));
    const boundAccount=account;
    $('.feedTimeout',caption)?.addEventListener('click',async e=>{
     const b=e.currentTarget;b.disabled=true;
@@ -785,10 +784,10 @@ const CivitaiBrowser=(()=>{
   saveView();
   view={kind,id:String(id),name,filter:'all'};
   feed=[];cursor='';feedEnded=false;emptyPages=0;
-  $('#main').innerHTML='<section class="civitaiBrowse"><div class="subjectHeading">'+button('‹','class="browseBack" aria-label="Back"')+(kind==='creator'?avatarHTML({creatorId:String(id),credit:name}):'')+'<h2>'+(kind==='creator'?button(esc(name),'class="profileName" aria-label="Open '+esc(name)+' profile"'):esc(name))+'</h2>'+(kind==='creator'?profileButton(name)+button('Follow','class="creatorFollow" data-follow-creator="'+esc(id)+'"'):'')+'<div class="subjectFilters">'+
+  $('#main').innerHTML='<section class="civitaiBrowse"><div class="subjectHeading">'+button('‹','class="browseBack" aria-label="Back"')+(kind==='creator'?avatarHTML({creatorId:String(id),credit:name}):'')+'<h2>'+(kind==='creator'?button(esc(name),'class="profileName" aria-label="Open '+esc(name)+' profile"'):esc(name))+'</h2>'+(kind==='creator'?button('Follow','class="creatorFollow" data-follow-creator="'+esc(id)+'"'):'')+'<div class="subjectFilters">'+
    [['image','▧','Images'],['video','▷','Videos'],['all','▦','All media']].map(([value,icon,label])=>button(icon,'data-media-filter="'+value+'" aria-label="'+label+'" title="'+label+'" aria-pressed="'+(value==='all')+'"')).join('')+'</div></div><p id="browseError" class="warning" role="status"></p><div id="browseFeed" class="browseFeed"></div>'+pullerHTML()+'</section>';
   $('.browseBack').onclick=back;wireAvatars($('.subjectHeading'));
-  if(kind==='creator'){$('.profileName').onclick=()=>profile(name);$('[data-creator-profile]',$('.subjectHeading')).onclick=()=>profile(name);$('.creatorFollow').onclick=e=>changeFollow(e.currentTarget,id);paintSocial();}
+  if(kind==='creator'){$('.profileName').onclick=()=>profile(name);$('.creatorFollow').onclick=e=>changeFollow(e.currentTarget,id);paintSocial();}
   $$('[data-media-filter]').forEach(b=>b.onclick=()=>{
    view.filter=b.dataset.mediaFilter;
    $$('[data-media-filter]').forEach(other=>other.setAttribute('aria-pressed',String(other===b)));
@@ -1138,11 +1137,11 @@ const CivitaiBrowser=(()=>{
   };
  }
  function resourcesHTML(resources,chosen={}){return '<ul class="modelPreviewResources civitaiResources">'+[...resources].sort((a,b)=>Number(/checkpoint/i.test(b.type))-Number(/checkpoint/i.test(a.type))).map(r=>{
-  const isLora=/lora|locon|lycoris|embedding|textualinversion/i.test(r.type),url=r.modelId?'https://civitai.com/models/'+r.modelId+(r.versionId?'?modelVersionId='+r.versionId:''):'';
+  const downloadable=/^(checkpoint|lora|locon|lycoris|dora|embedding|textualinversion)$/i.test(r.type),url=r.modelId?'https://civitai.com/models/'+r.modelId+(r.versionId?'?modelVersionId='+r.versionId:''):'';
   const hasWeight=r.weight!==''&&r.weight!=null;
   const version=r.version||r.versionId||'';
   return '<li data-listed-version="'+esc(r.versionId||'')+'" data-model-id="'+esc(r.modelId||'')+'">'+
-   (isLora&&r.versionId?button('＋','class="resourceDownload" data-resource-download="'+esc(r.versionId)+'" data-civi-download="'+esc(r.versionId)+'" aria-label="Download resource"'):'')+
+   (downloadable&&/^[1-9][0-9]*$/.test(String(r.versionId))?button('＋','class="resourceDownload" data-resource-download="'+esc(r.versionId)+'" data-civi-download="'+esc(r.versionId)+'" aria-label="Download resource"'):'')+
    '<div class="civitaiResourceRow">'+(url?button(esc(r.name||r.type),'class="resourceName '+(chosen.kind==='lora'&&String(chosen.id)===String(r.versionId)?'chosenSource':'')+'" data-civi-link="'+esc(url)+'"'):'<strong class="resourceName">'+esc(r.name||r.type)+'</strong>')+
    '<span class="resourceType">'+esc(r.type)+'</span></div><small class="resourceMeta"><span class="resourceVersion" data-label="'+esc(version)+'">'+esc(version)+'</span>'+(version&&hasWeight?'<span aria-hidden="true">·</span>':'')+(hasWeight?'<span class="resourceStrength">Strength '+esc(r.weight)+'</span>':'')+'</small><div data-download-status="'+esc(r.versionId)+'"></div></li>';
 
@@ -1174,7 +1173,14 @@ const CivitaiBrowser=(()=>{
      const installed=s.status==='installed',active=['queued','downloading','verifying'].includes(s.status);running ||= active;finished ||= installed&&b.dataset.wasActive==='true';if(active)b.dataset.wasActive='true';if(installed)delete b.dataset.wasActive;
      paintDownload(b,s.status);
      if(s.error)$('[data-download-status="'+b.dataset.civiDownload+'"]',host).textContent=s.error;
-    }if(finished){const listing=await api('model-library');modelListings=listing.items||[];if(catalog){catalog.listings=modelListings;catalog.loras=[...new Set([...(catalog.loras||[]),...modelListings.filter(i=>i.kind==='loras').map(i=>i.name)])];}await ModelPreviews.register(modelListings,listing.nsfwHidden,listing.scanning);if(modelBrowser?.type==='embeddings'&&$('#modal').open)paintModelBrowser(modelBrowser);}if(running)setTimeout(update,1800);
+    }if(finished){const listing=await api('model-library');modelListings=listing.items||[];if(catalog){
+      const modelNames=kind=>modelListings.filter(i=>i.kind===kind).map(i=>i.name);
+      catalog.listings=modelListings;
+      catalog.loras=[...new Set([...(catalog.loras||[]),...modelNames('loras')])];
+      catalog.models=[...new Set([...(catalog.models||[]),...modelNames('checkpoints')])];
+      const select=page==='image'&&document.querySelector('.checkpointPicker select');
+      if(select)for(const name of catalog.models)if(!Array.from(select.options).some(o=>o.value===name))select.add(new Option(imageModelLabel(name),name));
+    }await ModelPreviews.register(modelListings,listing.nsfwHidden,listing.scanning);if(modelBrowser?.type==='embeddings'&&$('#modal').open)paintModelBrowser(modelBrowser);}if(running)setTimeout(update,1800);
    }catch(e){for(const b of buttons)b.title=e.message;}
   }
   buttons.forEach(b=>b.onclick=async()=>{const dest=$('[data-download-status="'+b.dataset.civiDownload+'"]',host);b.dataset.downloadPhase='preparing';paintDownload(b,'preparing');dest.textContent='Checking download…';
@@ -1184,7 +1190,7 @@ const CivitaiBrowser=(()=>{
     b.dataset.downloadPhase='confirming';paintDownload(b,'confirming');
     dest.innerHTML='<div class="resourceDownloadConfirm"><strong>'+esc(plan.title)+'</strong><p>'+esc([plan.version,plan.baseModel].filter(Boolean).join(' · '))+' · '+esc(modelSize(plan.bytes))+'</p><small>'+esc(plan.filename||'')+'</small><div class="row">'+button('Download to PC','class="green" data-accept-download')+button('Cancel','data-reject-download')+'</div></div>';
     $('[data-reject-download]',dest).onclick=()=>{dest.replaceChildren();delete b.dataset.downloadPhase;paintDownload(b,'available');};
-    $('[data-accept-download]',dest).onclick=async()=>{b.dataset.downloadPhase='starting';paintDownload(b,'starting');dest.textContent='Starting download…';try{const result=await api('lora-download/start',{confirmation:plan.confirmation});delete b.dataset.downloadPhase;paintDownload(b,result.status);dest.textContent=result.status==='installed'?'':'Downloading on your PC…';await update();}catch(e){delete b.dataset.downloadPhase;dest.textContent=e.message;paintDownload(b,'available');}};
+    $('[data-accept-download]',dest).onclick=async()=>{b.dataset.downloadPhase='starting';b.dataset.wasActive='true';paintDownload(b,'starting');dest.textContent='Starting download…';try{const result=await api('lora-download/start',{confirmation:plan.confirmation});delete b.dataset.downloadPhase;paintDownload(b,result.status);dest.textContent=result.status==='installed'?'':'Downloading on your PC…';await update();}catch(e){delete b.dataset.downloadPhase;dest.textContent=e.message;paintDownload(b,'available');}};
    }catch(e){delete b.dataset.downloadPhase;dest.textContent=e.message;paintDownload(b,'available');}
   });update();
  }
@@ -1202,9 +1208,6 @@ const CivitaiBrowser=(()=>{
   $$('[data-via-creator]',host).forEach(b=>b.onclick=()=>showCreatorFeed({creatorId:b.dataset.viaCreator,credit:item.chosenBy.via.name}));
   $$('[data-follow-creator]',host).forEach(b=>b.onclick=()=>changeFollow(b,b.dataset.followCreator));
   $$('.sourceLora',host).forEach(b=>b.onclick=()=>openModelSource(b.dataset.civiLink));
- }
- function profileButton(name){
-  return name?button('↗','class="creatorProfile" data-creator-profile aria-label="Open Civitai profile for '+esc(name)+'"'):'';
  }
  function socialHTML(item,collections){
   return '<div class="socialTop"><div class="civitaiAuthor">'+button(avatarHTML(item),'class="avatarFeed" data-creator-feed aria-label="Open creator feed"')+button(esc(item.credit||'Unknown creator'),'class="creatorName '+(item.chosenBy?.kind==='creator'&&String(item.chosenBy.id)===String(item.creatorId)?'chosenSource':'')+'" data-creator-feed')+(item.creatorId?button(following(item)?'Following ✓':'Follow','class="viewerFollow '+(following(item)?'selected':'')+'" data-follow-creator="'+esc(item.creatorId)+'" aria-pressed="'+following(item)+'"'):'')+(item.chosenBy?.kind==='curation'?discoveryHTML(item):'')+'</div><div class="civitaiReactions">'+button(reactionLabel(item),'data-civi-react="Like" aria-label="Like" aria-pressed="'+(item.reactions||[]).includes('Like')+'"')+button(ribbonIcon,'class="viewerCollect '+(membershipIds(item.collections).length?'bookmarked':'')+'" aria-label="Add to collection"')+'</div></div><p class="civitaiActionError warning" role="status"></p>';

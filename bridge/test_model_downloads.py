@@ -50,6 +50,17 @@ class DownloadTests(unittest.TestCase):
         (self.folder/'pottery.safetensors').unlink()
         self.assertEqual(self.downloads.status(['11'],{'11':'8'})['11'],dict(status='available'))
 
+    def test_full_checkpoint_download_uses_checkpoint_folder(self):
+        self.raw['model']['type']='Checkpoint'
+        self.raw['files'][0].update(name='pruned.safetensors',metadata=dict(size='pruned'))
+        self.raw['files'].append(dict(self.raw['files'][0],name='model.safetensors',primary=False,metadata=dict(size='full')))
+        plan=self.queue()
+        self.assertEqual(plan['filename'],'model.safetensors')
+        self.finish()
+        self.assertEqual((self.root/'models/checkpoints/model.safetensors').read_bytes(),self.payload)
+        self.assertEqual(self.downloads.status(['7'])['7']['status'],'installed')
+        self.assertEqual(self.library.snapshot()['items'][0]['kind'],'checkpoints')
+
     def test_embedding_download_goes_to_embeddings_and_preserves_extension(self):
         self.raw['model']['type']='TextualInversion';self.raw['files'][0]['name']='pottery token.pt'
         plan=self.queue();self.assertEqual(plan['filename'],'pottery_token.pt');self.assertTrue(plan['destination'].endswith('embeddings'))
@@ -154,7 +165,7 @@ class DownloadTests(unittest.TestCase):
     def test_wrong_resource_type_pickle_missing_hash_and_bad_urls_are_rejected(self):
         for change in ('type','pickle','hash','url'):
             raw=json.loads(json.dumps(self.raw))
-            if change=='type':self.raw['model']['type']='Checkpoint'
+            if change=='type':self.raw['model']['type']='Upscaler'
             if change=='pickle':self.raw['files'][0]['name']='weights.ckpt'
             if change=='hash':self.raw['files'][0]['hashes']={}
             if change=='url':self.raw['files'][0]['downloadUrl']='http://127.0.0.1/secret'

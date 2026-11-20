@@ -47,7 +47,7 @@ const assert=require('node:assert/strict'),path=require('node:path');
   await p.waitForSelector('.subjectFilters');
   const followBox=await p.locator('.creatorFollow').boundingBox(),nameBox=await p.locator('.profileName').boundingBox();
   assert(followBox.x>nameBox.x);
-  await p.locator('.subjectHeading [data-creator-profile]').click();assert.equal(await p.evaluate(()=>window.profileURL),'https://civitai.red/user/Potter');
+  await p.locator('.subjectHeading .profileName').click();assert.equal(await p.evaluate(()=>window.profileURL),'https://civitai.red/user/Potter');
   await p.locator('.creatorFollow').click();assert.equal(await p.locator('.creatorFollow').textContent(),'Following ✓');
   if(process.env.BROWSE_SHOTS)await p.screenshot({path:path.join(process.env.BROWSE_SHOTS,'browse-artist-'+width+'.png')});
   await p.locator('.creatorFollow').click();assert.equal(await p.locator('.creatorFollow').textContent(),'Follow');
@@ -105,7 +105,9 @@ const assert=require('node:assert/strict'),path=require('node:path');
   assert(await p.locator('.feedCollect').first().evaluate(el=>el.classList.contains('bookmarked')));
   await p.locator('.browseTile .browseMedia').first().click();await p.waitForSelector('.civitaiAuthor');
   assert.equal(await p.locator('.civitaiResourceHost .resourceType').count(),2);
-  await p.waitForFunction(()=>document.querySelector('[data-civi-download]')?.disabled===true);
+  await p.waitForFunction(()=>[...document.querySelectorAll('[data-civi-download]')].some(b=>b.dataset.civiDownload==='12'&&b.disabled));
+  const checkpoint=p.locator('.civitaiResources [data-civi-download="13"]');
+  assert(await checkpoint.isEnabled());
   const media=await p.locator('.civitaiViewer .modelPreviewHero img').evaluate(el=>getComputedStyle(el).objectFit);assert.equal(media,'contain');
   await p.waitForTimeout(80);
   assert.equal(await p.locator('.civitaiViewer .modelPreviewPeek').count(),0);
@@ -134,7 +136,7 @@ const assert=require('node:assert/strict'),path=require('node:path');
   const mismatch=p.locator('.civitaiResources .differentVersion');
   assert.equal(await mismatch.locator('.resourceVersion').textContent(),'v2. Yours: v1');
   assert.equal(await mismatch.locator('.resourceName').evaluate(e=>getComputedStyle(e).color),'rgb(255, 218, 117)');
-  const placement=await p.locator('.civitaiResources .resourceDownload').evaluate(b=>{
+  const placement=await p.locator('.civitaiResources .resourceDownload[data-civi-download="12"]').evaluate(b=>{
    const li=b.closest('li'),r=b.getBoundingClientRect(),name=li.querySelector('.resourceName').getBoundingClientRect(),meta=li.querySelector('.resourceVersion').getBoundingClientRect(),box=li.getBoundingClientRect();
    return r.right<=name.left&&Math.abs(name.left-meta.left)<2&&Math.abs(r.top+r.height/2-box.top-box.height/2)<2;
   });assert(placement);

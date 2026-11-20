@@ -2,7 +2,7 @@ import asyncio
 import base64
 import hashlib
 import re
-from media_index import media_manifest, with_ratings
+from media_index import archive_media, expire_archive, media_manifest, with_ratings
 import io
 import json
 import logging
@@ -62,6 +62,7 @@ CREATE TABLE IF NOT EXISTS jobs(id TEXT PRIMARY KEY, batch TEXT, kind TEXT, sett
  created REAL, ordinal INTEGER, total INTEGER);
 CREATE TABLE IF NOT EXISTS media(id TEXT PRIMARY KEY, job TEXT, kind TEXT, path TEXT UNIQUE,
  thumbnail TEXT, duration REAL, created REAL, archived INTEGER DEFAULT 0);
+CREATE TABLE IF NOT EXISTS media_archive_dates(id TEXT PRIMARY KEY, stamp REAL NOT NULL);
 CREATE TABLE IF NOT EXISTS profiles(device TEXT PRIMARY KEY, name TEXT, modified REAL, state TEXT);
 CREATE TABLE IF NOT EXISTS stage_cost(kind TEXT, node TEXT, factor REAL, PRIMARY KEY(kind,node));
 ''')
@@ -907,7 +908,7 @@ async def api(request):
                     j['etaSeconds']=None
                 else:
                     j['progress'],j['current_node']=TRACKER.sample()
-        return web.json_response(dict(protocol=20,build='0.1.0-beta.126',jobs=jobs, active=ACTIVE, preview=bool(PREVIEW), previewRevision=PREVIEW_REV,ownedComfy=bool(OWNED),queueEtaSeconds=total_eta))
+        return web.json_response(dict(protocol=20,build='0.1.0-beta.127',jobs=jobs, active=ACTIVE, preview=bool(PREVIEW), previewRevision=PREVIEW_REV,ownedComfy=bool(OWNED),queueEtaSeconds=total_eta))
     if path.startswith('preview/'):
         job=str(uuid.UUID(path[8:]))
         after=int(request.query.get('after','-1'))
@@ -926,7 +927,7 @@ async def api(request):
     if path == 'preview':
         return web.Response(body=PREVIEW or b'', content_type='image/jpeg')
     if path == 'library':
-        items = rows('SELECT id,job,kind,duration,created,archived FROM media ORDER BY created DESC')
+        items = rows('SELECT id,job,kind,duration,created,archived FROM media WHERE archived<2 ORDER BY created DESC')
         return web.json_response(with_ratings(items,DATA))
     if path.startswith('extension/'):
         media_id = path.split('/',1)[1]
@@ -940,13 +941,14 @@ async def api(request):
         parts = path.split('/')
         if parts[0]=='thumb' and re.fullmatch(r'(upload|recipe)-[0-9a-f]{64}',parts[1]):
             return web.FileResponse(extension.source_path(DB,ROOT,parts[1]).with_suffix('.jpg'))
-        item = rows('SELECT * FROM media WHERE id=?', (parts[1],))
+        item = rows('SELECT * FROM media WHERE id=? AND archived<2', (parts[1],))
         if not item:
             raise web.HTTPNotFound()
         return web.FileResponse(item[0]['path' if parts[0] == 'media' else 'thumbnail'])
     if path == 'archive' and request.method == 'POST':
         d = await request.json()
-        DB.execute('UPDATE media SET archived=? WHERE id=?', (int(bool(d['archived'])), d['id'])); DB.commit()
+        if not archive_media(DB, d['id'], bool(d['archived'])):
+            raise web.HTTPNotFound()
         return web.json_response({'ok': True})
     if path == 'upload-video' and request.method == 'POST':
         size=request.content_length
@@ -1121,10 +1123,20 @@ async def api(request):
 async def start(app):
     global SESSION
     SESSION = aiohttp.ClientSession()
+    expire_archive(DB, ROOT)
     await asyncio.to_thread(MODEL_DOWNLOADS.recover)
-    app['tasks'] = [asyncio.create_task(f()) for f in (run_jobs, websocket, idle_watch, model_watch)]
+    app['tasks'] = [asyncio.create_task(f()) for f in (run_jobs, websocket, idle_watch, model_watch, archive_watch)]
     app['tasks'].append(asyncio.create_task(asyncio.to_thread(CIVITAI_BROWSER.bank.bootstrap)))
     CIVITAI_BROWSER.social.start()
+
+
+async def archive_watch():
+    while True:
+        await asyncio.sleep(3600)
+        try:
+            expire_archive(DB, ROOT)
+        except (OSError, sqlite3.Error):
+            logging.exception('Archive cleanup will retry')
 
 
 async def model_watch():

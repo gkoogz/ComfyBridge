@@ -132,7 +132,7 @@ def history_rows(db):
         SELECT j.id,j.batch,j.kind,j.owner,j.status,j.created,t.started,
           COALESCE(t.ended,m.created) AS ended,t.observed,m.id AS media
         FROM jobs j LEFT JOIN job_times t ON t.job=j.id
-        LEFT JOIN media m ON m.rowid=(SELECT MIN(rowid) FROM media WHERE job=j.id)
+        LEFT JOIN media m ON m.rowid=(SELECT MIN(rowid) FROM media WHERE job=j.id AND archived<2)
         WHERE j.status IN {LIVE} OR COALESCE(t.ended,m.created,j.created)>=?
         ORDER BY CASE WHEN j.status IN ('running','submitting','cancelling') THEN 0
                       WHEN j.status='pending' THEN 1 ELSE 2 END,
@@ -238,7 +238,7 @@ def notes_sync(db, change, device):
 def desktop_file(db, root, data, body):
     """Local host only: resolve an indexed result, never a caller-supplied path."""
     media_id=uuid.UUID(body['id']).hex
-    row=db.execute('SELECT path,thumbnail FROM media WHERE id=?',(media_id,)).fetchone()
+    row=db.execute('SELECT path,thumbnail FROM media WHERE id=? AND archived<2',(media_id,)).fetchone()
     if row is None:
         raise ValueError('That item is no longer in the PC library.')
     thumbnail=body.get('thumbnail',False)

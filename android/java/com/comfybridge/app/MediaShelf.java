@@ -42,6 +42,11 @@ final class MediaShelf {
  void reconcile(JSONObject manifest)throws Exception{
   if(manifest.getInt("version")!=1)throw new IOException("Update the Windows bridge for local media sync.");
   JSONArray all=manifest.getJSONArray("items");Set<String> present=new HashSet<>();int count=0;
+  Set<String> expired=new HashSet<>();JSONArray removed=manifest.optJSONArray("expired");
+  if(removed!=null)for(int i=0;i<removed.length();i++){
+   String id=removed.getString(i);if(!idOK(id))throw new IOException("Invalid expired media ID.");
+   expired.add(id);
+  }
   db.beginTransaction();try{
    for(int i=0;i<all.length();i++){JSONObject j=all.getJSONObject(i);String id=j.getString("id"),state=j.getString("source");
     if(!idOK(id)||!present.add(id)||!Arrays.asList("available","missing","unavailable").contains(state))throw new IOException("Invalid PC media index.");
@@ -54,6 +59,7 @@ final class MediaShelf {
     String id=c.getString(0);if(present.contains(id))continue;
     if(c.getString(2).isEmpty()){db.delete("items","id=?",new String[]{id});continue;}
     JSONObject j=new JSONObject(c.getString(1)).put("source","missing");
+    if(expired.contains(id))j.put("expired",true);
     db.execSQL("UPDATE items SET meta=?,recent=0 WHERE id=?",new Object[]{j.toString(),id});
    }}
    db.setTransactionSuccessful();

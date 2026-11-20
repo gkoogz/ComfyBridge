@@ -523,6 +523,35 @@ class BridgeTests(unittest.IsolatedAsyncioTestCase):
         r=await self.client.get('/api/media/'+id,headers={'Authorization':'Bearer integration-test-key','Range':'bytes=0-7'})
         self.assertEqual(r.status,206);self.assertEqual(await r.read(),b'\x89PNG\r\n\x1a\n')
 
+    async def test_media_archive_expires_from_archive_date_and_retires_original(self):
+        await self.submit();self.runner=asyncio.create_task(w.run_jobs());await self.wait_done(1)
+        row=w.rows('SELECT id,path FROM media')[0]
+        identity,original=row['id'],Path(row['path'])
+        contents=original.read_bytes()
+        from media_index import ARCHIVE_RETENTION
+        # Legacy archived items get a new clock even if the generation is much older.
+        w.DB.execute('UPDATE media SET archived=1, created=1 WHERE id=?',(identity,))
+        w.DB.commit()
+        now=ARCHIVE_RETENTION*2
+        w.expire_archive(w.DB,w.ROOT,now)
+        w.expire_archive(w.DB,w.ROOT,now+ARCHIVE_RETENTION-1)
+        self.assertTrue(original.is_file())
+        w.archive_media(w.DB,identity,False,now+20)
+        w.archive_media(w.DB,identity,True,now+21)
+        w.expire_archive(w.DB,w.ROOT,now+ARCHIVE_RETENTION+20)
+        self.assertTrue(original.is_file())
+        w.expire_archive(w.DB,w.ROOT,now+ARCHIVE_RETENTION+21)
+        self.assertFalse(original.exists())
+        recovered=w.ROOT/'output/.comfybridge-recycle'/identity/original.name
+        self.assertEqual(recovered.read_bytes(),contents)
+        _,manifest=await self.request('media-index')
+        self.assertEqual(manifest['items'],[])
+        self.assertEqual(manifest['expired'],[identity])
+        _,library=await self.request('library')
+        self.assertEqual(library,[])
+        r=await self.client.post('/api/archive',json=dict(id=identity,archived=False),headers={'Authorization':'Bearer integration-test-key'})
+        self.assertEqual(r.status,404)
+
     async def test_mask_upload_and_resolution_routing(self):
         img=Image.new('RGBA',(64,96),(0,0,0,0));img.putpixel((20,30),(255,255,255,255));buf=io.BytesIO();img.save(buf,format='PNG')
         r,d=await self.request('upload',{'data':base64.b64encode(buf.getvalue()).decode()});self.assertEqual(r.status,200)

@@ -52,6 +52,7 @@ def node(db, job):
     row,s=settings_for(db,job)
     media=[dict(r) for r in db.execute('SELECT id,job,kind,created,duration,archived FROM media')]
     media_jobs={m['id']:m['job'] for m in media}
+    media=[m for m in media if m['archived']<2]
     outputs=[m for m in media if m['job']==row['id']]
     timing=db.execute('SELECT started,ended,observed FROM job_times WHERE job=?',(job,)).fetchone()
     elapsed=max(0,timing['ended']-timing['started']) if timing and timing['started'] and timing['ended'] else None

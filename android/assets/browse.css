@@ -368,12 +368,11 @@ header.hasBrowseSubject #headerIdentity{min-height:44px}
 .civitaiViewer .metadataCard,.metadataLoading{background:#000}
 .metadataLoading{position:relative;height:200px;overflow:hidden}
 .metadataLoading[hidden],.metadataCard[hidden]{display:none}
-.civitaiAuthor .creatorName,.browseCaption .feedAuthor,.subjectHeading .profileName,.civitaiResources .resourceName{font-weight:700}
+.civitaiAuthor .creatorName,.civitaiResources .resourceName{font-weight:700}
 .civitaiAuthor .avatarFeed{flex:none;border:0;padding:0;background:none;border-radius:50%;line-height:1}
-.browseCaption .creatorProfile,.subjectHeading .creatorProfile,.browseCaption .feedReactions button,.browseCaption .feedCollect,.socialTop .civitaiReactions button[data-civi-react],.socialTop .civitaiReactions .viewerCollect{
+.socialTop .civitaiReactions button[data-civi-react],.socialTop .civitaiReactions .viewerCollect{
  display:inline-flex;align-items:center;justify-content:center;flex:none;box-sizing:border-box;height:34px;min-height:34px;min-width:34px;border:1px solid white;border-radius:8px;padding:4px 6px;color:white;background:#0009
 }
-.browseCaption .creatorProfile,.subjectHeading .creatorProfile{font-size:16px}
 .civitaiResources>li{display:grid;grid-template-columns:36px minmax(0,1fr);column-gap:8px;align-items:center}
 .civitaiResources>li>.resourceDownload{grid-column:1;grid-row:1 / span 2;align-self:center}
 .civitaiResources>li>.civitaiResourceRow,.civitaiResources>li>.resourceMeta{grid-column:2}
