@@ -1,6 +1,6 @@
 # ComfyBridge
 
-**[Open the beta 127 release page](https://github.com/gkoogz/ComfyBridge/releases/tag/v0.1.0-beta.127)** · [Download the Android APK](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.127/ComfyBridge-0.1.0-beta.127.apk) · [Download Windows](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.127/ComfyBridge-Windows-0.1.0-beta.127.zip) · [All releases](https://github.com/gkoogz/ComfyBridge/releases)
+**[Open the beta 128 release page](https://github.com/gkoogz/ComfyBridge/releases/tag/v0.1.0-beta.128)** · [Download the Android APK](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.128/ComfyBridge-0.1.0-beta.128.apk) · [Download Windows](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.128/ComfyBridge-Windows-0.1.0-beta.128.zip) · [All releases](https://github.com/gkoogz/ComfyBridge/releases)
 
 <img src="artwork/comfybridge.png" width="128" alt="ComfyBridge white cube and play icon on black">
 
@@ -9,6 +9,8 @@ An Android remote for an existing Windows ComfyUI installation. The phone edits 
 **Local project:** this PC's canonical checkout is `E:\ComfyBridge`. Source, builds, installed app data, local LLMs and archived work are consolidated there. See [the local folder map](docs/local-layout.md) for private-data exclusions, compatibility links and external ComfyUI dependencies. Run `Start-ComfyBridge.ps1` to open the installed PC panel.
 
 **Working on the project:** agents and contributors should start with [AGENTS.md](AGENTS.md) for the code map, build/test commands, live queue preservation and delivery instructions.
+
+**Beta 128** shows the Browse wave and spinner while feed preferences load. Browse recovers from an unreadable feed checkpoint and indicates when the feed bank is waiting for posts.
 
 **Beta 127** restores the original feed controls and adds full checkpoint downloads from media details. Library media expires after 30 days in the Archive. The PC original moves to `ComfyUI-Zluda/output/.comfybridge-recycle` for recovery. Existing archived media starts its 30-day clock with this update.
 

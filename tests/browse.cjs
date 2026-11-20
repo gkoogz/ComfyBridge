@@ -12,6 +12,10 @@ const assert=require('node:assert/strict'),path=require('node:path');
    heartbeat=poll=syncSettings=()=>{};connected=true;window.calls=[];
    const item={detailVersion:2,generationDataAvailable:true,id:'1',type:'image',credit:'Potter',creatorId:'7',path:'model-preview/browse/1/1/thumb',fullPath:'model-preview/browse/1/1/full',avatarPath:'model-preview/browse/1/1/avatar',width:300,height:600,prompt:'A ceramic vase. <script>bad()</script>',negativePrompt:'blurry',resources:[{name:'Glaze',type:'LORA',versionId:'12',modelId:'20'},{name:'Ceramic Model',type:'Checkpoint',versionId:'13',modelId:'21',version:'v2'}],tags:[{id:12,name:'ceramics',score:5}],reactions:[],stats:{likeCount:10,heartCount:3,laughCount:2,cryCount:1},following:false,collections:[{collectionId:4}],parameters:{steps:20},imageUrl:'https://civitai.com/images/1'};
    api=async (route,body)=>{calls.push({route,body});if(!/^[a-zA-Z0-9_/-]+$/.test(route))throw Error('Invalid request.');
+    if(route==='browse/preferences'&&window.holdPreferences){
+     window.holdPreferences=false;
+     await new Promise((resolve,reject)=>window.finishPreferences=ok=>ok?resolve():reject(Error('Preferences temporarily unavailable')));
+    }
     if(route==='browse/preferences')return {account:'1',items:[{kind:'creator',id:'7',name:'Potter',weight:3,disabled:!!window.weightDisabled},{kind:'tag',id:'12',name:'ceramics',weight:2,disabled:false}]};
     if(route==='browse/action'&&body.kind==='preference'){window.weightDisabled=body.disabled;return {ok:true};}
     if(route.startsWith('browse/memberships/')){if(window.delayMembership)await new Promise(resolve=>window.releaseMembership=resolve);return {account:'1',collections:[{collectionId:4}]};}
@@ -56,8 +60,19 @@ const assert=require('node:assert/strict'),path=require('node:path');
   await p.waitForFunction(()=>calls.some(c=>c.body?.channel==='creator:7:video'));
   await p.evaluate(()=>bridgeBack());
   assert.equal(await p.locator('#workspace').evaluate(el=>el.scrollTop),originalScroll);
+  await p.evaluate(()=>window.holdPreferences=true);
   await p.locator('#browseImport').click();
+  await p.waitForFunction(()=>window.finishPreferences);
+  await p.waitForSelector('#preferencesLoading.fluidRunning');
+  assert(await p.locator('#preferencesLoading .spinner').isVisible());
+  assert(!(await p.locator('#preferencesContent').isVisible()));
+  assert.equal(await p.locator('.weightEmpty').count(),0);
+  await p.evaluate(()=>window.finishPreferences(false));
+  await p.waitForSelector('#retryPreferences');
+  assert(!(await p.locator('#preferencesLoading').isVisible()));
+  await p.locator('#retryPreferences').click();
   await p.waitForSelector('.weightRow');
+  assert(!(await p.locator('#preferencesLoading').isVisible()));
   await p.locator('.weightRow').first().locator('.weightRemove').click();
   await p.waitForSelector('#weightDisabled .weightRow');
   await p.locator('#weightDisabled .weightName').click();

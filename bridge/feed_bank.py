@@ -22,7 +22,7 @@ class FeedBank:
             db.execute('CREATE TABLE IF NOT EXISTS bank_receipts(account TEXT,id TEXT,payload TEXT,stamp REAL,PRIMARY KEY(account,id))')
 
     def read(self, account):
-        with self.b.db() as db:row=db.execute('SELECT payload FROM feed_bank WHERE account=?',(account,)).fetchone()
+        with self.b.db() as db:row=db.execute('SELECT payload FROM feed_bank WHERE account=? AND json_valid(payload)',(account,)).fetchone()
         return json.loads(row[0]) if row else dict(items=[],cursor='',filling=True,retryAt=0)
 
     def write(self, account, state, db=None):
@@ -61,7 +61,7 @@ class FeedBank:
             # Expiry is not an impression. Permit the selector to find it again.
             with b.lock:
                 with b.db() as db:
-                    for row in db.execute('SELECT id,payload FROM feed_sessions WHERE account=?',(account,)).fetchall():
+                    for row in db.execute('SELECT id,payload FROM feed_sessions WHERE account=? AND json_valid(payload)',(account,)).fetchall():
                         session=json.loads(row['payload'])
                         if not session.get('planning'):continue
                         session['seen']=[i for i in session.get('seen',[]) if i not in expired]

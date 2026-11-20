@@ -99,7 +99,7 @@ class Browser:
                 db.execute("INSERT INTO settings VALUES('','collection-index-migrated','true')")
             db.execute('DELETE FROM api_cache WHERE expires<?',(time.time(),))
             # Upgrade existing sessions as recently offered, not proven viewed.
-            for row in db.execute("SELECT account,payload,touched FROM feed_sessions WHERE channel='mix'").fetchall():
+            for row in db.execute("SELECT account,payload,touched FROM feed_sessions WHERE channel='mix' AND json_valid(payload)").fetchall():
                 payload=json.loads(row['payload'])
                 if payload.get('planning'):continue
                 db.executemany('INSERT INTO feed_exposure(account,image,served) VALUES(?,?,?) ON CONFLICT(account,image) DO UPDATE SET served=MAX(served,excluded.served)',
@@ -120,7 +120,12 @@ class Browser:
     def setting(self, account, key, default=None):
         with self.db() as db:
             row = db.execute('SELECT value FROM settings WHERE account=? AND key=?', (account, key)).fetchone()
-        value=json.loads(row[0]) if row else default
+        try:
+            value=json.loads(row[0]) if row else default
+        except json.JSONDecodeError:
+            # A disposable cursor must never block Browse or overwrite account data.
+            if key!='mix-progress':raise
+            return default
         if key=='follows' and value is not None and hasattr(self,'social'):return self.social.follows(account,value)
         return value
 
@@ -496,13 +501,15 @@ class Browser:
                     tags[tid] = tags.get(tid, 0) + r['score']; names[tid] = name
         return dict(creators=creators, tags=tags, names=names)
 
-    def preference_rows(self, account):
+    def preference_rows(self, account, include_creator_names=True):
         learned = self.learned_weights(account)
         overrides = self.setting(account, 'weight-overrides', {})
-        with self.db() as db:
-            creators = {str(r[0]): r[1] for r in db.execute(
-                "SELECT json_extract(payload,'$.creatorId'), json_extract(payload,'$.credit') FROM media WHERE account=? ORDER BY touched",
-                (account,)) if r[0] and r[1]}
+        creators = {}
+        if include_creator_names:
+            with self.db() as db:
+                creators = {str(r[0]): r[1] for r in db.execute(
+                    "SELECT json_extract(payload,'$.creatorId'), json_extract(payload,'$.credit') FROM media WHERE account=? AND json_valid(payload) ORDER BY touched",
+                    (account,)) if r[0] and r[1]}
         rows = []
         for kind, group in (('creator', 'creators'), ('tag', 'tags')):
             ids=set(learned[group]) | {key.split(':',1)[1] for key in overrides if key.startswith(kind+':')}
@@ -542,7 +549,7 @@ class Browser:
         return dict(account=me['id'], items=self.preference_rows(me['id']), bans=self.bans(me['id']),**self.tag_weight_snapshot(me['id']))
 
     def weights(self, account):
-        rows = self.preference_rows(account)
+        rows = self.preference_rows(account, include_creator_names=False)
         return dict(creators={r['id']:r['weight'] for r in rows if r['kind']=='creator' and not r['disabled'] and r['weight']>0},
                     tags={r['id']:r['weight'] for r in rows if r['kind']=='tag' and not r['disabled'] and r['weight']>0},
                     names={r['id']:r['name'] for r in rows if r['kind']=='tag'})
@@ -698,7 +705,7 @@ class Browser:
                 state=self.feeds.get(cursor)
                 if not state:
                     with self.db() as db:
-                        row=db.execute('SELECT payload FROM feed_sessions WHERE account=? AND id=? AND channel=? AND touched>?',
+                        row=db.execute('SELECT payload FROM feed_sessions WHERE account=? AND id=? AND channel=? AND touched>? AND json_valid(payload)',
                             (account,cursor,channel,time.time()-7200)).fetchone()
                     if row:
                         state=json.loads(row[0]);state['lock']=threading.Lock();self.feeds[cursor]=state
@@ -707,10 +714,11 @@ class Browser:
             recovered=bool(cursor and state is None)
             if state is None:
                 cursor=uuid.uuid4().hex
-                loras=[i for i in self.models.snapshot()['items'] if i.get('kind')=='loras' and i.get('versionId') and not i.get('archived')]
+                loras=[{k:i[k] for k in ('id','kind','name','title','versionId','modelId') if k in i}
+                       for i in self.models.snapshot()['items'] if i.get('kind')=='loras' and i.get('versionId') and not i.get('archived')]
                 seen=[str(i) for i in query.get('seen',[])[-5000:] if str(i).isdigit()]
                 state=dict(account=account,channel=channel,planning=planning,touched=time.time(),seen=seen,sources={},loras=loras,turn=0,lora=0, lock=threading.Lock())
-                if channel=='mix' and not query.get('refresh'):
+                if channel=='mix' and not planning and not query.get('refresh'):
                     progress=self.setting(account,'mix-progress',{})
                     if time.time()-progress.get('at',0)<1800 and progress.get('muted',[])==sorted(self.timeouts(account)):
                         for field in ('sources','turn','lora'):state[field]=progress.get(field,state[field])
@@ -805,6 +813,12 @@ class Browser:
                         except (sqlite3.Error,KeyError,ValueError):pass
                     state['sources'][key]=dict(items=cached,cursor=None,started=False,done=False)
                 source=state['sources'][key]
+                if channel=='mix':
+                    # Keep the active source and retain at most 24 recent page buffers.
+                    # The seen list and exposure table still deduplicate evicted sources.
+                    state['sources'][key]=state['sources'].pop(key)
+                    while len(state['sources'])>24:
+                        del state['sources'][next(iter(state['sources']))]
                 if not source['items'] and not source['done']:
                     if reads>=3:
                         limited=True
@@ -863,8 +877,8 @@ class Browser:
                     if not planning:
                         db.execute('INSERT OR REPLACE INTO settings VALUES(?,?,?)',(account,'mix-artists',json.dumps(recent)))
                         db.executemany('INSERT INTO feed_exposure(account,image,served) VALUES(?,?,?) ON CONFLICT(account,image) DO UPDATE SET served=excluded.served',[(account,i['id'],time.time()) for i in out])
-                    progress=dict(at=time.time(),muted=sorted(muted),**{k:state[k] for k in ('sources','turn','lora')})
-                    db.execute('INSERT OR REPLACE INTO settings VALUES(?,?,?)',(account,'mix-progress',json.dumps(progress)))
+                        progress=dict(at=time.time(),muted=sorted(muted),**{k:state[k] for k in ('sources','turn','lora')})
+                        db.execute('INSERT OR REPLACE INTO settings VALUES(?,?,?)',(account,'mix-progress',json.dumps(progress)))
                 db.execute('DELETE FROM feed_sessions WHERE touched<?',(time.time()-7200,))
                 db.execute('INSERT OR REPLACE INTO feed_sessions VALUES(?,?,?,?,?)',
                     (account,cursor,channel,json.dumps({k:v for k,v in state.items() if k!='lock'}),time.time()))

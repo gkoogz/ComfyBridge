@@ -652,7 +652,9 @@ const CivitaiBrowser=(()=>{
   if(suspended&&!stale&&suspended.scope===scope()){
    const saved=suspended;suspended=null;$('#main').replaceChildren(...saved.nodes);dockSubjectHeading();
    await Promise.resolve();$('#workspace').scrollTop=saved.scroll;
-   paintSocial();revealFeedCards($('#browseFeed'));observeMore();schedule();warm();refreshStatus(true).catch(()=>{});openPendingCreator();return;
+   paintSocial();revealFeedCards($('#browseFeed'));observeMore();
+   if(view.kind==='preferences'&&!view.loaded)loadPreferences();
+   schedule();warm();refreshStatus(true).catch(()=>{});openPendingCreator();return;
   }
   suspended=null;if(stale){cursor='';stripCursor='';detailQueue=[];cacheScope='';status=null;close();collectionPopup?.remove();collectionPopup=null;}
   view={kind:'mix'};history=[];feedEnded=false;busy=false;stripBusy=false;
@@ -774,6 +776,10 @@ const CivitaiBrowser=(()=>{
  function feedLead(){return Math.round(($('#workspace')?.clientHeight||innerHeight)*1.5);}
  function observeMore(){
   observer?.disconnect();
+  if(view.kind==='preferences'){
+   BrowseLoader.attach($('#preferencesLoading:not([hidden])'),$('#workspace'),()=>available()&&!backLayer);
+   return;
+  }
   BrowseLoader.attach($('#browseMore'),$('#workspace'),()=>page==='browse'&&!viewer&&!backLayer&&!collectionPopup&&!$('#drawer').classList.contains('open'));
   if(!$('#browseMore')||feedEnded)return;
   observer=new IntersectionObserver(entries=>{if(entries.some(e=>e.isIntersecting)&&emptyPages<2)loadFeed();},{root:$('#workspace'),rootMargin:feedLead()+'px 0px'});
@@ -798,13 +804,15 @@ const CivitaiBrowser=(()=>{
   dockSubjectHeading();$('#workspace').scrollTop=0;loadFeed();observeMore();
  }
  async function openPreferences(){
-  saveView();view={kind:'preferences',sort:'weight',filter:'both',search:'',items:[]};
+  saveView();view={kind:'preferences',sort:'weight',filter:'both',search:'',items:[],loaded:false};
   try{Object.assign(view,JSON.parse(localStorage.getItem(scope()+':preferences:'+account)||'{}'));}catch{}
-  $('#main').innerHTML='<section class="civitaiBrowse"><div class="subjectHeading">'+button('‹','class="browseBack" aria-label="Back"')+'<h2>Your feed</h2></div><div class="weightTools">'+
+  $('#main').innerHTML='<section class="civitaiBrowse"><div class="subjectHeading">'+button('‹','class="browseBack" aria-label="Back"')+'<h2>Your feed</h2></div>'+pullerHTML('preferencesLoading','Loading feed preferences')+
+   '<p class="preferenceLoadError warning" role="status" hidden></p>'+button('Retry','id="retryPreferences" hidden')+
+   '<div id="preferencesContent" hidden><div class="weightTools">'+
    '<details class="weightMenu"><summary aria-label="Sort feed preferences"><span id="weightSortLabel"></span>'+caretIcon(true)+'</summary><div class="browseMenu">'+button('Weight','data-weight-sort="weight"')+button('Alphabetical','data-weight-sort="alpha"')+'</div></details>'+
    '<details class="weightMenu"><summary aria-label="Filter feed preferences"><span id="weightFilterLabel"></span>'+caretIcon(true)+'</summary><div class="browseMenu">'+button('Both','data-weight-filter="both"')+button('Creators','data-weight-filter="creator"')+button('Tags','data-weight-filter="tag"')+'</div></details></div>'+
    '<div class="weightSearchBox"><input id="weightSearch" type="search" autocomplete="off" placeholder="Search tags or creators…" aria-label="Search feed preferences"></div><p class="preferenceError warning" role="status"></p><div class="weightColumns"><span>Tag/Creator</span><span>Weight</span><span>Vote</span><span>Unweight</span><span>Ban</span></div>'+
-   '<div id="weightActive"></div><section class="weightSection"><h3>Unweighted</h3><div id="weightDisabled"></div></section><section class="weightSection bannedSection"><h3>Ban</h3><div id="weightBanned"></div></section></section>';
+   '<div id="weightActive"></div><section class="weightSection"><h3>Unweighted</h3><div id="weightDisabled"></div></section><section class="weightSection bannedSection"><h3>Ban</h3><div id="weightBanned"></div></section></div></section>';
   $('.browseBack').onclick=back;$('#workspace').scrollTop=0;
   for(const [attribute,key] of [['weight-sort','sort'],['weight-filter','filter']]){
    $$('[data-'+attribute+']').forEach(b=>b.onclick=()=>{view[key]=b.getAttribute('data-'+attribute);b.closest('details').open=false;
@@ -812,8 +820,17 @@ const CivitaiBrowser=(()=>{
     paintPreferences();});
   }
   $('#weightSearch').oninput=e=>{view.search=e.target.value;paintPreferences();};
-  paintPreferences();
-  try{await refreshPreferences();}catch(error){$('.preferenceError').textContent=error.message;}
+  $('#retryPreferences').onclick=loadPreferences;
+  await loadPreferences();
+ }
+ async function loadPreferences(){
+  const ticket=session,loading=$('#preferencesLoading'),error=$('.preferenceLoadError'),retry=$('#retryPreferences');
+  loading.hidden=false;error.hidden=true;retry.hidden=true;observeMore();
+  try{await refreshPreferences();}
+  catch(e){
+   if(ticket!==session)return;
+   loading.hidden=true;BrowseLoader.stop();error.textContent=e.message;error.hidden=false;retry.hidden=false;
+  }
  }
  async function refreshPreferences(){
   const ticket=session;
@@ -821,9 +838,12 @@ const CivitaiBrowser=(()=>{
   if(ticket!==session||view.kind!=='preferences')return;
   if(result.account!==account){reset();render();return;}
   acceptTagWeights(result);view.items=result.items;status.bans=result.bans||result.items.filter(i=>i.banned).map(i=>({kind:i.kind,id:i.id,name:i.name}));
-  pruneBanned();paintPreferences();
+  view.loaded=true;pruneBanned();paintPreferences();
+  $('#preferencesLoading').hidden=true;$('#preferencesContent').hidden=false;
+  BrowseLoader.stop();
  }
  function paintPreferences(){
+  if(!view.loaded)return;
   const positions=new Map($$('.weightRow').map(row=>[row.dataset.key,row.getBoundingClientRect().top]));
   $('#weightSortLabel').textContent='Sort: '+(view.sort==='alpha'?'Alphabetical':'Weight');
   $('#weightFilterLabel').textContent='Show: '+({both:'Both',creator:'Creators',tag:'Tags'}[view.filter]||'Both');
@@ -894,16 +914,17 @@ const CivitaiBrowser=(()=>{
   }
   try{await refresh();}catch(error){if(popup.isConnected)$('p.warning',popup).textContent=error.message;}
  }
- function pullerHTML(){return '<div id="browseMore" class="browsePuller" role="status" tabindex="0" aria-label="Load more media"><canvas class="browseFluid" aria-hidden="true"></canvas><canvas class="browseFlung" aria-hidden="true"></canvas><div class="browseLoaderSpinner"><i class="spinner" aria-hidden="true"></i><span>Fetching...</span></div></div>';}
+ function pullerHTML(id='browseMore',label='Load more media'){return '<div id="'+id+'" class="browsePuller" role="status"'+(id==='browseMore'?' tabindex="0"':'')+' aria-label="'+label+'"><canvas class="browseFluid" aria-hidden="true"></canvas><canvas class="browseFlung" aria-hidden="true"></canvas><div class="browseLoaderSpinner"><i class="spinner" aria-hidden="true"></i><span>Fetching...</span></div></div>';}
  function pendingCards(){const host=$('#browseFeed');return !!(feedBuilds.get(host)?.length||host?.querySelector('.cardPending:not(.cardFailed)'));}
  function paintPuller(){
   const more=$('#browseMore');if(!more)return;
   const pending=pendingCards(),failed=!!$('#browseFeed .cardFailed'),ended=view.kind!=='mix'&&feedEnded&&!pending&&!busy&&!failed;
+  const waiting=!pending&&!busy&&!ended&&(failed||emptyPages>=2||feedWaitUntil>Date.now());
   more.hidden=view.kind==='mix'&&feedEnded&&!pending&&!failed;more.classList.toggle('pullEnded',ended);
-  more.classList.toggle('pullFailed',failed&&!pending&&!busy);
-  more.querySelector('span').textContent=ended?'You have reached the end :)':failed&&!pending&&!busy?'Media unavailable · tap to retry':'Fetching...';
+  more.classList.toggle('pullFailed',waiting);
+  more.querySelector('span').textContent=ended?'You have reached the end :)':waiting?(failed?'Media unavailable · tap to retry':'No posts ready · tap to retry'):'Fetching...';
   more.setAttribute('aria-label',ended?'You have reached the end :)':'Load more media');more.tabIndex=ended?-1:0;
-  if(ended||failed&&!pending&&!busy){const spinner=more.querySelector('.browseLoaderSpinner');spinner.style.removeProperty('top');spinner.classList.remove('spinnerStowed');}
+  if(ended||waiting){const spinner=more.querySelector('.browseLoaderSpinner');spinner.style.removeProperty('top');spinner.classList.remove('spinnerStowed');}
   more.onclick=()=>{if(ended)return;const failed=$$('#browseFeed .cardFailed');if(failed.length)failed.forEach(prepareFeedCard);else loadFeed();};
   more.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();more.click();}};
   BrowseLoader.attach(more,$('#workspace'),()=>page==='browse'&&!viewer&&!backLayer&&!collectionPopup&&!$('#drawer').classList.contains('open'));BrowseLoader.refresh();

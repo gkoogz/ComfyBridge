@@ -3,7 +3,8 @@
 const BrowseLoader=(()=>{
  let current=null;
  function attach(host,workspace,allowed){
-  const split=!!(window.Desktop&&desktopTwoColumns());
+  const gestures=host?.id==='browseMore';
+  const split=!!(gestures&&window.Desktop&&desktopTwoColumns());
   if(current&&current.host===host&&current.split===split){current.refresh();return;}
   current?.dispose();current=null;if(!host)return;
   let loaders;
@@ -13,16 +14,16 @@ const BrowseLoader=(()=>{
     edge.innerHTML='<canvas class="browseFluid"></canvas><canvas class="browseFlung"></canvas>';host.append(edge);
     return create(edge,workspace,()=>allowed()&&!host.hidden&&!host.matches('.pullFailed,.pullEnded,.pullCovered'),col+1);
    });
-  }else loaders=[create(host,workspace,allowed)];
+  }else loaders=[create(host,workspace,allowed,0,gestures)];
   current={host,workspace,allowed,split,refresh:()=>loaders.forEach(l=>l.refresh()),dispose:()=>{for(const l of loaders){l.dispose();if(split)l.host.remove();}}};
  }
  function stop(){current?.dispose();current=null;}
  function refresh(){if(current)attach(current.host,current.workspace,current.allowed);}
- function create(host,workspace,allowed,column=0){
+ function create(host,workspace,allowed,column=0,gestures=true){
   const section=host.closest('.civitaiBrowse'),canvas=host.querySelector('.browseFluid'),flung=host.querySelector('.browseFlung'),spinner=host.querySelector('.browseLoaderSpinner');
   const ctx=canvas.getContext('2d'),fx=flung.getContext('2d'),state={reach:24,speed:1.5};
   const reduced=matchMedia('(prefers-reduced-motion: reduce)'),listeners=[];
-  const spring=column?host:section;
+  const spring=gestures?(column?host:section):null;
   let width=500,tick=column*3,frame=0,positionFrame=0,lastFrame=0,running=false,disposed=false,visible=false,layout=true;
   let sparks=[],stir=0,gesture=null,pull=0,edgeOffset=0,rebound=null,wheelTimer=0,mouseId=null;
   const on=(el,name,fn,options)=>{el.addEventListener(name,fn,options);listeners.push(()=>el.removeEventListener(name,fn,options));};

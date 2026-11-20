@@ -82,6 +82,20 @@ class BankTests(unittest.TestCase):
         self.assertEqual(restarted.bank.peek({})['items'],[])
         self.assertEqual(len(restarted.bank.read('1')['items']),188)
 
+    def test_corrupt_checkpoints_recover_without_losing_feed_preferences(self):
+        self.b.save('1','weight-overrides',{'tag:12':{'banned':True,'name':'ceramics'}})
+        with self.b.db() as db:
+            db.execute("INSERT INTO settings VALUES('1','mix-progress','{bad')")
+            db.execute("INSERT INTO feed_sessions VALUES('1','damaged','mix','{bad',?)",(time.time(),))
+        restarted=Browser(self.tmp.name,self.models,None,self.api)
+        self.assertEqual(restarted.setting('1','mix-progress',{}),{})
+        page=restarted._feed(dict(channel='mix',cursor='damaged'),planning=True)
+        self.assertTrue(page['recovered'])
+        self.assertEqual(restarted.bans('1'),[dict(kind='tag',id='12',name='ceramics')])
+        with restarted.db() as db:
+            count=db.execute("SELECT count(*) FROM feed_sessions WHERE id=? AND json_valid(payload)",(page['nextCursor'],)).fetchone()[0]
+        self.assertEqual(count,1)
+
     def test_fresh_refill_precedes_old_reserve_but_preserves_prepared_head(self):
         self.seed(140);self.b.bank.peek({});before=self.b.bank.read('1')['items']
         fresh=self.items(12,500)
