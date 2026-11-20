@@ -369,6 +369,7 @@ header.hasBrowseSubject #headerIdentity{min-height:44px}
 
 .civitaiViewer .metadataCard,.metadataLoading{background:#000}
 .metadataLoading{position:relative;height:200px;overflow:hidden}
+:root:not(.desktop) .civitaiViewer .metadataLoading{width:100dvw;margin-inline:calc((100% - 100dvw) / 2)}
 .metadataLoading[hidden],.metadataCard[hidden]{display:none}
 .civitaiAuthor .creatorName,.civitaiResources .resourceName{font-weight:700}
 .civitaiAuthor .avatarFeed{flex:none;border:0;padding:0;background:none;border-radius:50%;line-height:1}

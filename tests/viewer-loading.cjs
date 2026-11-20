@@ -28,6 +28,8 @@ const assert=require('node:assert/strict'),path=require('node:path');
  await p.waitForSelector('.browseTile');await p.locator('.browseMedia').first().click();
  await p.waitForFunction(()=>!!window.releaseDecode&&!!window.detailGates['1'],null,{timeout:10000,polling:50}).catch(async e=>{console.log(errors,await p.evaluate(()=>({calls,pending:Object.keys(detailGates),decode:!!window.releaseDecode,hero:document.querySelector('.modelPreviewHero')?.innerHTML})));throw e;});
  assert(await p.locator('.metadataLoading canvas').first().isVisible());assert(!(await p.locator('.metadataCard').isVisible()));
+ const wave=await p.locator('.metadataLoading .browseFluid').boundingBox();
+ assert(Math.abs(wave.x)<1&&Math.abs(wave.width-width)<1,'Metadata wave reaches both viewport edges');
  assert.equal(await p.locator('.retryPromptDetails').count(),0);
  await p.evaluate(()=>{
   window.originalImage=document.querySelector('.civitaiViewer .modelPreviewHero img');
