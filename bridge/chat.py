@@ -297,6 +297,10 @@ def context_messages(db, reply_id):
     return [dict(role='system', content=SYSTEM + (' The current discussion started from the ' + source + ' prompt field.' if source else ''))] + recent
 
 
+def is_inkling_mini(model):
+    return 'inkling-2-mini' in model.stem.casefold()
+
+
 class Engine:
     def __init__(self, config, model, gpu, data, editing=False):
         self.process = None
@@ -313,7 +317,8 @@ class Engine:
                 '--api-key', self.key, '--no-webui', '--jinja', '--ctx-size', '12288', '--parallel', '1',
                 '--n-gpu-layers', 'auto' if gpu else '0', '--fit-target', '1536', '--threads', '6', '--threads-batch', '6',
                 '--batch-size', '512', '--ubatch-size', '128', '--flash-attn', 'on', '--no-warmup',
-                '--reasoning-budget', '0', '--no-context-shift', '--prio', '-1', '--poll', '0']
+                '--reasoning-budget', '-1' if is_inkling_mini(model) else '0',
+                '--no-context-shift', '--prio', '-1', '--poll', '0']
         if not gpu:
             args += ['--device', 'none']
         self.process = subprocess.Popen(args, stdin=subprocess.DEVNULL, stdout=self.log, stderr=self.log, creationflags=flags)
@@ -471,6 +476,10 @@ def run(data, comfy):
                 payload = dict(messages=context_messages(db, reply_id), stream=True, max_tokens=2048,
                                temperature=.7, top_p=.8, top_k=20, repeat_penalty=1.05,
                                chat_template_kwargs=dict(enable_thinking=False))
+                if is_inkling_mini(model):
+                    # A zero-token cap can send Inkling into a loop of empty
+                    # thinking blocks. Use the model's lowest native effort.
+                    payload['reasoning_effort'] = 'none'
                 if editing:
                     # Same sampling and non-thinking mode as Notepad chat, with
                     # more output room for a complete long prompt and no history.

@@ -10,8 +10,8 @@ import zipfile
 import concurrent.futures
 import threading
 
-RUNTIME = 'b12136'
-RUNTIME_SHA = '0b67f5c54f926952a49ba98bba5cfc7ae7dd2846e4c81b1e45befa9cd01ef944'
+RUNTIME = 'b12628'
+RUNTIME_SHA = 'dd28b411feb15b2e2b8bcf6bdb182a33962f27509d0f0e334a6604b11a00cf9a'
 MODEL = 'Qwen_Qwen3.5-9B-Q5_K_M.gguf'
 MODEL_SHA = 'a686d88ec1e6881f9bf161526826cd6d6874b7f0e80e0f79acf6144a132c5d7e'
 REVISION = '182be2fd6c7bc44887d88a91cb03ff009cc9f549'
