@@ -319,6 +319,9 @@ class Engine:
                 '--batch-size', '512', '--ubatch-size', '128', '--flash-attn', 'on', '--no-warmup',
                 '--reasoning-budget', '-1' if is_inkling_mini(model) else '0',
                 '--no-context-shift', '--prio', '-1', '--poll', '0']
+        if gpu and os.name == 'nt' and is_inkling_mini(model) and 'q4_' in model.stem.casefold():
+            # Buffered reads reduce Inkling Q4 model-load time on Windows.
+            args += ['--load-mode', 'none']
         if not gpu:
             args += ['--device', 'none']
         self.process = subprocess.Popen(args, stdin=subprocess.DEVNULL, stdout=self.log, stderr=self.log, creationflags=flags)
