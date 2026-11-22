@@ -5,6 +5,7 @@ import tempfile
 import time
 import sqlite3
 from contextlib import closing
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 import uuid
@@ -12,6 +13,33 @@ import chat
 
 
 class ChatTests(unittest.TestCase):
+    def test_inkling_history_trims_whole_turns_using_rendered_token_count(self):
+        messages = [dict(role=role, content=text) for role, text in (
+            ('system', 'system'),
+            ('user', 'old question'), ('assistant', 'old answer'),
+            ('user', 'keep this detail'), ('assistant', 'detail saved'),
+            ('user', 'latest question'),
+        )]
+        engine = SimpleNamespace(url='http://fixture', key='fixture')
+        payload = dict(messages=messages, max_tokens=chat.INKLING_Q4_CONTEXT-13, reasoning_effort='none')
+
+        def tokenize(url, body, key):
+            self.assertEqual(key, engine.key)
+            if url.endswith('/apply-template'):
+                self.assertEqual(body['reasoning_effort'], 'none')
+                return dict(prompt=' '.join(f"role {item['content']}" for item in body['messages']))
+            self.assertTrue(url.endswith('/tokenize'))
+            self.assertTrue(body['add_special'])
+            return dict(tokens=body['content'].split() + ['BOS'])
+
+        with patch.object(chat, 'json_request', side_effect=tokenize):
+            original = messages.copy()
+            self.assertEqual(chat.fit_inkling_history(engine, payload), messages[:1]+messages[3:])
+            self.assertEqual(messages, original)
+            self.assertEqual(chat.fit_inkling_history(engine, dict(payload, max_tokens=2048)), messages)
+            with self.assertRaisesRegex(ValueError, 'latest message is too long'):
+                chat.fit_inkling_history(engine, dict(payload, max_tokens=chat.INKLING_Q4_CONTEXT-4))
+
     def test_comfy_memory_release_can_succeed_without_json_body(self):
         with patch.object(chat.urllib.request,'urlopen',return_value=io.BytesIO(b'')):
             self.assertEqual(chat.json_request('http://fixture/free',{'unload_models':True}),{})
@@ -153,6 +181,19 @@ class ChatTests(unittest.TestCase):
             self.assertEqual(messages[-1],dict(role='user',content=text))
             self.assertEqual(len(messages),2)
         finally:db.close()
+
+    def test_expanded_history_can_retain_message_beyond_the_legacy_character_budget(self):
+        sent = self.send('latest')
+        with closing(chat.database(self.root)) as db, db:
+            db.executemany("INSERT INTO chat_messages(id,role,content,created,status) VALUES(?,?,?,?,?)", (
+                (str(uuid.uuid4()), 'user', 'first detail', -2, 'complete'),
+                (str(uuid.uuid4()), 'assistant', 'x' * 26000, -1, 'complete'),
+            ))
+            normal = chat.context_messages(db, sent['active'])
+            expanded = chat.context_messages(db, sent['active'], max_chars=None)
+            self.assertNotIn('first detail', [m['content'] for m in normal])
+            self.assertEqual(expanded[1]['content'], 'first detail')
+            self.assertEqual(expanded[-1]['content'], 'latest')
 
     def test_unchanged_poll_and_gpu_handoff_without_runtime(self):
         self.assertTrue(self.call('state',dict(after=self.state['revision']))['unchanged'])

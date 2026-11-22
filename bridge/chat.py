@@ -19,6 +19,8 @@ import gpu_handoff
 import quick_edit
 
 BUSY = ('queued', 'waiting', 'loading', 'responding')
+DEFAULT_CHAT_CONTEXT = 12288
+INKLING_Q4_CONTEXT = 20480
 SYSTEM = ('You are a helpful creative assistant in ComfyBridge. Help discuss ideas and refine '
           'image and video prompts. Be clear, practical and concise. Preserve the user\'s intent; '
           'ask when a key detail is ambiguous. You can discuss prompts but cannot run generations, '
@@ -278,7 +280,7 @@ def renderer_queue_busy(comfy):
         return True
 
 
-def context_messages(db, reply_id):
+def context_messages(db, reply_id, max_chars=26000):
     editing=quick_edit.get(db,reply_id)
     if editing:return quick_edit.messages(editing,SYSTEM)
     # Keep all messages in the UI; only the most recent context is sent to the model.
@@ -286,7 +288,7 @@ def context_messages(db, reply_id):
     recent, used = [], 0
     for item in reversed(entries):
         size = len(item['content'])
-        if recent and used + size > 26000:
+        if recent and max_chars is not None and used + size > max_chars:
             break
         recent.append(dict(role=item['role'], content=item['content']))
         used += size
@@ -301,6 +303,38 @@ def is_inkling_mini(model):
     return 'inkling-2-mini' in model.stem.casefold()
 
 
+def is_inkling_q4(model):
+    return is_inkling_mini(model) and 'q4_' in model.stem.casefold()
+
+
+def fit_inkling_history(engine, payload):
+    messages = payload['messages']
+    budget = INKLING_Q4_CONTEXT - payload['max_tokens']
+
+    def fits(history):
+        # Count the same rendered template and special tokens used for inference.
+        prompt = json_request(engine.url + '/apply-template', dict(payload, messages=history), key=engine.key)['prompt']
+        tokens = json_request(engine.url + '/tokenize', dict(content=prompt, add_special=True), key=engine.key)['tokens']
+        return len(tokens) <= budget
+
+    if fits(messages):
+        return messages
+
+    # Find the longest suffix starting at a user turn. Keep the system prompt
+    # and latest user message, and leave the stored conversation intact.
+    turns = [index for index, message in enumerate(messages) if message['role'] == 'user']
+    first, last = 1, len(turns)
+    while first < last:
+        middle = (first + last) // 2
+        if fits(messages[:1] + messages[turns[middle]:]):
+            last = middle
+        else:
+            first = middle + 1
+    if first == len(turns):
+        raise ValueError('The latest message is too long for the model’s context. Shorten it and send it again.')
+    return messages[:1] + messages[turns[first]:]
+
+
 class Engine:
     def __init__(self, config, model, gpu, data, editing=False):
         self.process = None
@@ -313,13 +347,14 @@ class Engine:
         self.url = f'http://127.0.0.1:{port}'
         self.log = (data / 'chat-engine.log').open('wb')
         flags = subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
+        context = INKLING_Q4_CONTEXT if is_inkling_q4(model) else DEFAULT_CHAT_CONTEXT
         args = [config['executable'], '-m', str(model), '--host', '127.0.0.1', '--port', str(port),
-                '--api-key', self.key, '--no-webui', '--jinja', '--ctx-size', '12288', '--parallel', '1',
+                '--api-key', self.key, '--no-webui', '--jinja', '--ctx-size', str(context), '--parallel', '1',
                 '--n-gpu-layers', 'auto' if gpu else '0', '--fit-target', '1536', '--threads', '6', '--threads-batch', '6',
                 '--batch-size', '512', '--ubatch-size', '128', '--flash-attn', 'on', '--no-warmup',
                 '--reasoning-budget', '-1' if is_inkling_mini(model) else '0',
                 '--no-context-shift', '--prio', '-1', '--poll', '0']
-        if gpu and os.name == 'nt' and is_inkling_mini(model) and 'q4_' in model.stem.casefold():
+        if gpu and os.name == 'nt' and is_inkling_q4(model):
             # Buffered reads reduce Inkling Q4 model-load time on Windows.
             args += ['--load-mode', 'none']
         if not gpu:
@@ -476,7 +511,9 @@ def run(data, comfy):
                         raise TimeoutError('The local model took too long to load.')
                     time.sleep(.2)
                 update('responding', 'Replying locally · Radeon GPU' if gpu else 'Replying locally · CPU while GPU is busy')
-                payload = dict(messages=context_messages(db, reply_id), stream=True, max_tokens=2048,
+                expanded_history = is_inkling_q4(model) and not editing
+                messages = context_messages(db, reply_id, max_chars=None) if expanded_history else context_messages(db, reply_id)
+                payload = dict(messages=messages, stream=True, max_tokens=2048,
                                temperature=.7, top_p=.8, top_k=20, repeat_penalty=1.05,
                                chat_template_kwargs=dict(enable_thinking=False))
                 if is_inkling_mini(model):
@@ -487,6 +524,8 @@ def run(data, comfy):
                     # Same sampling and non-thinking mode as Notepad chat, with
                     # more output room for a complete long prompt and no history.
                     payload.update(max_tokens=8192,cache_prompt=False)
+                if expanded_history:
+                    payload['messages'] = fit_inkling_history(engine, payload)
                 def complete(messages, response_format=None, stage='Replying locally'):
                     request_payload=dict(payload,messages=messages)
                     if response_format is not None:request_payload['response_format']=response_format
