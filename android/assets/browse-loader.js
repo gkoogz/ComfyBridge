@@ -114,7 +114,7 @@ const BrowseLoader=(()=>{
    if(ceiling>host.clientHeight||ceiling< -90)return;
    const count=Math.min(11,7+Math.floor(distance/60)),points=surface(tick*.65);
    for(let i=0;i<count&&sparks.length<24;i++){
-    const life=1+Math.random()*.4,x=width*(.12+Math.random()*.76),edge=points[Math.min(points.length-1,Math.round((x+4)/3))][1];
+    const life=1+Math.random()*.4,x=width*(.12+Math.random()*.76),edge=surfaceY(points,x);
     sparks.push({x,y:ceiling+edge+2,vx:(Math.random()-.5)*12,vy:14+Math.random()*12,life,maxLife:life,size:1+Math.random()*.5,gold:Math.random()<.6,angle:Math.random()*6.28});
    }
    let offset=0;for(const d of droplets)if(d.fall===null&&d.age>.6){d.releaseIn=.08+offset+Math.random()*.07;offset+=.15;}
@@ -130,13 +130,17 @@ const BrowseLoader=(()=>{
   const bumps=[{x:.05,p:.3},{x:.23,p:2.4},{x:.44,p:4.5},{x:.64,p:1.2},{x:.83,p:3.4},{x:1.02,p:5.3}];
   let dropletClock=0,lastBirth=-2;
   const droplets=[.23,.64,.84].map((u,i)=>({u,age:i===0?.6:-i*1.15,wait:2.8+Math.random()*1.7,fall:null,releaseIn:null,x:0,y:0,gold:i===2}));
-  function dropletEdge(d){const pts=d.gold?surface(-tick*.65*.8+2.2,.075,.94):surface(tick*.65);const x=width*d.u;return {x,y:pts[Math.min(pts.length-1,Math.round((x+4)/3))][1]};}
-  function detach(d){const edge=dropletEdge(d);d.x=edge.x;d.y=edge.y+dropShape(d).length;d.fall=0;d.releaseIn=null;}
+  function detach(d){
+   const points=d.gold?surface(-tick*.65*.8+2.2,.075,.94):surface(tick*.65);
+   d.x=width*d.u;d.y=surfaceY(points,d.x)+dropShape(d).length;d.fall=0;d.releaseIn=null;
+  }
   function advanceDroplets(dt){dropletClock+=dt;for(const d of droplets){const oldAge=d.age;d.age+=dt;if(oldAge<0&&d.age>=0){if(dropletClock-lastBirth<.65){d.age=-.15;continue;}lastBirth=dropletClock;}if(d.fall===null){if(d.releaseIn!==null)d.releaseIn-=dt;if(d.age>=d.wait||(d.releaseIn!==null&&d.releaseIn<=0))detach(d);}else{d.fall+=dt;if(d.fall>1.25){d.fall=null;d.age=-.6-Math.random()*1.8;d.wait=2.8+Math.random()*1.7;d.u=Math.max(.1,Math.min(.9,d.u+(Math.random()-.5)*.06));}}}}
   function dropShape(d){const grow=Math.min(1,Math.max(0,d.age)/1.4),stretch=d.releaseIn!==null?.85:Math.max(0,1-(d.wait-d.age)/.65);return {base:5+7*grow,bulge:.7+3.4*grow,neck:2.4-1.7*stretch,length:2+10*grow+4*stretch};}
-  // Match the wave's clockwise winding so overlapping roots add liquid rather than subtract holes.
-  function attachedOutline(d,points,close){const {base,bulge,neck,length}=dropShape(d),x=width*d.u;const at=v=>points[Math.max(0,Math.min(points.length-1,Math.round((v+4)/3)))][1];const y=at(x),left=at(x-base),right=at(x+base);ctx.moveTo(x+base,right);ctx.bezierCurveTo(x+base*.45,right,x+neck,y+length*.36,x+neck,y+length*.58);ctx.bezierCurveTo(x+bulge*1.7,y+length*.8,x+bulge*1.25,y+length+5,x,y+length+5);ctx.bezierCurveTo(x-bulge*1.25,y+length+5,x-bulge*1.7,y+length*.8,x-neck,y+length*.58);ctx.bezierCurveTo(x-neck,y+length*.36,x-base*.45,left,x-base,left);if(close)ctx.closePath();}
-  function joinDrops(points,gold){for(const d of droplets)if(d.gold===gold&&d.age>=0&&d.fall===null)attachedOutline(d,points,true);}
+  function surfaceY(points,x){
+   const i=Math.floor((x-points[0][0])/3);
+   const [left,y]=points[i],next=points[i+1]?.[1]??y;
+   return y+(next-y)*(x-left)/3;
+  }
   function surface(t,shift=0,depth=1){
    const points=[];
    for(let x=-4;x<=width+4;x+=3){
@@ -154,17 +158,41 @@ const BrowseLoader=(()=>{
    }
    return points;
   }
-  function trace(points){ctx.beginPath();ctx.moveTo(-4,0);ctx.lineTo(width+4,0);for(let i=points.length-1;i>=0;i--)ctx.lineTo(...points[i]);ctx.closePath();}
-  function rim(points,color,gold=false){const active=droplets.filter(d=>d.gold===gold&&d.age>=0&&d.fall===null);ctx.beginPath();let gap=true;for(const [x,y] of points){if(active.some(d=>Math.abs(x-width*d.u)<dropShape(d).base)){gap=true;continue;}gap?ctx.moveTo(x,y-.6):ctx.lineTo(x,y-.6);gap=false;}for(const d of active)attachedOutline(d,points,false);ctx.strokeStyle=color;ctx.lineWidth=1;ctx.stroke();}
+  function liquidPaths(points,gold){
+   const edge=new Path2D();
+   edge.moveTo(...points[0]);
+   let i=1,lastRoot=points[0][0];
+   const active=droplets.filter(d=>d.gold===gold&&d.age>=0&&d.fall===null).sort((a,b)=>a.u-b.u);
+   // Replace the wave edge between the roots. Fill and highlight both follow
+   // this contour so a curved trough cannot leave a pocket behind a drip.
+   for(const d of active){
+    const x=width*d.u,{base,bulge,neck,length}=dropShape(d);
+    const left=x-base,right=x+base;
+    if(left<=lastRoot||right>=points.at(-1)[0])continue;
+    while(points[i][0]<left)edge.lineTo(...points[i++]);
+    const y=surfaceY(points,x),bottom=y+length+5;
+    edge.lineTo(left,surfaceY(points,left));
+    edge.bezierCurveTo(x-base*.45,surfaceY(points,x-base*.45),x-neck,y+length*.36,x-neck,y+length*.58);
+    edge.bezierCurveTo(x-bulge*1.7,y+length*.8,x-bulge*1.25,bottom,x,bottom);
+    edge.bezierCurveTo(x+bulge*1.25,bottom,x+bulge*1.7,y+length*.8,x+neck,y+length*.58);
+    edge.bezierCurveTo(x+neck,y+length*.36,x+base*.45,surfaceY(points,x+base*.45),right,surfaceY(points,right));
+    while(points[i][0]<=right)i++;
+    lastRoot=right;
+   }
+   for(;i<points.length;i++)edge.lineTo(...points[i]);
+   const body=new Path2D(edge);
+   body.lineTo(points.at(-1)[0],0);body.lineTo(points[0][0],0);body.closePath();
+   return {edge,body};
+  }
   function draw(){
    ctx.clearRect(0,0,width,112);
    const t=tick*.65,points=surface(t),goldPoints=surface(-t*.8+2.2,.075,.94);
    // The amber layer moves independently behind the translucent white surface.
-   trace(goldPoints);joinDrops(goldPoints,true);
-   const gold=ctx.createLinearGradient(0,0,0,state.reach+8);gold.addColorStop(0,'#b28c42');gold.addColorStop(.45,'#dfb967');gold.addColorStop(1,'#f7dc94');ctx.fillStyle=gold;ctx.fill();rim(goldPoints,'#ffe8b3b3',true);
-   trace(points);joinDrops(points,false);
-   const fluid=ctx.createLinearGradient(0,0,0,state.reach+10);fluid.addColorStop(0,'#d9d9d8d9');fluid.addColorStop(.38,'#f2f1eee0');fluid.addColorStop(1,'#ffffffed');ctx.fillStyle=fluid;ctx.fill();
-   ctx.save();ctx.clip();
+   const amber=liquidPaths(goldPoints,true),white=liquidPaths(points,false);
+   const gold=ctx.createLinearGradient(0,0,0,state.reach+8);gold.addColorStop(0,'#b28c42');gold.addColorStop(.45,'#dfb967');gold.addColorStop(1,'#f7dc94');ctx.fillStyle=gold;ctx.fill(amber.body);
+   ctx.lineWidth=1;ctx.strokeStyle='#ffe8b3b3';ctx.stroke(amber.edge);
+   const fluid=ctx.createLinearGradient(0,0,0,state.reach+10);fluid.addColorStop(0,'#d9d9d8d9');fluid.addColorStop(.38,'#f2f1eee0');fluid.addColorStop(1,'#ffffffed');ctx.fillStyle=fluid;ctx.fill(white.body);
+   ctx.save();ctx.clip(white.body);
    for(const b of [bumps[1],bumps[4]]){
     const x=width*b.x+Math.sin(t*.3+b.p)*23,y=10+Math.sin(t*.6+b.p)*5;
     const glow=ctx.createRadialGradient(x,y,1,x,y,52);glow.addColorStop(0,'#efd18788');glow.addColorStop(1,'#e9cc8200');ctx.fillStyle=glow;ctx.fillRect(x-54,0,108,90);
@@ -175,14 +203,13 @@ const BrowseLoader=(()=>{
     const mint=ctx.createRadialGradient(x,y,2,x,y,60);mint.addColorStop(0,'#a3f2cc99');mint.addColorStop(.5,'#a3f2cc42');mint.addColorStop(1,'#a3f2cc00');ctx.fillStyle=mint;ctx.fillRect(x-62,0,124,90);
    }
    ctx.restore();
-   rim(points,'#ffffffb3');
+   ctx.strokeStyle='#ffffffb3';ctx.stroke(white.edge);
    // Droplets swell on narrow necks, linger, then release on rebound or timeout.
    for(const d of droplets){
     if(d.age<0||d.fall===null)continue;
-    const attached=d.fall===null,grow=attached?Math.min(1,d.age/1.1):1,edge=attached?dropletEdge(d):d;
-    const c=edge.x,y=attached?edge.y+3+6*grow:d.y+16*d.fall+38*d.fall*d.fall,bulge=1.5+2.4*grow;
-    ctx.globalAlpha=attached?.8:Math.max(0,1-d.fall/1.25)*.85;ctx.fillStyle=d.gold?'#e9cf89':'#fffefa';ctx.beginPath();
-    ctx.moveTo(c-1,attached?edge.y-1:y-5);ctx.bezierCurveTo(c-1,y-2,c-bulge-1,y-1,c-bulge,y+3);ctx.bezierCurveTo(c-bulge,y+8,c+bulge,y+8,c+bulge,y+3);ctx.bezierCurveTo(c+bulge+1,y-1,c+1,y-2,c+1,attached?edge.y-1:y-5);ctx.closePath();ctx.fill();ctx.globalAlpha=1;
+    const c=d.x,y=d.y+16*d.fall+38*d.fall*d.fall,bulge=3.9;
+    ctx.globalAlpha=Math.max(0,1-d.fall/1.25)*.85;ctx.fillStyle=d.gold?'#e9cf89':'#fffefa';ctx.beginPath();
+    ctx.moveTo(c-1,y-5);ctx.bezierCurveTo(c-1,y-2,c-bulge-1,y-1,c-bulge,y+3);ctx.bezierCurveTo(c-bulge,y+8,c+bulge,y+8,c+bulge,y+3);ctx.bezierCurveTo(c+bulge+1,y-1,c+1,y-2,c+1,y-5);ctx.closePath();ctx.fill();ctx.globalAlpha=1;
    }
   }
 

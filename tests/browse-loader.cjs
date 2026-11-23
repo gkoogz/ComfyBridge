@@ -1,11 +1,12 @@
 const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
-const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
+const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
 (async()=>{const browser=await chromium.launch();try{
  for(const width of [390,1400]){
   const p=await browser.newPage({viewport:{width,height:650},hasTouch:width===390}),errors=[];
   p.on('pageerror',e=>errors.push(e.message));
   const source=fs.readFileSync(path.join(__dirname,'../android/assets/browse.js'),'utf8');
-  const markup=source.match(/function pullerHTML\(\)\{return '([^']+)';\}/)[1];
+  const puller=source.split(/\r?\n/).find(line=>line.includes('function pullerHTML('));
+  const markup=vm.runInNewContext(puller+'\npullerHTML()');
   await p.setContent('<style>body{margin:0;--mint:#a3f2cc;--muted:#9fb5a9;background:#0b1014}#workspace{height:650px;overflow:auto}.preceding{height:450px;background:#222a2c}.civitaiBrowse{padding:0!important}@keyframes spin{to{transform:rotate(360deg)}}</style><div id="workspace"><section class="civitaiBrowse"><div class="preceding"></div>'+markup+'</section></div>');
   await p.addStyleTag({path:path.join(__dirname,'../android/assets/browse.css')});
   await p.addScriptTag({path:path.join(__dirname,'../android/assets/browse-loader.js')});

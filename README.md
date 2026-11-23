@@ -1,6 +1,6 @@
 # ComfyBridge
 
-**[Open the beta 136 release page](https://github.com/gkoogz/ComfyBridge/releases/tag/v0.1.0-beta.136)** · [Download the Android APK](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.136/ComfyBridge-0.1.0-beta.136.apk) · [Download Windows](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.136/ComfyBridge-Windows-0.1.0-beta.136.zip) · [All releases](https://github.com/gkoogz/ComfyBridge/releases)
+**[Open the beta 137 release page](https://github.com/gkoogz/ComfyBridge/releases/tag/v0.1.0-beta.137)** · [Download the Android APK](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.137/ComfyBridge-0.1.0-beta.137.apk) · [Download Windows](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.137/ComfyBridge-Windows-0.1.0-beta.137.zip) · [All releases](https://github.com/gkoogz/ComfyBridge/releases)
 
 <img src="artwork/comfybridge.png" width="128" alt="ComfyBridge white cube and play icon on black">
 
@@ -9,6 +9,8 @@ An Android remote for an existing Windows ComfyUI installation. The phone edits 
 **Local project:** this PC's canonical checkout is `E:\ComfyBridge`. Source, builds, installed app data, local LLMs and archived work are consolidated there. See [the local folder map](docs/local-layout.md) for private-data exclusions, compatibility links and external ComfyUI dependencies. Run `Start-ComfyBridge.ps1` to open the installed PC panel.
 
 **Working on the project:** agents and contributors should start with [AGENTS.md](AGENTS.md) for the code map, build/test commands, live queue preservation and delivery instructions.
+
+**Beta 137** fixes gaps where the Browse loading animation's drips meet the waves.
 
 **Beta 136** gives Inkling 2 Mini Q4 a 20,480-token context. Chat counts the rendered prompt and sends the newest turns that fit while reserving space for the reply.
 
