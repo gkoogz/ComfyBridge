@@ -18,12 +18,23 @@ partial class Bridge {
         Check(ParseDesktopRange("bytes=-12",100,out first,out last)&&first==88&&last==99,"video suffix range");
         Check(!ParseDesktopRange("bytes=100-",100,out first,out last)&&!ParseDesktopRange("bytes=4-1",100,out first,out last),"invalid video range rejected");
         Check(NewerRelease("0.1.0-beta.10","0.1.0-beta.9")&&NewerRelease("0.1.0","0.1.0-rc.2")&&!NewerRelease("0.1.0-beta.9","0.1.0"),"numeric release ordering");
-        var zip=new PublishedAsset{name="ComfyBridge-Windows-0.1.0-beta.10.zip",state="uploaded",size=20};
+        var package=new PublishedAsset{name=SetupName("0.1.0-beta.10"),state="uploaded",size=3,
+            digest="sha256:ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"};
         var releases=new[]{
-            new PublishedRelease{tag_name="v0.1.0-beta.12",draft=false,assets=new[]{zip}}, // reused companion
-            new PublishedRelease{tag_name="v0.1.0-beta.11",draft=true,assets=new[]{new PublishedAsset{name=ZipName("0.1.0-beta.11"),state="uploaded",size=20}}},
-            new PublishedRelease{tag_name="v0.1.0-beta.10",draft=false,assets=new[]{zip}}};
-        Check(SelectRelease(releases,"0.1.0-beta.9")=="0.1.0-beta.10","only offer a published Windows package for its matching version");
+            new PublishedRelease{tag_name="v0.1.0-beta.14",draft=false,assets=new[]{new PublishedAsset{name=SetupName("0.1.0-beta.14"),state="uploaded",size=3}}},
+            new PublishedRelease{tag_name="v0.1.0-beta.13",draft=false,assets=new[]{new PublishedAsset{name="ComfyBridge-Windows-0.1.0-beta.13.zip",state="uploaded",size=3}}},
+            new PublishedRelease{tag_name="v0.1.0-beta.12",draft=false,assets=new[]{package}},
+            new PublishedRelease{tag_name="v0.1.0-beta.11",draft=true,assets=new[]{new PublishedAsset{name=SetupName("0.1.0-beta.11"),state="uploaded",size=3,digest=package.digest}}},
+            new PublishedRelease{tag_name="v0.1.0-beta.10",draft=false,assets=new[]{package}}};
+        Check(SelectRelease(releases,"0.1.0-beta.9").Version=="0.1.0-beta.10","only offer a matching published installer with a digest");
+        using(var output=new MemoryStream()){
+            CopyVerifiedSetup(new MemoryStream(new byte[]{97,98,99}),output,package);
+            Check(output.Length==3,"valid installer is copied");
+        }
+        var rejected=false;
+        try{CopyVerifiedSetup(new MemoryStream(new byte[]{97,98,98}),new MemoryStream(),package);}
+        catch(IOException){rejected=true;}
+        Check(rejected,"same-length corrupt installer is rejected");
         Data=Path.Combine(Path.GetTempPath(),"ComfyBridge-panel-"+Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(Data);token="isolated-test";loopbackPort=0;tlsPort=0;
         Application.EnableVisualStyles();

@@ -136,13 +136,13 @@ node tests/queue-preview.cjs
 - Keep development inside this checkout; put temporary probes and sensitive
   observations under ignored `local`, not new folders around the PC.
 - When a beta is ready, install the Windows build on this PC, push its source
-  and publish a GitHub prerelease with the Android APK and Windows ZIP. This is
+  and publish a GitHub prerelease with the Android APK and Windows Setup EXE. This is
   the default delivery workflow. Follow the live-work handoff instructions
   above and report the installed version and published release.
 - Preserve the existing Android signing key under `local/data/signing`; replacing
   it breaks normal upgrades. Keep generated secrets out of packages and logs.
 - When publishing a release, inspect the complete current installer's file list,
-  update version references consistently, include APK and Windows ZIP assets,
+  update version references consistently, include APK and Windows Setup EXE assets,
   and verify uploaded artifact hashes and release visibility.
 - Before finishing, report what changed, relevant verification, what is actually
   installed/pushed/published, and any unobserved runtime or device checks. Keep

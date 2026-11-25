@@ -37,3 +37,5 @@ if(-not(Test-Path "$keys\release.jks")){
 & "$tools\apksigner.bat" sign --ks "$keys\release.jks" --ks-pass "file:$keys\password.txt" --out "$build\ComfyBridge.apk" "$build\aligned.apk"
 if($LASTEXITCODE){throw 'APK signing failed'}
 & "$tools\apksigner.bat" verify --verbose "$build\ComfyBridge.apk"
+if($LASTEXITCODE){throw 'APK verification failed'}
+& "$src\Package-Windows.ps1"

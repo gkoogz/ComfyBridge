@@ -1,6 +1,6 @@
 # ComfyBridge
 
-**[Open the beta 137 release page](https://github.com/gkoogz/ComfyBridge/releases/tag/v0.1.0-beta.137)** · [Download the Android APK](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.137/ComfyBridge-0.1.0-beta.137.apk) · [Download Windows](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.137/ComfyBridge-Windows-0.1.0-beta.137.zip) · [All releases](https://github.com/gkoogz/ComfyBridge/releases)
+**[Open the beta 138 release page](https://github.com/gkoogz/ComfyBridge/releases/tag/v0.1.0-beta.138)** · [Download the Android APK](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.138/ComfyBridge-0.1.0-beta.138.apk) · [Download Windows Setup](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.138/ComfyBridge-Setup-0.1.0-beta.138.exe) · [All releases](https://github.com/gkoogz/ComfyBridge/releases)
 
 <img src="artwork/comfybridge.png" width="128" alt="ComfyBridge white cube and play icon on black">
 
@@ -9,6 +9,8 @@ An Android remote for an existing Windows ComfyUI installation. The phone edits 
 **Local project:** this PC's canonical checkout is `E:\ComfyBridge`. Source, builds, installed app data, local LLMs and archived work are consolidated there. See [the local folder map](docs/local-layout.md) for private-data exclusions, compatibility links and external ComfyUI dependencies. Run `Start-ComfyBridge.ps1` to open the installed PC panel.
 
 **Working on the project:** agents and contributors should start with [AGENTS.md](AGENTS.md) for the code map, build/test commands, live queue preservation and delivery instructions.
+
+**Beta 138** adds a single Windows Setup executable and in-app updates that verify the installer and restart ComfyBridge.
 
 **Beta 137** fixes gaps where the Browse loading animation's drips meet the waves.
 
@@ -166,7 +168,7 @@ Open any image or video in Library or Archive and tap **↗ Regenerate**. The ed
 - Silent Windows sign-in startup, tray monitoring/pairing, authenticated HTTPS with certificate pinning, durable job queue, and worker sleep after inactivity.
 - Matching Android launcher, Windows executable/taskbar, and notification-area icons.
 
-Android and the Windows tray check this public GitHub repository in the background on launch. If a newer release includes a matching APK or Windows ZIP, choose **Download** to open the package in your browser or **Later** to keep working. On Android, open the downloaded APK to install it. On Windows, extract the ZIP and run **Install.ps1**.
+Android and the Windows tray check GitHub for releases on launch. In Windows Beta 138 and later, click **Install update** to download and verify the installer in the app. Setup restarts ComfyBridge after the update. You can also right-click the tray icon and choose **Check for updates**. From an earlier Windows beta, run the new Setup executable from the release page once. On Android, open the downloaded APK to install it.
 
 Tap a panel heading on Image or Video to fold it. The phone remembers each screen’s layout. PC Queue and LoRAs start folded. On Image, the chain between Width and Height locks their current ratio. On Video, the scale track gives most of its travel to rounded resolutions within the 768 × 1152 pixel budget. **Original · 0%** returns to source scale on the model’s 32-pixel grid.
 
@@ -214,9 +216,9 @@ The phone checks the PC on connection, about every five minutes while open, and 
 
 ## Install the beta
 
-1. Download the APK and Windows ZIP from the beta release. Extract the ZIP to a local folder.
-2. Confirm `config.json` points to your ComfyUI installation. This adapter requires the exact saved workflow node layouts, their models/custom nodes, and `venv\Scripts\python.exe` with `aiohttp` and Pillow available. Windows 10/11 with .NET Framework 4.8 is required; Android 8 or later is required.
-3. Run `Install.ps1` in PowerShell. It copies the bridge into `%LOCALAPPDATA%\ComfyBridge\app`, registers startup for the current user, and starts the tray icon. For LAN/VPN access, run `AllowNetwork.ps1` once in an administrator PowerShell window. It allows TCP 18764 for this executable only.
+1. Download and open **ComfyBridge Setup** from the beta release.
+2. On a fresh PC, Setup uses the default ComfyUI folder if available, or asks you to locate it. ComfyBridge needs the configured workflow layouts, model files, custom nodes, and a `venv\Scripts\python.exe` with `aiohttp` and Pillow. Windows 10/11 with .NET Framework 4.8 and Android 8 or later are supported.
+3. Setup installs ComfyBridge under `%LOCALAPPDATA%\ComfyBridge\app`, registers startup for the current user, and starts the tray icon. For LAN/VPN access on a fresh PC, allow inbound TCP 18764 for ComfyBridge in Windows Firewall.
 4. Install the APK on the phone. Android may require allowing installation from the app used to open it.
 5. **On the PC:** click the ComfyBridge cube by the clock (look under the hidden-icons arrow), or open **Start → ComfyBridge**. The panel must say **Server on**. Leave it open.
 6. **On the phone:** open **Bridge**, enter the **PC address** exactly as displayed, then enter the **six-digit pairing code** and tap **Pair & connect**. The code works once and expires in five minutes. Click **New code** if needed. After pairing, just tap **Connect to bridge** on future visits.
@@ -288,7 +290,7 @@ Install Java JDK 17 on PATH, Android SDK platform 35 and build-tools 35.0.1 unde
 E:\ComfyUI-Zluda\venv\Scripts\python.exe .\bridge\test_bridge.py
 ```
 
-The build creates a local APK signing key on first use. Release builds disable Android debugging. Windows binaries are not Authenticode signed. The installer must be packaged alongside `worker.py`, `progress.py`, `queue_progress.py`, `media_index.py`, `workflows.py`, `config.json`, `Install.ps1`, `AllowNetwork.ps1`, and `Uninstall.ps1`. Icon source and its resizing utility are in `artwork/`.
+The build creates a local APK signing key on first use. Release builds disable Android debugging. Windows binaries are not Authenticode signed. `Package-Windows.ps1` embeds the application and setup files listed in `bridge/WindowsFiles.psd1` into the Setup executable. Icon source and its resizing utility are in `artwork/`.
 
 See [beta verification and remaining device tests](docs/BETA-TESTING.md). APK signing and automated tests do not establish that every GPU workflow has rendered successfully on a device.
 
