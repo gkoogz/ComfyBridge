@@ -164,6 +164,16 @@ const assert=require('node:assert/strict'),path=require('node:path');
   const edges=await p.locator('.desktopDrip').evaluateAll(els=>els.map(e=>e.getBoundingClientRect().top));
   const bottoms=await tiles.evaluateAll(cards=>{const ends=[0,0];for(const card of cards){const col=Number(card.offsetLeft>0);ends[col]=Math.max(ends[col],card.getBoundingClientRect().bottom);}return ends;});
   assert.deepEqual(edges,bottoms);assert.notEqual(edges[0],edges[1]);assert(!(await p.locator('#browseMore>.browseLoaderSpinner').isVisible()));
+  await p.emulateMedia({reducedMotion:'reduce'});
+  await p.locator('#workspace').evaluate(el=>el.scrollTop=el.scrollHeight);
+  const waves=p.locator('.desktopDrip .browseFluid');
+  const sample=()=>waves.evaluateAll(canvases=>canvases.map(canvas=>canvas.toDataURL()));
+  await p.waitForFunction(()=>document.querySelectorAll('.desktopDrip.fluidRunning').length===2);
+  const stills=await sample();
+  await p.waitForFunction(stills=>[...document.querySelectorAll('.desktopDrip .browseFluid')].every((canvas,i)=>canvas.toDataURL()!==stills[i]),stills);
+  await p.locator('#workspace').evaluate(el=>el.scrollTop=0);
+  await p.waitForFunction(()=>!document.querySelector('.desktopDrip.fluidRunning'));
+  await p.emulateMedia({reducedMotion:'no-preference'});
   await tiles.first().evaluate(card=>{
    card.innerHTML='<button class="browseMedia"></button><span class="browseVideo"></span><button class="feedCollect"></button>';
    FeedVideo.attach(card,async()=>'/fixture-video.mp4','/fixture-video.mp4');

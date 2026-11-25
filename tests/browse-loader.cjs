@@ -35,7 +35,9 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
   await p.locator('.preceding').evaluate(el=>el.style.height='470px');await p.waitForTimeout(220);assert(Math.abs((await geometry()).center-560)<2,'Over 150px: spinner returns to midpoint');
   const snapshot=()=>p.locator('.browseFluid').evaluate(c=>c.toDataURL());
   const before=await snapshot();await p.waitForTimeout(140);assert.notEqual(await snapshot(),before,'Visible fluid animates');
-  await p.emulateMedia({reducedMotion:'reduce'});await p.waitForTimeout(80);const reduced=await snapshot();await p.waitForTimeout(150);assert.equal(await snapshot(),reduced,'Reduced motion is static');
+  await p.emulateMedia({reducedMotion:'reduce'});
+  await p.waitForSelector('#browseMore.fluidRunning',{state:'detached'});
+  const reduced=await snapshot();await p.waitForTimeout(150);assert(await snapshot()===reduced,'Reduced motion is static outside Windows Studio');
   await p.emulateMedia({reducedMotion:'no-preference'});await p.waitForTimeout(80);
   await p.evaluate(()=>{allowed=false;document.body.classList.add('viewer');});await p.waitForTimeout(80);const obscured=await snapshot();await p.waitForTimeout(150);assert.equal(await snapshot(),obscured,'Obscured loader stops');
   await p.evaluate(()=>{allowed=true;document.body.classList.remove('viewer');});await p.waitForTimeout(80);

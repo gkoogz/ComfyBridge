@@ -40,6 +40,28 @@ partial class Bridge {
                 var web=app.desktop.CoreWebView2;
                 await Until(()=>Task.FromResult(app.expansion==null),"expanded window geometry");
                 var studioBounds=app.monitor.Bounds;
+                Console.WriteLine("Windows WebView2 prefers reduced motion: "+await web.ExecuteScriptAsync("matchMedia('(prefers-reduced-motion: reduce)').matches"));
+                await web.CallDevToolsProtocolMethodAsync("Emulation.setEmulatedMedia","{\"features\":[{\"name\":\"prefers-reduced-motion\",\"value\":\"reduce\"}]}");
+                await web.ExecuteScriptAsync(@"window.waveCheck=null;(async()=>{
+                    const group=document.createElement('section');
+                    group.className='civitaiBrowse';
+                    group.style.cssText='position:absolute;top:80px;left:0;width:300px';
+                    group.innerHTML='<div class=""metadataLoading""><canvas class=""browseFluid""></canvas><canvas class=""browseFlung""></canvas></div>';
+                    const scroll=document.querySelector('#workspace');
+                    scroll.append(group);
+                    const loader=BrowseLoader.metadata(group.firstElementChild,scroll);
+                    const canvas=group.querySelector('canvas');
+                    try{
+                        await new Promise(resolve=>setTimeout(resolve,200));
+                        const before=canvas.toDataURL();
+                        await new Promise(resolve=>setTimeout(resolve,250));
+                        window.waveCheck=canvas.toDataURL()!==before;
+                    }finally{loader.dispose();group.remove();}
+                })();");
+                await Until(async()=>await web.ExecuteScriptAsync("window.waveCheck!==null")=="true","desktop loading wave result");
+                if(await web.ExecuteScriptAsync("window.waveCheck")!="true")throw new Exception("The desktop loading wave was static with Windows motion disabled.");
+                await web.CallDevToolsProtocolMethodAsync("Emulation.setEmulatedMedia","{\"features\":[]}");
+                Console.WriteLine("Desktop loading wave animated with reduced motion enabled.");
                 await web.ExecuteScriptAsync("CivitaiBrowser.open({id:'desktop-fixture',type:'image',width:320,height:480,credit:'Fixture',tags:[],resources:[],reactions:[],stats:{},path:'',prompt:'A vase'},[]);document.querySelector('.desktopImageFullscreen').click()");
                 await Until(()=>Task.FromResult(app.beforeFullscreen.HasValue&&app.monitor.Bounds==Screen.FromControl(app.monitor).Bounds&&app.monitor.Region==null),"monitor fullscreen without frame");
                 await web.ExecuteScriptAsync("document.querySelector('.desktopFullscreenExit').click()");

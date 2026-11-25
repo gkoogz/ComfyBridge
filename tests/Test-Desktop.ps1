@@ -29,7 +29,8 @@ with sqlite3.connect(p/'ComfyBridge/library.sqlite') as db:
     Image.new('RGB',(32,48),'green').save(source)
     db.execute('INSERT INTO jobs VALUES(?,?,?,?,?)',('11111111-1111-4111-8111-111111111111','image',100,'complete',json.dumps({'upload':'ComfyBridge/original.png','positive':'Fixture prompt'})))
     db.execute('DELETE FROM media')
-    db.execute('INSERT INTO media(id,path,thumbnail) VALUES(?,?,?)',('3f59770998574a8c80c18ed7d02b5389',str(p/'root/output/ComfyBridge/fixture.mp4'),''))
+    db.execute('INSERT INTO media(id,path,thumbnail,kind,created,duration,archived) VALUES(?,?,?,?,?,?,?)',
+        ('3f59770998574a8c80c18ed7d02b5389',str(p/'root/output/ComfyBridge/fixture.mp4'),'','video',100,3,0))
 '@ | & $Python - $test
 if($LASTEXITCODE){throw 'Fixture database creation failed'}
 $files=@('bridge/Tray.cs','bridge/Panel.cs','bridge/Studio.cs','bridge/ReleaseUpdates.cs','bridge/Pairing.cs','bridge/Desktop.cs','tests/DesktopTests.cs') | ForEach-Object {Join-Path $root $_}

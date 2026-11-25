@@ -29,6 +29,7 @@ const BrowseLoader=(()=>{
   const on=(el,name,fn,options)=>{el.addEventListener(name,fn,options);listeners.push(()=>el.removeEventListener(name,fn,options));};
   const atBottom=()=>workspace.scrollHeight-workspace.clientHeight-workspace.scrollTop<3;
   const usable=()=>!disposed&&host.isConnected&&!host.hidden&&!host.classList.contains('pullEnded')&&!host.classList.contains('pullFailed')&&!host.classList.contains('pullCovered')&&!document.hidden&&allowed();
+  const canTug=()=>running&&!reduced.matches&&atBottom();
   function size(){
    width=host.clientWidth;if(!width)return;
    host.style.setProperty('--loader-height',Math.max(180,workspace.clientHeight-64)+'px');
@@ -54,13 +55,16 @@ const BrowseLoader=(()=>{
   }
   function refresh(){
    if(disposed)return;layout=true;
-   const next=usable()&&visible&&!reduced.matches;
+   // The desktop wave is a loading indicator. With reduced motion it can
+   // still move gently, without the scroll-driven spring or sparkles.
+   const next=usable()&&visible&&(window.Desktop||!reduced.matches);
    host.classList.toggle('fluidRunning',next);running=next;
-   if(!next){cancelAnimationFrame(frame);frame=0;lastFrame=0;clearPull();sparks=[];fx.clearRect(0,0,width,200);if(usable()&&visible){position();draw();}}
+   if(!next||reduced.matches){if(mouseId!==null)release(true);clearPull();sparks=[];fx.clearRect(0,0,width,200);}
+   if(!next){cancelAnimationFrame(frame);frame=0;lastFrame=0;if(usable()&&visible){position();draw();}}
    else if(!frame)frame=requestAnimationFrame(animate);
   }
   function tug(distance){
-   if(!running||!atBottom())return;rebound=null;
+   if(!canTug())return;rebound=null;
    const delta=distance-pull;pull=Math.max(0,distance);edgeOffset=38*(1-Math.exp(-pull/110));
    stir=Math.min(4,stir+Math.abs(delta)*.035);spring.style.translate='0 '+(-edgeOffset)+'px';layout=true;
   }
@@ -73,7 +77,7 @@ const BrowseLoader=(()=>{
    frame=0;if(!running||!usable()){refresh();return;}
    if(!lastFrame)lastFrame=now;
    if(now-lastFrame>=33){
-    const dt=Math.min(now-lastFrame,80)/1000;lastFrame=now;tick+=dt*state.speed;
+    const dt=Math.min(now-lastFrame,80)/1000*(reduced.matches ? 0.65 : 1);lastFrame=now;tick+=dt*state.speed;
     if(rebound){const progress=Math.min(1,(now-rebound.start)/480);edgeOffset=rebound.from*Math.pow(1-progress,3)*Math.cos(progress*Math.PI*.7);spring.style.translate='0 '+(-edgeOffset)+'px';layout=true;
      if(progress>=.67&&!rebound.emitted){rebound.emitted=true;if(rebound.distance>18)sprinkle(rebound.distance);}
      if(progress===1){rebound=null;edgeOffset=0;spring.style.removeProperty('translate');}
@@ -85,7 +89,7 @@ const BrowseLoader=(()=>{
   const interactive=target=>target.closest('button,summary,input,textarea,select,a,video,.browseCarousel')||(column&&!host.contains(target));
   if(spring){
    on(workspace,'touchstart',e=>{
-    if(!running||!atBottom()||e.touches.length!==1||interactive(e.target))return;
+    if(!canTug()||e.touches.length!==1||interactive(e.target))return;
     gesture={x:e.touches[0].clientX,y:e.touches[0].clientY,claimed:false};
    },{passive:true});
    on(workspace,'touchmove',e=>{
@@ -93,17 +97,17 @@ const BrowseLoader=(()=>{
     const dx=e.touches[0].clientX-gesture.x,dy=gesture.y-e.touches[0].clientY;
     if(!gesture.claimed&&(Math.abs(dx)>Math.abs(dy)||dy<0)){gesture=null;return;}
     if(dy<6&&!gesture.claimed)return;
-    if(!atBottom()){release(true);return;}gesture.claimed=true;e.preventDefault();tug(dy);
+    if(!canTug()){release(true);return;}gesture.claimed=true;e.preventDefault();tug(dy);
    },{passive:false});
    on(workspace,'touchend',()=>release());on(workspace,'touchcancel',()=>release(true));
-   on(workspace,'wheel',e=>{if(!running||!atBottom()||e.deltaY<=0||Math.abs(e.deltaX)>Math.abs(e.deltaY)||interactive(e.target))return;e.preventDefault();tug(pull+e.deltaY*(e.deltaMode===1?16:1));clearTimeout(wheelTimer);wheelTimer=setTimeout(()=>release(),140);},{passive:false});
-   on(workspace,'pointerdown',e=>{if(e.pointerType!=='mouse'||e.button!==0||!running||!atBottom()||!host.contains(e.target))return;gesture={x:e.clientX,y:e.clientY,claimed:false};mouseId=e.pointerId;});
+   on(workspace,'wheel',e=>{if(!canTug()||e.deltaY<=0||Math.abs(e.deltaX)>Math.abs(e.deltaY)||interactive(e.target))return;e.preventDefault();tug(pull+e.deltaY*(e.deltaMode===1?16:1));clearTimeout(wheelTimer);wheelTimer=setTimeout(()=>release(),140);},{passive:false});
+   on(workspace,'pointerdown',e=>{if(e.pointerType!=='mouse'||e.button!==0||!canTug()||!host.contains(e.target))return;gesture={x:e.clientX,y:e.clientY,claimed:false};mouseId=e.pointerId;});
    on(workspace,'pointermove',e=>{if(e.pointerId!==mouseId||!gesture)return;const dy=gesture.y-e.clientY,dx=e.clientX-gesture.x;if(!gesture.claimed&&Math.abs(dx)>Math.abs(dy)){release(true);return;}if(dy<6&&!gesture.claimed)return;gesture.claimed=true;workspace.setPointerCapture(e.pointerId);e.preventDefault();tug(dy);});
    on(workspace,'pointerup',e=>{if(e.pointerId===mouseId)release();});on(workspace,'pointercancel',e=>{if(e.pointerId===mouseId)release(true);});
    on(host,'click',e=>{if(rebound||edgeOffset>0){e.preventDefault();e.stopImmediatePropagation();}},true);
   }
   let lastScroll=workspace.scrollTop;
-  on(workspace,'scroll',()=>{const delta=workspace.scrollTop-lastScroll;lastScroll=workspace.scrollTop;queuePosition();if(running)stir=Math.min(4,stir+Math.abs(delta)*.015);},{passive:true});
+  on(workspace,'scroll',()=>{const delta=workspace.scrollTop-lastScroll;lastScroll=workspace.scrollTop;queuePosition();if(running&&!reduced.matches)stir=Math.min(4,stir+Math.abs(delta)*.015);},{passive:true});
   on(document,'visibilitychange',refresh);on(reduced,'change',refresh);
   const visibility=new IntersectionObserver(entries=>{visible=entries[0].isIntersecting;refresh();},{root:workspace});visibility.observe(host);
   const resize=new ResizeObserver(()=>{size();refresh();});resize.observe(workspace);resize.observe(host);if(section)resize.observe(section);
