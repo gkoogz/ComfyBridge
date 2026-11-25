@@ -80,6 +80,9 @@ static class WindowsSetup {
             if(comfyRoot!=null)cmd+=" -ComfyRoot "+Quote(comfyRoot);
             var info=new ProcessStartInfo(shell,cmd){WorkingDirectory=payload,UseShellExecute=false,CreateNoWindow=true,
                 RedirectStandardOutput=true,RedirectStandardError=true};
+            // The caller may be PowerShell 7 or have a custom module path.
+            // Setup uses only modules shipped with Windows PowerShell 5.1.
+            info.EnvironmentVariables["PSModulePath"]=Path.Combine(Environment.SystemDirectory,@"WindowsPowerShell\v1.0\Modules");
             using(var process=Process.Start(info)){
                 var stdout=process.StandardOutput.ReadToEndAsync();
                 var stderr=process.StandardError.ReadToEndAsync();
