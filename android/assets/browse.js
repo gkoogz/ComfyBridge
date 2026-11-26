@@ -597,8 +597,7 @@ const CivitaiBrowser=(()=>{
  function offlineRPC(operation,args){
   return new Promise((resolve,reject)=>{
    const id=++rpcId;pending.set(id,{resolve,reject});
-   if(operation==='enroll')Native.enrollOfflineBrowse(id,account);
-   else Native.offlineBrowseRead(id,account,operation,JSON.stringify(args));
+   Native.offlineBrowseRead(id,account,operation,JSON.stringify(args));
   });
  }
  const offlineSessions=new Map();let directReads=Promise.resolve(),lastDirectRead=0;
@@ -612,11 +611,6 @@ const CivitaiBrowser=(()=>{
   });
   directReads=request.catch(()=>{});
   return request;
- }
- function paintOfflineSetup(){
-  const button=$('#browseOfflineSetup');if(!button)return;
-  button.hidden=!window.Native?.enrollOfflineBrowse||!connected||!account;
-  button.textContent=offlineReady()?'Replace offline key':'Set up offline Browse';
  }
  async function offlineFeed(channel,position,seen){
   const owner=account;let state=offlineSessions.get(position);
@@ -735,9 +729,8 @@ const CivitaiBrowser=(()=>{
  }
  function resumeOffline(){
   if(page!=='browse'||document.hidden||connected||!status)return;
-  paintOfflineSetup();
-  if(!offlineReady()){savedNotice('Showing saved Browse. Connect to your PC to set up offline browsing.');return;}
-  if(!$('#browseError')?.textContent||/while connecting|connect to your pc/i.test($('#browseError').textContent))savedNotice('Standalone Browse · changes sync when the PC reconnects');
+  if(!offlineReady()){savedNotice('Showing saved Browse. Reconnect to the PC to sync its Civitai key.');return;}
+  if(!$('#browseError')?.textContent||/while connecting|connect to (?:your |the )?pc/i.test($('#browseError').textContent))savedNotice('Standalone Browse · changes sync when the PC reconnects');
   if(view.kind==='mix'&&strip.length<20)loadStrip();
   if(!feed.length)loadFeed();
   observeMore();checkBottom();
@@ -811,7 +804,7 @@ const CivitaiBrowser=(()=>{
   for(const job of Object.values(replica.misc||{}))if(job.payload.kind==='timeout'){
    const {creatorId,until,name}=job.payload;if(until*1000>Date.now())muted[creatorId]={until,name};
   }
-  s.collections.push(...pendingCollections(replica));paintOfflineSetup();
+  s.collections.push(...pendingCollections(replica));
   if(Object.keys(replica.changes||{}).length)applyReplica(replica,true);
   syncReplica().catch(()=>{});
   if(!channel||(channel!=='reactions'&&!s.collections.some(c=>'collection:'+c.id===channel)))channel=s.collections.length?'collection:'+s.collections[0].id:'reactions';
@@ -835,15 +828,8 @@ const CivitaiBrowser=(()=>{
   suspended=null;if(stale){cursor='';stripCursor='';detailQueue=[];cacheScope='';status=null;close();collectionPopup?.remove();collectionPopup=null;}
   view={kind:'mix'};history=[];feedEnded=false;busy=false;stripBusy=false;
   const ticket=++session;clearTimeout(timer);observer?.disconnect();nearDetails.disconnect();viewedTiles.disconnect();restoreSnapshot();
-  $('#main').innerHTML='<section class="civitaiBrowse"><div id="browsePull" role="status" aria-label="Pull to refresh"><i class="spinner"></i></div><p id="browseError" class="warning" role="status"></p><button id="browseOfflineSetup" class="browseOfflineSetup" hidden></button><div id="browseConnected" hidden><div class="browseCollectionHeading"><details id="browseSources"><summary><u id="browseSourceLabel">Collection</u>'+caretIcon(true)+'</summary><div class="browseMenu" role="menu">'+button('Collection','data-channel="collection"')+button('Reacted media','data-channel="reactions"')+'</div></details><span id="browseCollectionDot">•</span><details id="browseCollections"><summary aria-label="Choose a media collection"><u id="browseCollectionLabel">Choose collection</u>'+caretIcon(true)+'</summary><div id="browseCollectionMenu" class="browseMenu" role="menu"></div></details><small id="browseItemCount"></small></div><p id="browseEmptyCollections" hidden>No media collections yet. Create one in the collection menu.</p><div id="browseCarousel" class="browseCarousel"></div><div class="browseFeedHeading"><h2>For you</h2><button id="browseImport" aria-label="Edit feed preferences"></button></div><div id="browseFeed" class="browseFeed"></div>'+pullerHTML()+'</div></section>';
+  $('#main').innerHTML='<section class="civitaiBrowse"><div id="browsePull" role="status" aria-label="Pull to refresh"><i class="spinner"></i></div><p id="browseError" class="warning" role="status"></p><div id="browseConnected" hidden><div class="browseCollectionHeading"><details id="browseSources"><summary><u id="browseSourceLabel">Collection</u>'+caretIcon(true)+'</summary><div class="browseMenu" role="menu">'+button('Collection','data-channel="collection"')+button('Reacted media','data-channel="reactions"')+'</div></details><span id="browseCollectionDot">•</span><details id="browseCollections"><summary aria-label="Choose a media collection"><u id="browseCollectionLabel">Choose collection</u>'+caretIcon(true)+'</summary><div id="browseCollectionMenu" class="browseMenu" role="menu"></div></details><small id="browseItemCount"></small></div><p id="browseEmptyCollections" hidden>No media collections yet. Create one in the collection menu.</p><div id="browseCarousel" class="browseCarousel"></div><div class="browseFeedHeading"><h2>For you</h2><button id="browseImport" aria-label="Edit feed preferences"></button></div><div id="browseFeed" class="browseFeed"></div>'+pullerHTML()+'</div></section>';
   $('#browseRefresh').innerHTML=refreshIcon;$('#browseRefresh').onclick=refresh;
-  $('#browseOfflineSetup').onclick=async e=>{
-   const button=e.currentTarget;button.disabled=true;
-   try{await offlineRPC('enroll');toast('Standalone Browse is ready');await syncReplica(true);}
-   catch(error){if(error.message!=='Cancelled')toast(error.message);}
-   finally{button.disabled=false;paintOfflineSetup();}
-  };
-  paintOfflineSetup();
   $('#browseImport').onclick=openPreferences;$('#browseMore').onclick=()=>loadFeed();
   $('#browseCarousel').onscroll=()=>{const el=$('#browseCarousel');if(el.scrollLeft+el.clientWidth>el.scrollWidth-350)loadStrip();};
   // Restore metadata and device files before waiting for the PC or Civitai.

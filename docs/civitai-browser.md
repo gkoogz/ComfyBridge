@@ -1086,23 +1086,20 @@ Browser validation does not establish physical-phone behavior.
 
 ## Standalone Browse on Android
 
-While the phone is connected to the paired PC, create a separate key using
-Civitai's Read Only preset. Use **Set up standalone Browse** in the Windows
-tray menu, paste the new key, and enter the eight-digit approval code under
-**Set up offline Browse** on the phone. Keep the PC dialog open through
-approval. Both keys must belong to the same Civitai account. The PC verifies
-the token scopes against Civitai and provides the separate key once over
-the existing TLS-pinned pairing. Android verifies it again and encrypts it
-with Android Keystore in app-private, no-backup storage keyed by the paired
-PC certificate and Civitai account. The WebView never receives the key.
+After a normal connection, Beta 141 and later send the saved PC Civitai
+key automatically to already paired Android phones over pinned HTTPS.
+The key is available to clients with the existing bridge pairing bearer,
+so pair only devices you trust with the Civitai account. Android verifies
+the account and encrypts the key using Android Keystore in private,
+no-backup storage. There is no additional approval code or key entry.
+The WebView never receives the key. Android uses it only for the
+foreground feed and metadata reads implemented in the native app.
 
-When the PC is unreachable, Android uses this key for foreground feed,
-collection, reacted, creator and tag pages plus media generation detail.
-Cached content remains available without internet. The same CDN cache is
-used as when the PC is connected. When the key is revoked, saved items and
-pending changes remain. Reopen the PC enrollment dialog and use **Replace
-offline key**. PC-key rotation within the same account does not invalidate
-a separate phone key. Switching accounts parks the old account's changes
+When the PC is unreachable, Android loads feeds, collections, reactions,
+and media details from Civitai. Saved media remains available without
+internet. On reconnect, the phone picks up a rotated or cleared PC key.
+A Civitai revocation also affects the phone. Switching accounts retains
+the old cached items and queue separately, with pending actions parked
 until the PC uses that account again.
 
 The phone writes preferences, viewed IDs, timeouts and social choices to
@@ -1114,5 +1111,4 @@ The PC verifies unfamiliar Civitai media IDs before adding a social choice
 to its existing durable outbox. Collection creation and subsequent
 bookmarks are ordered by the new collection ID. If a creation attempt
 returned an ambiguous result, the action is retained and is never blindly
-repeated. Upstream social writes use the PC governor; no write is made with
-the Android credential.
+repeated. Upstream social writes are performed by the PC with the existing API governor.

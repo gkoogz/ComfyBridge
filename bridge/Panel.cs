@@ -127,7 +127,7 @@ partial class Bridge {
         PaintCivitaiStatus();
     }
     void PaintCivitaiStatus(){civitaiStatus.Active=keyConnected;civitaiStatus.Text=keyChecking?"Checking Civitai…":keyConnected?"Civitai connected":"Civitai not connected";civitaiStatus.Invalidate();
-        if(civitaiTip==null)civitaiTip=new ToolTip();civitaiTip.SetToolTip(civitaiStatus,"Manage the Civitai API key for this PC.");}
+        if(civitaiTip==null)civitaiTip=new ToolTip();civitaiTip.SetToolTip(civitaiStatus,"Manage the Civitai API key shared with paired Android phones.");}
     static Button B(string s,EventHandler action){var b=new Button{Text=s,AutoSize=true,MinimumSize=new Size(70,32),FlatStyle=FlatStyle.Flat,ForeColor=Color.White,BackColor=Color.FromArgb(39,50,59),Font=new Font("Segoe UI",9)};b.FlatAppearance.BorderColor=Color.FromArgb(59,73,82);b.Click+=action;return b;}
     static Button WindowButton(string text,string name,EventHandler action){
         var button=B(text,action);button.AutoSize=false;button.MinimumSize=Size.Empty;button.Dock=DockStyle.Fill;
@@ -221,69 +221,10 @@ partial class Bridge {
         var ok=new Button{Text="Save",Left=336,Top=90,Width=86};ok.Click+=(s,e)=>{string clean;if(field.Text.Trim()=="")File.Delete(remoteFile);else if(ValidAddress(field.Text.Trim(),out clean))File.WriteAllText(remoteFile,clean);else{MessageBox.Show(dlg,"Enter an HTTPS address, for example https://your-host:15294.");return;}dlg.DialogResult=DialogResult.OK;};
         dlg.Controls.AddRange(new Control[]{desc,field,ok});dlg.AcceptButton=ok;if(dlg.ShowDialog(monitor)==DialogResult.OK)AddressesList();
     }}
-    static readonly object browseOfferLock=new object();
-    static string browseOfferKey,browseOfferCode,browseOfferAccount,browseMasterKey;
-    static DateTime browseOfferExpiry;
-    static int browseOfferTries;
-    const long BrowseReadScopes=(1L<<0)|(1L<<2)|(1L<<5)|(1L<<8)|(1L<<11)|(1L<<14)|(1L<<16)|(1L<<17)|(1L<<21)|(1L<<23);
-    const long BrowseRequiredScopes=(1L<<0)|(1L<<5)|(1L<<17);
-    static async Task<Dictionary<string,object>> BrowseTokenIdentity(string key){
-        var req=(HttpWebRequest)WebRequest.Create("https://civitai.red/api/v1/me");
-        req.AllowAutoRedirect=false;req.UserAgent="ComfyBridge-Browse/1.0";req.Headers["Authorization"]="Bearer "+key;
-        using(var res=await req.GetResponseAsync())using(var reader=new StreamReader(res.GetResponseStream())){
-            return new System.Web.Script.Serialization.JavaScriptSerializer().Deserialize<Dictionary<string,object>>(await reader.ReadToEndAsync());
-        }
-    }
-    static void ClearBrowseOffer(){browseOfferKey=browseOfferCode=browseOfferAccount=browseMasterKey=null;browseOfferTries=0;}
-    static string RedeemBrowseOffer(string code,string account){
-        lock(browseOfferLock){
-            if(browseOfferKey==null)return null;
-            if(DateTime.UtcNow>=browseOfferExpiry||++browseOfferTries>5||!Equal(browseMasterKey,ReadCivitaiKey())){ClearBrowseOffer();return null;}
-            if(!Equal(code,browseOfferCode)||account!=browseOfferAccount)return null;
-            var result=new System.Web.Script.Serialization.JavaScriptSerializer().Serialize(new {key=browseOfferKey,account=browseOfferAccount});
-            ClearBrowseOffer();return result;
-        }
-    }
-    void EditStandaloneBrowse(){
-        using(var dlg=new Form{Text="Set up standalone Browse",ClientSize=new Size(460,234),StartPosition=FormStartPosition.CenterScreen,FormBorderStyle=FormBorderStyle.FixedDialog,MaximizeBox=false,MinimizeBox=false}){
-            var desc=new Label{Left=12,Top=12,Width=436,Height=78,Text="In Civitai Account Settings, create a separate API key with the Read Only preset. Paste it here, then enter the approval code on the phone under Browse, Set up offline Browse."};
-            var field=new TextBox{Left=12,Top=94,Width=436,UseSystemPasswordChar=true,AccessibleName="Read-only Civitai API key"};
-            var status=new Label{Left=12,Top=128,Width=436,Height=55};
-            var approve=new Button{Left=12,Top=188,Width=150,Text="Generate code"};
-            var close=new Button{Left=360,Top=188,Width=88,Text="Close"};close.Click+=(s,e)=>dlg.Close();
-            approve.Click+=async(s,e)=>{
-                string key=field.Text.Trim(),master=ReadCivitaiKey();
-                if(!online||master==null){status.Text="Turn on the bridge and connect the PC to Civitai first.";return;}
-                if(!ValidCivitaiKey(key)||Equal(key,master)){status.Text="Paste a separate read-only Civitai key.";return;}
-                approve.Enabled=false;status.Text="Checking key permissions…";
-                try{
-                    var identities=await Task.WhenAll(BrowseTokenIdentity(key),BrowseTokenIdentity(master));
-                    if(dlg.IsDisposed)return;
-                    object raw;long scopes;
-                    if(!identities[0].TryGetValue("tokenScope",out raw)||!Int64.TryParse(Convert.ToString(raw),out scopes)||
-                       (scopes&~BrowseReadScopes)!=0||(scopes&BrowseRequiredScopes)!=BrowseRequiredScopes){
-                        status.Text="Choose Read Only in Civitai when creating the phone key.";return;
-                    }
-                    string account=Convert.ToString(identities[0]["id"]);
-                    if(account!=Convert.ToString(identities[1]["id"])||!Equal(master,ReadCivitaiKey())){
-                        status.Text="Both keys must belong to the current PC Civitai account.";return;
-                    }
-                    byte[] random=new byte[8];using(var rng=System.Security.Cryptography.RandomNumberGenerator.Create())rng.GetBytes(random);
-                    string code=(BitConverter.ToUInt64(random,0)%100000000UL).ToString("D8");
-                    lock(browseOfferLock){browseOfferCode=code;browseOfferKey=key;browseMasterKey=master;browseOfferAccount=account;browseOfferTries=0;browseOfferExpiry=DateTime.UtcNow.AddMinutes(5);}
-                    field.Clear();status.Text="Phone approval code: "+code+"\nUse within five minutes, with this window open.";
-                }catch(Exception){if(!dlg.IsDisposed)status.Text="Civitai could not verify those keys. Check that both keys are active and try again.";}
-                finally{if(!dlg.IsDisposed)approve.Enabled=true;}
-            };
-            dlg.Controls.AddRange(new Control[]{desc,field,status,approve,close});dlg.AcceptButton=approve;
-            if(monitor!=null&&monitor.Visible)dlg.ShowDialog(monitor);else dlg.ShowDialog();
-            lock(browseOfferLock)ClearBrowseOffer();
-        }
-    }
     void EditCivitaiKey(){
         bool saved=CivitaiKeySaved();
         using(var dlg=new Form{Text="Civitai previews",ClientSize=new Size(460,236),StartPosition=FormStartPosition.CenterParent,FormBorderStyle=FormBorderStyle.FixedDialog,MaximizeBox=false,MinimizeBox=false,ShowInTaskbar=false}){
-            var desc=new Label{Left=12,Top=10,Width=436,Height=92,Text="Paste a Civitai API key to cache mature checkpoint and LoRA previews. Create one under Account settings → API Keys on civitai.com or civitai.red, and turn mature content on for that account.\n\nThe key stays on this PC and is sent only to Civitai. Clear it to hide NSFW previews again. Saving refreshes the cached previews in the background."};
+            var desc=new Label{Left=12,Top=10,Width=436,Height=92,Text="Paste a Civitai API key to cache mature checkpoint and LoRA previews. Create one under Account settings → API Keys on civitai.com or civitai.red, and turn mature content on for that account.\n\nPaired Android phones receive this same key for offline Browse. The phone syncs changes to this key the next time it connects."};
             var field=new TextBox{Left=12,Top=108,Width=436,UseSystemPasswordChar=true,AccessibleName="Civitai API key"};
             var status=new Label{Left=12,Top=136,Width=436,Height=32,ForeColor=Muted,Text=saved?"A key is already saved. Enter a new one to replace it, or clear it to hide NSFW previews.":"No key saved. NSFW listing previews stay hidden."};
             var save=new Button{Text="Save key",Left=248,Top=188,Width=96,DialogResult=DialogResult.None};

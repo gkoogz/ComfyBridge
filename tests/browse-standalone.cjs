@@ -22,7 +22,7 @@ const path=require('node:path');
    window.Native={
     configuration:()=>JSON.stringify({paired:false,fingerprint:'AA',device:'one'}),notificationRoute:()=>'',
     loadSocialQueue:key=>localStorage.getItem(key)||'',saveSocialQueue:(key,value)=>{localStorage.setItem(key,value);return true;},
-    offlineBrowseReady:a=>a==='1',enrollOfflineBrowse:id=>queueMicrotask(()=>bridgeResult(id,true,{})),
+    offlineBrowseReady:a=>sessionStorage.getItem('phone-account')===a,
     offlineBrowseRead:(id,a,op,args)=>{
      direct.push({a,op,args:JSON.parse(args)});
      const result=op==='detail'?{meta:{prompt:'Ceramic jar with carved leaves.'},resources:[]}:{items:[raw(42,false),raw(43,true),raw(44,false)],nextCursor:null};
@@ -32,6 +32,7 @@ const path=require('node:path');
      const data=body?JSON.parse(body):undefined;
      if(!hardwarePC){calls.push({route,data,failed:true});bridgeResult(id,false,'PC disconnected');return;}
      calls.push({route,data});let result={};
+     if(route==='ping'){sessionStorage.setItem('phone-account','1');result={ok:true};}
      if(route==='browse/status')result={account:'1',username:'Potter',collections:[{id:4,name:'Ceramics',count:1}],followingIds:[],collectionIndex:{},importState:{complete:true}};
      if(route==='browse/feed')result={account:'1',items:[pcItem()],nextCursor:null};
      if(route==='browse/replica'){
@@ -61,8 +62,9 @@ const path=require('node:path');
    };
   });
   await page.goto('https://bridge.test');
-  await page.evaluate(()=>{heartbeat=poll=syncSettings=()=>{};connection(true);navigate('browse');});
+  await page.evaluate(async()=>{heartbeat=poll=syncSettings=()=>{};await api('ping');connection(true);navigate('browse');});
   await page.waitForFunction(()=>calls.some(c=>c.route==='browse/replica')&&document.querySelector('.browseTile'));
+  assert.equal(await page.locator('#browseOfflineSetup').count(),0);
   await page.evaluate(()=>{sessionStorage.setItem('pc','off');hardwarePC=false;connection(false);});
   await page.locator('#browseRefresh').click();
   await page.waitForFunction(()=>[...document.querySelectorAll('.browseTile')].some(e=>e.browseItem?.id==='43'));

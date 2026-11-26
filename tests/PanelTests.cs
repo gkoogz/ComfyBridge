@@ -1,7 +1,10 @@
 using System;
 using System.Drawing;
 using System.IO;
+using System.Net;
 using System.Net.Sockets;
+using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
 using System.Reflection;
 using System.Collections.Generic;
 using System.Windows.Forms;
@@ -11,6 +14,50 @@ class PanelTests {
 }
 partial class Bridge {
     static void Check(bool ok,string what){if(!ok)throw new Exception("Failed: "+what);}
+    static Dictionary<string,object> ProbeBrowseKey(bool tls,string bearer,string device,string revision,HttpStatusCode expected){
+        int port=tls?tlsPort:loopbackPort;
+        var request=(HttpWebRequest)WebRequest.Create((tls?"https":"http")+"://127.0.0.1:"+port+"/api/browse-phone-key");
+        request.Proxy=null;request.Timeout=5000;request.KeepAlive=false;
+        request.ServerCertificateValidationCallback=(s,leaf,chain,error)=>leaf!=null&&leaf.GetCertHashString()==certificate.GetCertHashString();
+        if(bearer!=null)request.Headers["Authorization"]="Bearer "+bearer;
+        if(device!=null)request.Headers["X-Bridge-Device"]=device;
+        if(revision!=null)request.Headers["X-Bridge-Key-Version"]=revision;
+        HttpWebResponse response;
+        try{response=(HttpWebResponse)request.GetResponse();}catch(WebException error){response=(HttpWebResponse)error.Response;if(response==null)throw;}
+        using(response)using(var reader=new StreamReader(response.GetResponseStream())){
+            Check(response.StatusCode==expected,"Browse credential request status");
+            return Json.Deserialize<Dictionary<string,object>>(reader.ReadToEnd());
+        }
+    }
+    static void TestBrowseCredentialSync(){
+        ServicePointManager.SecurityProtocol=SecurityProtocolType.Tls12;
+        using(var rsa=RSA.Create(2048)){
+            var req=new CertificateRequest("CN=ComfyBridge fixture",rsa,HashAlgorithmName.SHA256,RSASignaturePadding.Pkcs1);
+            req.CertificateExtensions.Add(new X509KeyUsageExtension(X509KeyUsageFlags.DigitalSignature,false));
+            using(var created=req.CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1),DateTimeOffset.UtcNow.AddDays(1)))
+                certificate=new X509Certificate2(created.Export(X509ContentType.Pfx,token),token,X509KeyStorageFlags.UserKeySet);
+        }
+        var phone=Guid.NewGuid().ToString();
+        string oldKey=new string('x',32),newKey=new string('y',32);
+        SaveCivitaiKey(oldKey);
+        try{
+            Check(!ProbeBrowseKey(false,token,phone,null,HttpStatusCode.Forbidden).ContainsKey("key"),"HTTP cannot retrieve the Civitai key");
+            Check(!ProbeBrowseKey(true,null,phone,null,HttpStatusCode.Unauthorized).ContainsKey("key"),"unpaired client cannot retrieve the Civitai key");
+            Check(!ProbeBrowseKey(true,token,DesktopDevice(),null,HttpStatusCode.Forbidden).ContainsKey("key"),"desktop UI cannot retrieve the Civitai key");
+            var initial=ProbeBrowseKey(true,token,phone,null,HttpStatusCode.OK);
+            Check((string)initial["key"]==oldKey,"paired phone gets the existing PC key");
+            string revision=(string)initial["revision"];
+            var unchanged=ProbeBrowseKey(true,token,phone,revision,HttpStatusCode.OK);
+            Check(!unchanged.ContainsKey("key")&&(bool)unchanged["unchanged"],"unchanged key is not sent again");
+            SaveCivitaiKey(newKey);
+            var rotated=ProbeBrowseKey(true,token,phone,revision,HttpStatusCode.OK);
+            Check((string)rotated["key"]==newKey&&(string)rotated["revision"]!=revision,"rotated PC key arrives automatically");
+            File.Delete(CivitaiKeyFile());
+            var cleared=ProbeBrowseKey(true,token,phone,(string)rotated["revision"],HttpStatusCode.OK);
+            Check(!cleared.ContainsKey("key")&&(bool)cleared["cleared"],"paired phone is told when the PC key is cleared");
+            Console.WriteLine("Passed: automatic Civitai key transfer over paired TLS, key rotation and clearing, and rejection of HTTP and unauthenticated clients.");
+        }finally{if(File.Exists(CivitaiKeyFile()))File.Delete(CivitaiKeyFile());}
+    }
     internal static int ExercisePanel(string[] args){
         long first,last;
         Check(ParseDesktopRange("bytes=20-39",100,out first,out last)&&first==20&&last==39,"video byte range");
@@ -58,6 +105,7 @@ partial class Bridge {
             Check(app.addressBox.Text=="https://203.0.113.10:15294","remote address shown first");
             int port=((System.Net.IPEndPoint)tlsServer.LocalEndpoint).Port;
             tlsPort=port;loopbackPort=((System.Net.IPEndPoint)server.LocalEndpoint).Port;
+            TestBrowseCredentialSync();
             // Launch a long-lived child the way Wake starts the worker, with both ports bound.
             using(var child=System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(
                 "ping.exe","-n 60 127.0.0.1"){UseShellExecute=false,CreateNoWindow=true})){

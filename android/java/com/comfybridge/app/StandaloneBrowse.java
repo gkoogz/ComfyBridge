@@ -1,6 +1,7 @@
 package com.comfybridge.app;
 
 import android.content.Context;
+import android.content.SharedPreferences;
 import android.security.keystore.KeyGenParameterSpec;
 import android.security.keystore.KeyProperties;
 import android.util.AtomicFile;
@@ -16,14 +17,13 @@ import javax.crypto.spec.GCMParameterSpec;
 
 final class StandaloneBrowse {
  private static final String ALIAS="comfybridge-civitai-browse";
- private static final long READ=(1L<<0)|(1L<<2)|(1L<<5)|(1L<<8)|(1L<<11)|(1L<<14)|(1L<<16)|(1L<<17)|(1L<<21)|(1L<<23);
- private static final long REQUIRED=(1L<<0)|(1L<<5)|(1L<<17);
  private final Context context;
  private long nextRead;
+ private String revokedPin="",revokedRevision="";
  StandaloneBrowse(Context context){this.context=context;}
 
  private AtomicFile file(String pin,String account)throws IOException{
-  if(!pin.matches("[A-F0-9]{64}")||!account.matches("[1-9][0-9]{0,15}"))throw new IOException("Pair this phone securely to set up offline Browse.");
+  if(!pin.matches("[A-F0-9]{64}")||!account.matches("[1-9][0-9]{0,15}"))throw new IOException("Browse needs a paired PC and a Civitai account.");
   return new AtomicFile(new File(context.getNoBackupFilesDir(),"civitai-"+pin+"-"+account+".key"));
  }
  boolean enrolled(String pin,String account){
@@ -37,18 +37,39 @@ final class StandaloneBrowse {
    .setBlockModes(KeyProperties.BLOCK_MODE_GCM).setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE).build());
   return generator.generateKey();
  }
- void store(String pin,String account,String token)throws Exception{
+ private SharedPreferences state(){return context.getSharedPreferences("offline-browse-state",Context.MODE_PRIVATE);}
+ String revision(String pin){
+  if(revokedPin.equals(pin))return revokedRevision;
+  String account=state().getString(pin+":account","");
+  return enrolled(pin,account)?state().getString(pin+":revision",""):"";
+ }
+ private void discardOtherKeys(String pin,String keep){
+  if(!pin.matches("[A-F0-9]{64}"))return;
+  File[] files=context.getNoBackupFilesDir().listFiles((dir,name)->name.matches("civitai-"+pin+"-[1-9][0-9]{0,15}\\.key"));
+  if(files!=null)for(File old:files)if(!old.getName().equals(keep))new AtomicFile(old).delete();
+ }
+ void clear(String pin){
+  discardOtherKeys(pin,"");
+  state().edit().remove(pin+":account").remove(pin+":revision").apply();
+  if(revokedPin.equals(pin)){revokedPin="";revokedRevision="";}
+ }
+ void reject(String pin,String revision){
+  clear(pin);revokedPin=pin;revokedRevision=revision;
+ }
+ void store(String pin,String account,String token,String revision)throws Exception{
   AtomicFile file=file(pin,account);Cipher cipher=Cipher.getInstance("AES/GCM/NoPadding");
   cipher.init(Cipher.ENCRYPT_MODE,key());cipher.updateAAD((pin+":"+account).getBytes(StandardCharsets.UTF_8));
   byte[] iv=cipher.getIV(),encrypted=cipher.doFinal(token.getBytes(StandardCharsets.UTF_8));
   FileOutputStream out=file.startWrite();
   try{out.write(iv.length);out.write(iv);out.write(encrypted);file.finishWrite(out);}
   catch(Exception e){file.failWrite(out);throw e;}
-  nextRead=0;
+  state().edit().putString(pin+":account",account).putString(pin+":revision",revision).commit();
+  discardOtherKeys(pin,file.getBaseFile().getName());
+  revokedPin="";revokedRevision="";nextRead=0;
  }
  private String load(String pin,String account)throws Exception{
   AtomicFile file=file(pin,account);
-  if(!file.getBaseFile().isFile())throw new IOException("Set up offline Browse to load new media without the PC.");
+  if(!file.getBaseFile().isFile())throw new IOException("Reconnect to the PC to sync its Civitai key.");
   try(DataInputStream in=new DataInputStream(file.openRead())){
    int length=in.readUnsignedByte();if(length!=12)throw new IOException();
    byte[] iv=new byte[length];in.readFully(iv);
@@ -57,7 +78,7 @@ final class StandaloneBrowse {
    Cipher cipher=Cipher.getInstance("AES/GCM/NoPadding");
    cipher.init(Cipher.DECRYPT_MODE,key(),new GCMParameterSpec(128,iv));cipher.updateAAD((pin+":"+account).getBytes(StandardCharsets.UTF_8));
    return new String(cipher.doFinal(data.toByteArray()),StandardCharsets.UTF_8);
-  }catch(Exception e){file.delete();throw new IOException("Set up offline Browse again to replace the unreadable phone key.");}
+  }catch(Exception e){file.delete();throw new IOException("Reconnect to the PC to refresh its Civitai key.");}
  }
  static JSONObject response(HttpURLConnection c)throws Exception{
   try(InputStream in=c.getInputStream()){
@@ -81,10 +102,13 @@ final class StandaloneBrowse {
    return response(c);
   }finally{c.disconnect();}
  }
- void verify(String token,String account)throws Exception{
-  JSONObject me=request("v1/me",token);long scopes=me.optLong("tokenScope",-1);
-  if(!account.equals(me.optString("id"))||(scopes&~READ)!=0||(scopes&REQUIRED)!=REQUIRED)
-   throw new IOException("Use a separate read-only Civitai key for the same account.");
+ String verifiedAccount(String token)throws Exception{
+  String account=request("v1/me",token).optString("id");
+  if(!account.matches("[1-9][0-9]{0,15}"))throw new IOException("Could not verify the Civitai account.");
+  return account;
+ }
+ private void revoked(String pin,String account)throws IOException{
+  revokedRevision=revision(pin);revokedPin=pin;file(pin,account).delete();
  }
  JSONObject read(String pin,String account,String operation,JSONObject input)throws Exception{
   long now=android.os.SystemClock.elapsedRealtime();
@@ -99,12 +123,12 @@ final class StandaloneBrowse {
    .getJSONObject("result").getJSONObject("data").getJSONObject("json");}
   catch(IOException error){
    if(error.getMessage().startsWith("HTTP 401:")){
-    file(pin,account).delete();throw new IOException("The phone's Civitai key expired or was revoked. Set up offline Browse again.");
+    revoked(pin,account);throw new IOException("The Civitai key expired or was revoked. Update it on the PC.");
    }
    if("images".equals(operation)&&error.getMessage().startsWith("HTTP 403:")){
-    try{verify(token,account);}catch(IOException invalid){
-     if(invalid.getMessage().startsWith("HTTP 401:")||invalid.getMessage().startsWith("HTTP 403:")||invalid.getMessage().startsWith("Use a separate")){
-      file(pin,account).delete();throw new IOException("The phone's Civitai key is no longer valid. Set up offline Browse again.");
+    try{if(!account.equals(verifiedAccount(token)))throw new IOException("Civitai account changed.");}catch(IOException invalid){
+     if(invalid.getMessage().startsWith("HTTP 401:")||invalid.getMessage().startsWith("HTTP 403:")||invalid.getMessage().startsWith("Civitai account changed")){
+      revoked(pin,account);throw new IOException("The Civitai key is no longer valid. Update it on the PC.");
      }
     }
    }

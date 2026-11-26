@@ -167,11 +167,14 @@ public class MainActivity extends Activity {
  }
  static synchronized String device(SharedPreferences p){String id=p.getString("device","");if(id.isEmpty()){id=UUID.randomUUID().toString();p.edit().putString("device",id).commit();}return id;}
  static HttpURLConnection connection(SharedPreferences prefs,String path,String method)throws Exception{
-  String host=prefs.getString("host","");if(host.isEmpty())throw new IOException("Enter your PC address first.");
-  HttpURLConnection c=(HttpURLConnection)new URL(host+"/"+path).openConnection();c.setConnectTimeout(12000);c.setReadTimeout(Arrays.asList("api/ping","api/status","api/metrics","api/disconnect").contains(path)?12000:240000);c.setInstanceFollowRedirects(false);c.setRequestMethod(method);c.setRequestProperty("Authorization","Bearer "+prefs.getString("key",""));
-  final String pin=prefs.getString("fingerprint","");
-  c.setRequestProperty("X-Bridge-Device",device(prefs));
-  if(c instanceof HttpsURLConnection && !pin.isEmpty()){
+  Map<String,?> pairing=prefs.getAll();
+  return connection((String)pairing.get("host"),(String)pairing.get("key"),(String)pairing.get("fingerprint"),device(prefs),path,method);
+ }
+ private static HttpURLConnection connection(String host,String bearer,String pin,String deviceId,String path,String method)throws Exception{
+  if(host==null||host.isEmpty())throw new IOException("Enter your PC address first.");
+  HttpURLConnection c=(HttpURLConnection)new URL(host+"/"+path).openConnection();c.setConnectTimeout(12000);c.setReadTimeout(Arrays.asList("api/ping","api/status","api/metrics","api/disconnect").contains(path)?12000:240000);c.setInstanceFollowRedirects(false);c.setRequestMethod(method);c.setRequestProperty("Authorization","Bearer "+(bearer==null?"":bearer));
+  c.setRequestProperty("X-Bridge-Device",deviceId);
+  if(c instanceof HttpsURLConnection && pin!=null && !pin.isEmpty()){
    SSLContext context=SSLContext.getInstance("TLS");
    context.init(null,new TrustManager[]{new X509TrustManager(){
     public X509Certificate[] getAcceptedIssuers(){return new X509Certificate[0];}
@@ -193,47 +196,49 @@ public class MainActivity extends Activity {
  String exportOperation="export";
  private final StandaloneBrowse standaloneBrowse=new StandaloneBrowse(this);
  private final java.util.concurrent.ExecutorService browseIO=java.util.concurrent.Executors.newSingleThreadExecutor();
+ private final java.util.concurrent.atomic.AtomicBoolean browseKeySync=new java.util.concurrent.atomic.AtomicBoolean();
+ private volatile long browseKeyNext;
+ private boolean sameBrowsePair(String host,String pin,String bearer){
+  return host.equals(prefs.getString("host",""))&&pin.equals(prefs.getString("fingerprint",""))&&bearer.equals(prefs.getString("key",""));
+ }
+ private void syncBrowseKey(){
+  long now=android.os.SystemClock.elapsedRealtime();
+  if(!foreground||now<browseKeyNext)return;
+  Map<String,?> paired=prefs.getAll();
+  String host=(String)paired.get("host"),pin=(String)paired.get("fingerprint"),bearer=(String)paired.get("key");
+  if(host==null||!host.startsWith("https://")||pin==null||!pin.matches("[A-F0-9]{64}")||bearer==null||bearer.isEmpty())return;
+  if(!browseKeySync.compareAndSet(false,true))return;
+  browseKeyNext=now+60000;
+  browseIO.execute(()->{
+   try{
+    if(!foreground||!sameBrowsePair(host,pin,bearer))return;
+    HttpURLConnection c=connection(host,bearer,pin,device(prefs),"api/browse-phone-key","GET");
+    JSONObject reply;
+    try{
+     c.setConnectTimeout(5000);c.setReadTimeout(8000);
+     String revision=standaloneBrowse.revision(pin);
+     if(!revision.isEmpty())c.setRequestProperty("X-Bridge-Key-Version",revision);
+     if(c.getResponseCode()!=200)return;
+     reply=StandaloneBrowse.response(c);
+    }finally{c.disconnect();}
+    if(!sameBrowsePair(host,pin,bearer)||reply.optBoolean("unchanged"))return;
+    if(reply.optBoolean("cleared")){standaloneBrowse.clear(pin);return;}
+    String token=reply.getString("key"),revision=reply.getString("revision");
+    if(token.length()<20||token.length()>400||!revision.matches("[A-F0-9]{64}"))return;
+    try{
+     String account=standaloneBrowse.verifiedAccount(token);
+     if(sameBrowsePair(host,pin,bearer))standaloneBrowse.store(pin,account,token,revision);
+    }catch(IOException invalid){
+     String message=invalid.getMessage();
+     if(message!=null&&(message.startsWith("HTTP 401:")||message.startsWith("HTTP 403:"))&&sameBrowsePair(host,pin,bearer))
+      standaloneBrowse.reject(pin,revision);
+    }
+   }catch(Exception ignored){/* Keep cached Browse usable while the PC or Civitai is unavailable. */}
+   finally{browseKeySync.set(false);}
+  });
+ }
  public class NativeApi {
   @JavascriptInterface public boolean offlineBrowseReady(String account){return standaloneBrowse.enrolled(prefs.getString("fingerprint",""),account);}
-  @JavascriptInterface public void enrollOfflineBrowse(int id,String account){
-   runOnUiThread(()->{
-    String pin=prefs.getString("fingerprint",""),host=prefs.getString("host","");
-    if(!host.startsWith("https://")||!pin.matches("[A-F0-9]{64}")||!account.matches("[1-9][0-9]{0,15}")){
-     callback(id,false,"Open Browse while connected to your paired PC.");return;
-    }
-    android.widget.EditText field=new android.widget.EditText(MainActivity.this);
-    field.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);field.setHint("8-digit code");
-    new android.app.AlertDialog.Builder(MainActivity.this).setTitle("Set up offline Browse")
-     .setMessage("In the PC tray menu, open Set up standalone Browse. Enter its approval code here.").setView(field)
-     .setNegativeButton("Cancel",(dialog,which)->callback(id,false,"Cancelled"))
-     .setOnCancelListener(dialog->callback(id,false,"Cancelled"))
-     .setPositiveButton("Approve",(dialog,which)->{
-      String code=field.getText().toString().trim();
-      if(!code.matches("[0-9]{8}")){callback(id,false,"Enter the eight-digit PC approval code.");return;}
-      browseIO.execute(()->{
-       try{
-        if(!pin.equals(prefs.getString("fingerprint",""))||!host.equals(prefs.getString("host","")))throw new IOException("PC pairing changed.");
-        HttpURLConnection c=connection("api/browse-phone-enroll","POST");
-        JSONObject offer;
-        try{
-         c.setConnectTimeout(6000);c.setReadTimeout(8000);c.setDoOutput(true);c.setRequestProperty("Content-Type","application/json");
-         byte[] body=new JSONObject().put("code",code).put("account",account).toString().getBytes(StandardCharsets.UTF_8);
-         c.setFixedLengthStreamingMode(body.length);
-         try(OutputStream out=c.getOutputStream()){out.write(body);}
-         if(c.getResponseCode()!=200)throw new IOException("Approval failed. Generate a fresh code on the PC.");
-         offer=StandaloneBrowse.response(c);
-        }finally{c.disconnect();}
-        String token=offer.getString("key");
-        if(!account.equals(offer.getString("account")))throw new IOException("Civitai account changed.");
-        standaloneBrowse.verify(token,account);
-        if(!pin.equals(prefs.getString("fingerprint","")))throw new IOException("PC pairing changed.");
-        standaloneBrowse.store(pin,account,token);callback(id,true,"{}");
-       }catch(IOException error){callback(id,false,friendly(error));}
-        catch(Exception error){callback(id,false,"Could not save the phone's Civitai key.");}
-      });
-     }).show();
-   });
-  }
   @JavascriptInterface public void offlineBrowseRead(int id,String account,String operation,String args){
    browseIO.execute(()->{
     try{
@@ -339,6 +344,7 @@ public class MainActivity extends Activity {
   @JavascriptInterface public void pair(int id,String address,String code){io.execute(()->{
    try{String host=Pairing.address(address);String[] secrets=new Pairing().run(host,code);
     if(!prefs.edit().putString("host",host).putString("key",secrets[0]).putString("fingerprint",secrets[1]).commit())throw new IOException("Could not save the pairing on this phone.");
+    browseKeyNext=0;
     callback(id,true,"{}");
    }catch(Exception e){callback(id,false,friendly(e));}
   });}
@@ -357,13 +363,15 @@ public class MainActivity extends Activity {
   @JavascriptInterface public void request(int id,String path,String method,String body){("ping".equals(path)||"disconnect".equals(path)?heartbeat:io).execute(()->{
    boolean ok=false;String result;
    try{
-    if(path.equalsIgnoreCase("browse-phone-enroll")||!path.matches("[a-zA-Z0-9_/-]+")||path.contains("..")||!Arrays.asList("GET","POST").contains(method))throw new IOException("Invalid request.");
+    if(path.equalsIgnoreCase("browse-phone-key")||path.equalsIgnoreCase("browse-phone-enroll")||!path.matches("[a-zA-Z0-9_/-]+")||path.contains("..")||!Arrays.asList("GET","POST").contains(method))throw new IOException("Invalid request.");
     HttpURLConnection c=connection("api/"+path,method);
     try{if(method.equals("POST")){byte[] data=body.getBytes(StandardCharsets.UTF_8);c.setDoOutput(true);c.setRequestProperty("Content-Type","application/json");c.setFixedLengthStreamingMode(data.length);try(OutputStream out=c.getOutputStream()){out.write(data);}}
      int code=c.getResponseCode();InputStream input=code>=400?c.getErrorStream():c.getInputStream();String text=read(input);if(code>=400){try{throw new IOException("HTTP "+code+": "+new JSONObject(text).optString("error",text));}catch(org.json.JSONException e){throw new IOException("HTTP "+code);}}
      result=text;ok=true;
     }finally{c.disconnect();}
    }catch(Exception e){result=friendly(e);}
+   if("ping".equals(path)){if(ok)syncBrowseKey();else browseKeyNext=0;}
+   if("disconnect".equals(path))browseKeyNext=0;
    final String js="window.bridgeResult("+id+","+ok+","+(ok?result:JSONObject.quote(result))+")";
    runOnUiThread(()->web.evaluateJavascript(js,null));
   });}

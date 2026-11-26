@@ -21,8 +21,8 @@ using Microsoft.Win32;
 [assembly: System.Reflection.AssemblyTitle("Comfy Bridge")]
 [assembly: System.Reflection.AssemblyDescription("Phone to ComfyUI bridge")]
 [assembly: System.Reflection.AssemblyVersion("0.1.0.0")]
-[assembly: System.Reflection.AssemblyFileVersion("0.1.0.140")]
-[assembly: System.Reflection.AssemblyInformationalVersion("0.1.0-beta.140")]
+[assembly: System.Reflection.AssemblyFileVersion("0.1.0.141")]
+[assembly: System.Reflection.AssemblyInformationalVersion("0.1.0-beta.141")]
 
 partial class Bridge : ApplicationContext {
     static readonly string Home = AppDomain.CurrentDomain.BaseDirectory;
@@ -97,7 +97,6 @@ partial class Bridge : ApplicationContext {
         var menu=new ContextMenuStrip();
         menu.Items.Add("Open ComfyBridge",null,(s,e)=>ShowMonitor());
         menu.Items.Add(VersionLabel()).Enabled=false;
-        menu.Items.Add("Set up standalone Browse",null,(s,e)=>EditStandaloneBrowse());
         menu.Items.Add("Check for updates",null,(s,e)=>CheckForRelease(true));
         menu.Items.Add("Open logs",null,(s,e)=>Process.Start("explorer.exe",Data));
         menu.Items.Add("Close ComfyBridge (queued jobs finish)",null,(s,e)=>{Server(false,false);tray.Visible=false;Application.ExitThread();});
@@ -223,15 +222,17 @@ partial class Bridge : ApplicationContext {
             if(!path.StartsWith("/api/",StringComparison.Ordinal) || raw.Contains("..") || raw.Contains("\\")){await Reply(stream,404,"{}");return;}
             string device;Guid guid;bool identified=headers.TryGetValue("X-Bridge-Device",out device)&&Guid.TryParse(device,out guid);
             if(!identified)device=((IPEndPoint)client.Client.RemoteEndPoint).Address.ToString();
-            if(path=="/api/browse-phone-enroll"){
-                int count;string size;
-                if(!encrypted||!identified||device==desktopDevice||first[0]!="POST"||headers.ContainsKey("Transfer-Encoding")||
-                   !headers.TryGetValue("Content-Length",out size)||!int.TryParse(size,out count)||count<1||count>1024){await Reply(stream,403,"{}");return;}
-                var data=new byte[count];for(int pos=0;pos<count;){int n=stream.Read(data,pos,count-pos);if(n<=0)return;pos+=n;}
-                string offer=null;
-                try{var d=Json.Deserialize<Dictionary<string,string>>(Encoding.UTF8.GetString(data));offer=RedeemBrowseOffer(d["code"],d["account"]);}
-                catch(ArgumentException){}catch(KeyNotFoundException){}catch(InvalidOperationException){}
-                await Reply(stream,offer==null?403:200,offer??"{\"error\":\"The approval code is invalid, expired, or belongs to another Civitai account.\"}");return;
+            if(path=="/api/browse-phone-key"){
+                // The existing bridge pairing bearer is the authorization boundary. This
+                // route is never forwarded to the worker or served on the HTTP listener.
+                if(!encrypted||!identified||device==desktopDevice||first[0]!="GET"||raw!=path){
+                    await Reply(stream,403,"{}");return;
+                }
+                string key=ReadCivitaiKey(),revision,present;headers.TryGetValue("X-Bridge-Key-Version",out present);
+                if(key==null){await Reply(stream,200,"{\"cleared\":true}");return;}
+                using(var sha=SHA256.Create())revision=BitConverter.ToString(sha.ComputeHash(Encoding.UTF8.GetBytes(key))).Replace("-","");
+                string payload=Equal(present,revision)?"{\"unchanged\":true}":new JavaScriptSerializer().Serialize(new {key=key,revision=revision});
+                await Reply(stream,200,payload);return;
             }
             if(path=="/api/disconnect"){lock(phones){phones.Remove(device);watchers.Remove(device);}await Reply(stream,200,"{}");return;}
             if(path=="/api/ping"){if(device!=desktopDevice){lock(phones)phones[device]=DateTime.UtcNow;}await Reply(stream,200,"{\"ok\":true,\"name\":\"Comfy Bridge\"}");return;}
