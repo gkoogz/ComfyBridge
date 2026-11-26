@@ -1,6 +1,6 @@
 # ComfyBridge
 
-**[Open the beta 139 release page](https://github.com/gkoogz/ComfyBridge/releases/tag/v0.1.0-beta.139)** · [Download the Android APK](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.139/ComfyBridge-0.1.0-beta.139.apk) · [Download Windows Setup](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.139/ComfyBridge-Setup-0.1.0-beta.139.exe) · [All releases](https://github.com/gkoogz/ComfyBridge/releases)
+**[Open the beta 140 release page](https://github.com/gkoogz/ComfyBridge/releases/tag/v0.1.0-beta.140)** · [Download the Android APK](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.140/ComfyBridge-0.1.0-beta.140.apk) · [Download Windows Setup](https://github.com/gkoogz/ComfyBridge/releases/download/v0.1.0-beta.140/ComfyBridge-Setup-0.1.0-beta.140.exe) · [All releases](https://github.com/gkoogz/ComfyBridge/releases)
 
 <img src="artwork/comfybridge.png" width="128" alt="ComfyBridge white cube and play icon on black">
 
@@ -9,6 +9,8 @@ An Android remote for an existing Windows ComfyUI installation. The phone edits 
 **Local project:** this PC's canonical checkout is `E:\ComfyBridge`. Source, builds, installed app data, local LLMs and archived work are consolidated there. See [the local folder map](docs/local-layout.md) for private-data exclusions, compatibility links and external ComfyUI dependencies. Run `Start-ComfyBridge.ps1` to open the installed PC panel.
 
 **Working on the project:** agents and contributors should start with [AGENTS.md](AGENTS.md) for the code map, build/test commands, live queue preservation and delivery instructions.
+
+**Beta 140** adds standalone Android Browse with a separate read-only Civitai key and durable changes that sync through the PC when it reconnects.
 
 **Beta 139** restores the Browse loading wave in Windows Studio. With reduced motion on, the wave moves gently and skips the scroll bounce and sparkles.
 

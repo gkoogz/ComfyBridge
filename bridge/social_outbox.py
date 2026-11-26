@@ -1,4 +1,4 @@
-"""Durable desired-state social outbox. No network work on enqueue."""
+"""Durable desired-state social outbox. Resolve unseen standalone media before enqueue."""
 import hashlib
 import json
 import math
@@ -46,6 +46,12 @@ class SocialOutbox:
         seq=p.get('clientSeq');first=p.get('firstAt',self.clock())
         if type(seq) is not int or seq<1 or not isinstance(first,(int,float)) or not math.isfinite(first):raise ValueError('Invalid queued action')
         fingerprint=hashlib.sha256(json.dumps(p,sort_keys=True).encode()).hexdigest()
+        if p.get('standalone') is True and p['kind']!='follow' and not self.b.stored(account,p['imageId']):
+            # Never trust phone-supplied metadata or URLs. Resolve only the exact ID.
+            images,_=self.b.images(account,token,{'imageId':int(p['imageId'])},1)
+            if not any(item['id']==str(p['imageId']) for item in images):
+                raise ValueError('This media is no longer available to this Civitai account.')
+        self.b.assert_account(account,token)
         with self.lock,self.b.db() as db:
             db.execute('BEGIN IMMEDIATE')
             receipt=db.execute('SELECT hash,revision FROM social_receipts WHERE account=? AND id=?',(account,request)).fetchone()
@@ -56,10 +62,12 @@ class SocialOutbox:
             old=json.loads(prior[0]) if prior else None
             previous=db.execute('SELECT seq FROM social_sequences WHERE account=? AND client=? AND key=?',(account,client,key)).fetchone()
             if previous and previous[0]>=seq:return dict(ok=True,queued=True,requestId=request,revision=old['revision'] if old else 0,superseded=True)
+            if p.get('standalone') is True and old and old['selected']!=p['selected'] and old['revision']!=p.get('baseRevision',0) and old.get('clientId')!=client:
+                return dict(ok=True,queued=True,requestId=request,revision=old['revision'],superseded=True)
             if p['kind']!='follow' and not self.b.stored(account,p['imageId']):raise ValueError('Open this media before interacting with it')
             if p['kind']=='collect' and int(p['collectionId']) not in [c['id'] for c in self.b.setting(account,'collections',{}).get('items',[])]:raise ValueError('Select one of your known collections')
             pending=old and old['state']!='synced'
-            row=dict(key=key,requestId=request,revision=(old['revision'] if old else 0)+1,
+            row=dict(key=key,requestId=request,clientId=client,revision=(old['revision'] if old else 0)+1,
                      kind=p['kind'],selected=p['selected'],imageId=str(p.get('imageId','')),creatorId=str(p.get('creatorId','')),
                      collectionId=str(p.get('collectionId','')),reaction=p.get('reaction',''),
                      firstAt=old['firstAt'] if pending else min(self.clock(),max(0,first)),updated=self.clock(),

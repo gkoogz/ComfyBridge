@@ -384,3 +384,5 @@ header.hasBrowseSubject #headerIdentity{min-height:44px}
 .civitaiResources .differentVersion .resourceName,.civitaiResources .differentVersion .resourceVersion{color:#ffda75}
 .civitaiPromptBlock .modelPreviewPrompt{padding-left:9px;border-left:2px solid var(--mint)}
 .civitaiPromptBlock[data-prompt-kind=negativePrompt] .modelPreviewPrompt{border-left-color:#ff797d}
+
+.browseOfflineSetup { margin: .25rem .65rem; padding: .35rem .6rem; font-size: .75rem; }

@@ -519,7 +519,8 @@ class Browser:
                 name = creators.get(item_id, change.get('name','Creator ' + item_id)) if kind == 'creator' else learned['names'].get(item_id, change.get('name','Tag ' + item_id))
                 disabled=bool(change.get('disabled'));banned=bool(change.get('banned'))
                 rows.append(dict(kind=kind, id=item_id, name=name, weight=0 if disabled or banned else max(0, base + change.get('offset', 0)),
-                                 disabled=disabled, banned=banned, base=base))
+                                 disabled=disabled, banned=banned, base=base, offset=change.get('offset',0),
+                                 revisions=change.get('revisions',{})))
         return sorted(rows, key=lambda r: (2 if r['banned'] else 1 if r['disabled'] else 0, -r['weight'], r['name'].casefold()))
 
     def bans(self, account):
@@ -924,7 +925,8 @@ class Browser:
         if not item:
             items,_=self.images(account,token,{'imageId':int(image_id)},1)
             if not items:raise ValueError('This media is no longer available to your account.')
-            item=items[0]
+            item=next((i for i in items if i['id']==image_id),None)
+            if not item:raise ValueError('This media is no longer available to your account.')
         try:
             item.update(self.generation_data(token,image_id));item['detailVersion']=2
         except Deferred:
@@ -984,7 +986,8 @@ class Browser:
             if kind=='timeout':
                 uid=str(ident(payload.get('creatorId')))
                 muted=self.timeouts(account)
-                muted[uid]=dict(until=time.time()+7200,name=str(payload.get('name',''))[:200])
+                until=min(time.time()+7200,float(payload.get('until',time.time()+7200)))
+                muted[uid]=dict(until=max(until,muted.get(uid,{}).get('until',0)),name=str(payload.get('name',''))[:200])
                 result=dict(ok=True,creatorId=uid,**muted[uid])
                 with self.db() as db:
                     db.execute('INSERT OR REPLACE INTO settings VALUES(?,?,?)',(account,'creator-timeouts',json.dumps(muted)))
@@ -1004,12 +1007,17 @@ class Browser:
                     if type(delta) is not int or delta not in (-1,1):raise ValueError('Invalid weight adjustment')
                     if row['disabled'] or row['banned']:raise ValueError('Restore this item before adjusting its weight.')
                     change['offset'] = max(0, row['weight'] + delta) - row['base']
+                    change.setdefault('revisions',{})['offset']=request_id
                 elif type(payload.get('banned')) is bool:
                     change['banned']=payload['banned']
-                    if not payload['banned']:change['disabled']=False
+                    change.setdefault('revisions',{})['banned']=request_id
+                    if not payload['banned']:
+                        change['disabled']=False;change['disabledByVote']=False;change['revisions']['disabled']=request_id
                 elif type(payload.get('disabled')) is bool:
                     if row['banned']:raise ValueError('Unban this item before changing its weight.')
                     change['disabled'] = payload['disabled']
+                    change['disabledByVote']=False
+                    change.setdefault('revisions',{})['disabled']=request_id
                 else:raise ValueError('Choose a weight adjustment or disable state')
                 overrides[key] = change
                 # Commit the adjustment and retry receipt together.
@@ -1028,7 +1036,7 @@ class Browser:
                     items=[c for c in saved.get('items',[]) if c['id']!=cid]
                     items.append(dict(id=cid,name=str(created.get('name') or name),count=0,bookmark=False))
                     saved['items']=items;self.save(account,'collections',saved)
-                result=dict(ok=True,collections=items)
+                result=dict(ok=True,collections=items,collectionId=cid)
             elif kind=='follow':
                 uid=ident(payload.get('creatorId'));desired=payload.get('selected')
                 if type(desired) is not bool:raise ValueError('Choose follow or unfollow.')
@@ -1056,7 +1064,9 @@ class Browser:
                     for tid in ids:
                         key='tag:'+tid;change=overrides.get(key,{})
                         change.update(name=tags[tid]['name'],banned=banned)
-                        if not banned:change['disabled']=False
+                        change.setdefault('revisions',{})['banned']=request_id
+                        if not banned:
+                            change['disabled']=False;change['disabledByVote']=False;change['revisions']['disabled']=request_id
                         overrides[key]=change
                         snapshot['tagWeights'][tid]=0 if banned else max(0,rows.get(tid,{}).get('base',0)+change.get('offset',0))
                     bans=[dict(kind=k.split(':',1)[0],id=k.split(':',1)[1],name=v.get('name','')) for k,v in overrides.items() if v.get('banned')]
@@ -1111,7 +1121,8 @@ class Browser:
                     overrides=self.setting(account,'weight-overrides',{});key='tag:'+str(tid)
                     change=overrides.get(key,{})
                     weight=max(0,row['weight']+delta)
-                    change.update(name=tag['name'],offset=weight-row['base'],disabled=weight==0)
+                    change.update(name=tag['name'],offset=weight-row['base'],disabled=weight==0,disabledByVote=True)
+                    change.setdefault('revisions',{}).update(offset=request_id,disabled=request_id)
                     overrides[key]=change
                     snapshot=self.tag_weight_snapshot(account);snapshot['tagWeights'][str(tid)]=weight
                     result=dict(ok=True,tagId=str(tid),weight=weight,**snapshot)

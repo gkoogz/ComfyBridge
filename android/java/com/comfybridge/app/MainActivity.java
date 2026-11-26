@@ -137,7 +137,7 @@ public class MainActivity extends Activity {
       return new WebResourceResponse(mime,null,code,c.getResponseMessage()==null?"Response":c.getResponseMessage(),headers,new FilterInputStream(input){@Override public void close()throws IOException{try{super.close();}finally{c.disconnect();browseConnections.remove(c);if(listingPreviewConnection==c)listingPreviewConnection=null;}}});
      }
      if(path.equals("/"))path="/index.html";
-     if(!Arrays.asList("/index.html","/style.css","/app.js","/profile.js","/gallery.js","/video-player.js","/video-player.css","/gallery.css","/studio.css","/studio.js","/notepad.js","/live-image.js","/generator-controls.js","/generator.css","/desktop.js","/desktop.css","/provenance.js","/chat.js","/quick-edit.js","/chat-format.js","/chat.css","/provenance.css","/model-cache.js","/model-browser.js","/prompt-embeddings.js","/model-browser.css","/browse.js","/browse-loader.js","/feed-video.js","/browse.css").contains(path))return response(404,"Not Found","text/plain",new byte[0]);
+     if(!Arrays.asList("/index.html","/style.css","/app.js","/profile.js","/gallery.js","/video-player.js","/video-player.css","/gallery.css","/studio.css","/studio.js","/notepad.js","/live-image.js","/generator-controls.js","/generator.css","/desktop.js","/desktop.css","/provenance.js","/chat.js","/quick-edit.js","/chat-format.js","/chat.css","/provenance.css","/model-cache.js","/model-browser.js","/prompt-embeddings.js","/model-browser.css","/browse.js","/browse-replica.js","/browse-loader.js","/feed-video.js","/browse.css").contains(path))return response(404,"Not Found","text/plain",new byte[0]);
      String mime=path.endsWith("css")?"text/css":path.endsWith("js")?"application/javascript":"text/html";
      return new WebResourceResponse(mime,"UTF-8",getAssets().open(path.substring(1)));
     }catch(Exception e){return response(503,"Unavailable","text/plain",new byte[0]);}
@@ -191,7 +191,60 @@ public class MainActivity extends Activity {
   return c;
  }
  String exportOperation="export";
+ private final StandaloneBrowse standaloneBrowse=new StandaloneBrowse(this);
+ private final java.util.concurrent.ExecutorService browseIO=java.util.concurrent.Executors.newSingleThreadExecutor();
  public class NativeApi {
+  @JavascriptInterface public boolean offlineBrowseReady(String account){return standaloneBrowse.enrolled(prefs.getString("fingerprint",""),account);}
+  @JavascriptInterface public void enrollOfflineBrowse(int id,String account){
+   runOnUiThread(()->{
+    String pin=prefs.getString("fingerprint",""),host=prefs.getString("host","");
+    if(!host.startsWith("https://")||!pin.matches("[A-F0-9]{64}")||!account.matches("[1-9][0-9]{0,15}")){
+     callback(id,false,"Open Browse while connected to your paired PC.");return;
+    }
+    android.widget.EditText field=new android.widget.EditText(MainActivity.this);
+    field.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);field.setHint("8-digit code");
+    new android.app.AlertDialog.Builder(MainActivity.this).setTitle("Set up offline Browse")
+     .setMessage("In the PC tray menu, open Set up standalone Browse. Enter its approval code here.").setView(field)
+     .setNegativeButton("Cancel",(dialog,which)->callback(id,false,"Cancelled"))
+     .setOnCancelListener(dialog->callback(id,false,"Cancelled"))
+     .setPositiveButton("Approve",(dialog,which)->{
+      String code=field.getText().toString().trim();
+      if(!code.matches("[0-9]{8}")){callback(id,false,"Enter the eight-digit PC approval code.");return;}
+      browseIO.execute(()->{
+       try{
+        if(!pin.equals(prefs.getString("fingerprint",""))||!host.equals(prefs.getString("host","")))throw new IOException("PC pairing changed.");
+        HttpURLConnection c=connection("api/browse-phone-enroll","POST");
+        JSONObject offer;
+        try{
+         c.setConnectTimeout(6000);c.setReadTimeout(8000);c.setDoOutput(true);c.setRequestProperty("Content-Type","application/json");
+         byte[] body=new JSONObject().put("code",code).put("account",account).toString().getBytes(StandardCharsets.UTF_8);
+         c.setFixedLengthStreamingMode(body.length);
+         try(OutputStream out=c.getOutputStream()){out.write(body);}
+         if(c.getResponseCode()!=200)throw new IOException("Approval failed. Generate a fresh code on the PC.");
+         offer=StandaloneBrowse.response(c);
+        }finally{c.disconnect();}
+        String token=offer.getString("key");
+        if(!account.equals(offer.getString("account")))throw new IOException("Civitai account changed.");
+        standaloneBrowse.verify(token,account);
+        if(!pin.equals(prefs.getString("fingerprint","")))throw new IOException("PC pairing changed.");
+        standaloneBrowse.store(pin,account,token);callback(id,true,"{}");
+       }catch(IOException error){callback(id,false,friendly(error));}
+        catch(Exception error){callback(id,false,"Could not save the phone's Civitai key.");}
+      });
+     }).show();
+   });
+  }
+  @JavascriptInterface public void offlineBrowseRead(int id,String account,String operation,String args){
+   browseIO.execute(()->{
+    try{
+     if(!foreground)throw new IOException("Browse is paused in the background.");
+     if(args.length()>12000)throw new IOException("Browse request is too large.");
+     callback(id,true,standaloneBrowse.read(prefs.getString("fingerprint",""),account,operation,new JSONObject(args)).toString());
+    }catch(IOException e){callback(id,false,friendly(e));}
+     catch(Exception e){callback(id,false,"Could not read Civitai. Please retry.");}
+   });
+  }
+
   @JavascriptInterface public String loadSocialQueue(String scope){return getSharedPreferences("social-outbox",MODE_PRIVATE).getString(scope,"");}
  @JavascriptInterface public boolean saveSocialQueue(String scope,String value){if(scope==null||scope.length()>512||value==null||value.length()>1048576)return false;return getSharedPreferences("social-outbox",MODE_PRIVATE).edit().putString(scope,value).commit();}
  @JavascriptInterface public void openProfile(String value){
@@ -219,7 +272,7 @@ public class MainActivity extends Activity {
     JSONObject urls=new JSONObject(value);Iterator<String> keys=urls.keys();
     while(keys.hasNext()){
      String path=keys.next(),target=urls.getString(path);
-     if(path.matches("/model-preview/browse/[1-9][0-9]*/[1-9][0-9]*/(thumb|full)")&&safeBrowseCDN(new URL(target)))browseMediaURLs.put(path,target);
+     if(path.matches("/model-preview/browse/[1-9][0-9]*/[1-9][0-9]*/(thumb|full|avatar)")&&safeBrowseCDN(new URL(target)))browseMediaURLs.put(path,target);
     }
     if(browseMediaURLs.size()>2000)browseMediaURLs.clear();
    }catch(Exception ignored){}
@@ -304,7 +357,7 @@ public class MainActivity extends Activity {
   @JavascriptInterface public void request(int id,String path,String method,String body){("ping".equals(path)||"disconnect".equals(path)?heartbeat:io).execute(()->{
    boolean ok=false;String result;
    try{
-    if(!path.matches("[a-zA-Z0-9_/-]+")||path.contains("..")||!Arrays.asList("GET","POST").contains(method))throw new IOException("Invalid request.");
+    if(path.equalsIgnoreCase("browse-phone-enroll")||!path.matches("[a-zA-Z0-9_/-]+")||path.contains("..")||!Arrays.asList("GET","POST").contains(method))throw new IOException("Invalid request.");
     HttpURLConnection c=connection("api/"+path,method);
     try{if(method.equals("POST")){byte[] data=body.getBytes(StandardCharsets.UTF_8);c.setDoOutput(true);c.setRequestProperty("Content-Type","application/json");c.setFixedLengthStreamingMode(data.length);try(OutputStream out=c.getOutputStream()){out.write(data);}}
      int code=c.getResponseCode();InputStream input=code>=400?c.getErrorStream():c.getInputStream();String text=read(input);if(code>=400){try{throw new IOException("HTTP "+code+": "+new JSONObject(text).optString("error",text));}catch(org.json.JSONException e){throw new IOException("HTTP "+code);}}
@@ -372,5 +425,5 @@ public class MainActivity extends Activity {
   }
  }
  @Override public void onBackPressed(){web.evaluateJavascript("bridgeBack()",null);}
- @Override protected void onDestroy(){foreground=false;stopPrefetch();stopListingPreviews();prefetchIO.shutdownNow();heartbeat.shutdownNow();io.shutdownNow();mediaIO.shutdownNow();super.onDestroy();}
+ @Override protected void onDestroy(){foreground=false;stopPrefetch();stopListingPreviews();prefetchIO.shutdownNow();heartbeat.shutdownNow();io.shutdownNow();mediaIO.shutdownNow();browseIO.shutdownNow();super.onDestroy();}
 }

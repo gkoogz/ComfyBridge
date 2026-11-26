@@ -805,6 +805,9 @@ async def api(request):
         return web.json_response(await asyncio.to_thread(MODELS.search_embeddings,request.query.get('q',''),request.query.get('cursor','')))
     if path == 'model-library':
         return web.json_response(MODELS.snapshot())
+    if path == 'browse/replica' and request.method in ('GET','POST'):
+        from browse_replica import sync
+        return web.json_response(await asyncio.to_thread(sync,CIVITAI_BROWSER,await request.json() if request.method=='POST' else None))
     if path == 'browse/preferences' and request.method == 'GET':
         return web.json_response(await asyncio.to_thread(CIVITAI_BROWSER.preferences))
     if path == 'browse/status' and request.method in ('GET','POST'):
@@ -908,7 +911,7 @@ async def api(request):
                     j['etaSeconds']=None
                 else:
                     j['progress'],j['current_node']=TRACKER.sample()
-        return web.json_response(dict(protocol=20,build='0.1.0-beta.139',jobs=jobs, active=ACTIVE, preview=bool(PREVIEW), previewRevision=PREVIEW_REV,ownedComfy=bool(OWNED),queueEtaSeconds=total_eta))
+        return web.json_response(dict(protocol=20,build='0.1.0-beta.140',jobs=jobs, active=ACTIVE, preview=bool(PREVIEW), previewRevision=PREVIEW_REV,ownedComfy=bool(OWNED),queueEtaSeconds=total_eta))
     if path.startswith('preview/'):
         job=str(uuid.UUID(path[8:]))
         after=int(request.query.get('after','-1'))
